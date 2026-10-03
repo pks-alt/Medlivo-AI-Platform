@@ -1,0 +1,31 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+credentials.json
+service-account*.json
+
+# Node
+node_modules/
+.next/
+dist/
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Local data
+tmp/
+data/
+downloads/
