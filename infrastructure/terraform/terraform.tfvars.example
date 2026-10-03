@@ -1,0 +1,4 @@
+project_id  = "your-medlivo-ai-project-id"
+region      = "us-west1"
+environment = "dev"
+db_tier     = "db-custom-2-7680"
