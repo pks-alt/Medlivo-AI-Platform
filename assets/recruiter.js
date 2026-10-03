@@ -1,4 +1,5 @@
-const titles={today:'Today',jobs:'Jobs',candidates:'Candidates',customers:'Customers',conversations:'Conversations',submissions:'Submissions',analytics:'Analytics'};
+const titles={today:'Today',jobs:'Jobs',candidates:'Candidates',customers:'Customers',conversations:'Conversations',submissions:'Submissions',analytics:'Manager'};
+const contexts={today:'Recruiter command center',jobs:'Job intelligence',candidates:'Candidate intelligence',customers:'Customer portfolio',conversations:'Candidate engagement',submissions:'Submission readiness',analytics:'Manager command center'};
 document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click',()=>{
   document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
   document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
@@ -6,6 +7,8 @@ document.querySelectorAll('.nav-item').forEach(btn=>btn.addEventListener('click'
   const id=btn.dataset.view;
   document.getElementById(id).classList.add('active');
   document.getElementById('pageTitle').textContent=titles[id]||'Medlivo Recruit AI';
+  const contextLabel=document.getElementById('contextLabel');
+  if(contextLabel)contextLabel.textContent=contexts[id]||'Medlivo Recruit AI';
 }));
 const search=document.getElementById('globalSearch');
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();search.focus()}});
