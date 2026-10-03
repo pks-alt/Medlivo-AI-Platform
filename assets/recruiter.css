@@ -20,3 +20,32 @@
 .supply-card,.ai-activity-card,.ask-job-ai{padding:18px}.supply-card h3,.ai-activity-card h3,.ask-job-ai h3{margin:4px 0 14px;font-size:16px}.funnel-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:10.5px}.funnel-row span{color:#617587}.funnel-row strong{font-size:12px}.funnel-row.final{margin-top:5px;padding:11px 10px;border:0;border-radius:8px;background:#edf7e8;color:#355f1d}.activity{display:grid;grid-template-columns:8px 1fr;gap:8px;padding:10px 0;border-top:1px solid var(--line)}.activity i{width:7px;height:7px;border-radius:50%;background:var(--green);margin-top:3px}.activity p{margin:0}.activity strong,.activity span,.activity small{display:block}.activity strong{font-size:10.5px}.activity span{font-size:9.5px;color:#607587;margin-top:3px;line-height:1.35}.activity small{font-size:8px;color:#9aa7b0;margin-top:4px}.ask-job-ai p:not(.eyebrow){font-size:10px;color:var(--muted);line-height:1.45}.ai-prompt{width:100%;text-align:left;padding:9px 10px;margin-top:7px;border:1px solid var(--line);border-radius:8px;background:#f8fafb;color:#365266;font-size:9.5px;font-weight:700;cursor:pointer}
 @media(max-width:1180px){.job-content-grid{grid-template-columns:1fr}.job-side-col{grid-template-columns:repeat(3,1fr)}.candidate-match{grid-template-columns:28px 180px 58px 1fr}.match-reason{grid-column:2/5}.candidate-actions{grid-column:5;grid-row:1/3}}
 @media(max-width:800px){.job-switcher{grid-template-columns:1fr}.job-detail-head{display:grid}.job-head-actions{width:100%}.job-status-strip{grid-template-columns:repeat(2,1fr);gap:12px}.job-status-strip>div{border:0;padding:0}.requirement-grid{grid-template-columns:1fr 1fr}.job-side-col{grid-template-columns:1fr}.candidate-match{grid-template-columns:28px 1fr 54px}.candidate-signals,.match-reason,.candidate-actions{grid-column:2/4}.candidate-actions{display:flex}.prototype-note{display:none}}
+
+/* Refined recruiter Jobs UX */
+.job-detail-head{padding:22px 24px}
+.job-detail-head h2{font-size:28px;margin-bottom:8px}
+.job-head-actions .primary{box-shadow:0 6px 18px rgba(16,38,65,.10)}
+.job-status-refined{padding:12px 16px}
+.job-status-refined>div{padding:0 14px}
+.job-status-refined strong{font-size:11.5px}
+.section-subline{margin:4px 0 0;color:var(--muted);font-size:9.5px}
+.job-requirements,.candidate-panel{padding:18px}
+.requirement-grid{border-radius:9px}
+.requirement-grid div{padding:12px 13px}
+.hard-gates{padding:12px 13px;margin-top:12px}
+.candidate-match{grid-template-columns:26px 178px 54px 1fr 1.15fr auto;gap:10px;padding:13px 0}
+.candidate-match:hover{background:#fbfdfe}
+.candidate-identity strong{font-size:11.25px}
+.candidate-signals{align-content:center}
+.match-reason p{max-width:330px}
+.candidate-actions{min-width:116px}
+.small-btn{width:100%;padding:7px 10px}
+.supply-card,.ai-activity-card,.ask-job-ai{padding:17px}
+.supply-card h3,.ai-activity-card h3,.ask-job-ai h3{font-size:15px;margin-bottom:12px}
+.funnel-row{padding:8px 0}
+.job-side-col{gap:12px}
+.ask-job-ai{background:linear-gradient(180deg,#fbfcfd 0%,#f5f8fa 100%)}
+.ai-prompt:hover{border-color:#9fb4c0;background:#fff}
+@media(max-width:1180px){
+  .candidate-match{grid-template-columns:26px 170px 54px 1fr}
+}
