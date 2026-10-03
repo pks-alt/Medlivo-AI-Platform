@@ -322,7 +322,96 @@
         </aside>
       </div>
     </section>
-    <section class="view" id="customers"><div class="placeholder-panel"><p class="eyebrow">Customers</p><h2>Your customer portfolio</h2><p>Customer-owned jobs, recruiter accountability, SLA status, candidate supply, and submissions.</p></div></section>
+    <section class="view" id="customers">
+      <div class="customer-overview-head">
+        <div><p class="eyebrow">My customers</p><h2>Accounts that need attention</h2><p>Open jobs, candidate supply, SLA health, and current submission activity across your assigned customers.</p></div>
+        <button class="secondary">View all customers</button>
+      </div>
+
+      <div class="customer-cards">
+        <article class="customer-card active">
+          <div class="customer-card-top"><div><span>Rehabilitation</span><h3>Axiom Rehab</h3></div><span class="badge green">Healthy</span></div>
+          <div class="customer-metrics"><div><strong>17</strong><span>Open jobs</span></div><div><strong>64</strong><span>Strong matches</span></div><div><strong>8</strong><span>Submissions</span></div></div>
+          <p>Good candidate supply. Three jobs are ready for additional recruiter review.</p>
+        </article>
+        <article class="customer-card">
+          <div class="customer-card-top"><div><span>Nursing &amp; Allied</span><h3>Providence</h3></div><span class="badge amber">Watch</span></div>
+          <div class="customer-metrics"><div><strong>28</strong><span>Open jobs</span></div><div><strong>51</strong><span>Strong matches</span></div><div><strong>5</strong><span>Submissions</span></div></div>
+          <p>Two priority jobs need more outreach volume to stay within SLA.</p>
+        </article>
+        <article class="customer-card">
+          <div class="customer-card-top"><div><span>Locum Tenens</span><h3>Regional Health</h3></div><span class="badge blue">Qualifying</span></div>
+          <div class="customer-metrics"><div><strong>9</strong><span>Open jobs</span></div><div><strong>22</strong><span>Strong matches</span></div><div><strong>3</strong><span>Submissions</span></div></div>
+          <p>Candidate quality is strong. Credential and availability checks are in progress.</p>
+        </article>
+      </div>
+
+      <div class="customer-detail-grid">
+        <section class="panel customer-main">
+          <div class="section-head compact"><div><p class="eyebrow">Axiom Rehab</p><h3>Account overview</h3></div><span class="badge green">SLA healthy</span></div>
+          <div class="account-strip">
+            <div><span>Primary recruiter</span><strong>Rehabilitation Team</strong></div>
+            <div><span>Open jobs</span><strong>17</strong></div>
+            <div><span>Submission ready</span><strong>6</strong></div>
+            <div><span>Interviews</span><strong>4</strong></div>
+            <div><span>Placements</span><strong>2</strong></div>
+          </div>
+
+          <div class="section-head"><div><p class="eyebrow">Priority requisitions</p><h3>Where to focus next</h3></div><button class="text-btn">Open all jobs</button></div>
+          <div class="account-job-list">
+            <div class="account-job">
+              <div><strong>Physical Therapist</strong><span>Dallas, TX · Job 26-40112</span></div>
+              <div><span>Strong matches</span><strong>23</strong></div>
+              <div><span>Submission ready</span><strong>4</strong></div>
+              <span class="badge green">Healthy</span>
+              <button>Open</button>
+            </div>
+            <div class="account-job">
+              <div><strong>Occupational Therapist</strong><span>Houston, TX · Job 26-39871</span></div>
+              <div><span>Strong matches</span><strong>14</strong></div>
+              <div><span>Submission ready</span><strong>2</strong></div>
+              <span class="badge amber">Needs review</span>
+              <button>Open</button>
+            </div>
+            <div class="account-job">
+              <div><strong>Speech-Language Pathologist</strong><span>Austin, TX · Job 26-39544</span></div>
+              <div><span>Strong matches</span><strong>9</strong></div>
+              <div><span>Submission ready</span><strong>0</strong></div>
+              <span class="badge blue">Qualifying</span>
+              <button>Open</button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="customer-side">
+          <section class="panel">
+            <p class="eyebrow">Account health</p><h3 class="side-title">What AI sees</h3>
+            <div class="health-list">
+              <div><span>Candidate supply</span><strong class="status-good">Strong</strong></div>
+              <div><span>Outreach response</span><strong class="status-good">Healthy</strong></div>
+              <div><span>Submission pace</span><strong>On target</strong></div>
+              <div><span>SLA risk</span><strong class="status-good">Low</strong></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <p class="eyebrow">Recent activity</p><h3 class="side-title">Account timeline</h3>
+            <div class="history-list">
+              <div><i></i><p><strong>2 candidates moved to Submission Ready</strong><span>Today, 3:44 PM</span></p></div>
+              <div><i></i><p><strong>New PT requisition added</strong><span>Today, 11:18 AM</span></p></div>
+              <div><i></i><p><strong>Interview scheduled</strong><span>Yesterday, 4:05 PM</span></p></div>
+            </div>
+          </section>
+
+          <section class="panel ask-job-ai">
+            <p class="eyebrow">Recruit AI</p><h3>Ask about Axiom</h3>
+            <p>Use jobs, candidate supply, outreach, submissions, and SLA context.</p>
+            <button class="ai-prompt">Which Axiom jobs need attention today?</button>
+            <button class="ai-prompt">Show submission-ready candidates across this account</button>
+          </section>
+        </aside>
+      </div>
+    </section>
     <section class="view" id="conversations">
       <div class="conversation-layout">
         <aside class="conversation-list panel">
