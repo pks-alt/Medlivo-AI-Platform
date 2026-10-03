@@ -207,7 +207,120 @@
       </section>
     </section>
     <section class="view" id="candidates">
-      <div class="placeholder-panel"><p class="eyebrow">Candidates</p><h2>Unified candidate intelligence</h2><p>Canonical profiles, resume evidence, licenses, availability, conversations, and job matches in one place.</p></div>
+      <div class="candidate-profile-head">
+        <div class="candidate-profile-identity">
+          <span class="avatar profile-avatar">DP</span>
+          <div>
+            <div class="candidate-kicker"><span>Prototype candidate</span><span>Canonical profile</span></div>
+            <h2>Dr. Dana Patel</h2>
+            <p>Urologist · Omaha, Nebraska · Travel willing</p>
+          </div>
+        </div>
+        <div class="candidate-profile-actions">
+          <button class="secondary">Hold</button>
+          <button class="secondary">Request info</button>
+          <button class="primary">Prepare submission</button>
+        </div>
+      </div>
+
+      <div class="candidate-overview-strip">
+        <div><span>Overall match</span><strong>94</strong></div>
+        <div><span>Clinical fit</span><strong>98</strong></div>
+        <div><span>Availability</span><strong>Oct 19</strong></div>
+        <div><span>License readiness</span><strong class="status-good">Ready</strong></div>
+        <div><span>Engagement</span><strong>Interested</strong></div>
+        <div><span>Owner</span><strong>Rey Rivera</strong></div>
+      </div>
+
+      <div class="candidate-profile-grid">
+        <div class="candidate-profile-main">
+          <section class="panel">
+            <div class="section-head compact"><div><p class="eyebrow">Match evidence</p><h3>Why this candidate is strong</h3></div><span class="badge green">Strong match</span></div>
+            <div class="evidence-grid">
+              <div class="evidence-card"><span>Clinical</span><strong>Urology alignment</strong><p>Recent specialty experience aligns closely with this requisition.</p><small>Source: resume + normalized profile</small></div>
+              <div class="evidence-card"><span>Location</span><strong>Same-state candidate</strong><p>Lives in Nebraska and is open to travel as needed.</p><small>Source: candidate profile</small></div>
+              <div class="evidence-card"><span>License</span><strong>Ready for start</strong><p>License readiness appears compatible with the current job start window.</p><small>Source: credential profile</small></div>
+              <div class="evidence-card"><span>Availability</span><strong>Available Oct 19</strong><p>Availability was recently confirmed through outreach.</p><small>Source: candidate conversation</small></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head compact"><div><p class="eyebrow">Professional profile</p><h3>Experience and readiness</h3></div></div>
+            <div class="profile-facts">
+              <div><span>Profession</span><strong>Physician</strong></div>
+              <div><span>Specialty</span><strong>Urology</strong></div>
+              <div><span>Current location</span><strong>Omaha, NE</strong></div>
+              <div><span>Travel preference</span><strong>Willing to travel</strong></div>
+              <div><span>Recent experience</span><strong>Current / relevant</strong></div>
+              <div><span>Profile freshness</span><strong>High</strong></div>
+            </div>
+            <div class="experience-timeline">
+              <div><i></i><p><strong>Urologist</strong><span>Regional Medical Center · 2023–Present</span><small>Recent urology experience · prototype evidence</small></p></div>
+              <div><i></i><p><strong>Urologist</strong><span>Midwest Health System · 2019–2023</span><small>Hospital-based practice · prototype evidence</small></p></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head compact"><div><p class="eyebrow">Licenses & credentials</p><h3>Readiness evidence</h3></div><button class="text-btn">View all</button></div>
+            <div class="credential-list">
+              <div><span class="credential-icon good">✓</span><p><strong>Nebraska medical license</strong><span>Verified / ready</span></p><small>Updated recently</small></div>
+              <div><span class="credential-icon neutral">•</span><p><strong>Board status</strong><span>Profile evidence available</span></p><small>Verification source pending API integration</small></div>
+              <div><span class="credential-icon neutral">•</span><p><strong>Privileging history</strong><span>Prior hospital history identified</span></p><small>Useful for readiness estimation</small></div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="section-head compact"><div><p class="eyebrow">Conversation</p><h3>Latest qualification summary</h3></div><span class="badge blue">AI qualified</span></div>
+            <div class="conversation-summary">
+              <p>Candidate is interested in the Nebraska opportunity, available beginning October 19, and open to the expected travel pattern. No current hard blocker is identified in the prototype profile.</p>
+              <div class="qualification-grid">
+                <div><span>Interest</span><strong>Yes</strong></div>
+                <div><span>Availability</span><strong>Oct 19</strong></div>
+                <div><span>Travel</span><strong>Yes</strong></div>
+                <div><span>License</span><strong>Ready</strong></div>
+              </div>
+              <button class="secondary">Open full conversation</button>
+            </div>
+          </section>
+        </div>
+
+        <aside class="candidate-profile-side">
+          <section class="panel readiness-card">
+            <p class="eyebrow">Submission readiness</p>
+            <div class="readiness-score"><strong>92%</strong><span>Near submission ready</span></div>
+            <div class="readiness-item good"><span>Clinical requirements</span><strong>Complete</strong></div>
+            <div class="readiness-item good"><span>Location / travel</span><strong>Complete</strong></div>
+            <div class="readiness-item good"><span>Availability</span><strong>Confirmed</strong></div>
+            <div class="readiness-item good"><span>License readiness</span><strong>Ready</strong></div>
+            <div class="readiness-item warn"><span>Client-specific packet</span><strong>1 item</strong></div>
+            <button class="primary full-btn">Close remaining gap</button>
+          </section>
+
+          <section class="panel">
+            <p class="eyebrow">Best job matches</p><h3 class="side-title">Other opportunities</h3>
+            <div class="mini-match"><div><strong>Urologist</strong><span>Kearney, NE</span></div><b>94</b></div>
+            <div class="mini-match"><div><strong>Urologist</strong><span>Wichita, KS</span></div><b>87</b></div>
+            <div class="mini-match"><div><strong>Urologist</strong><span>Sioux Falls, SD</span></div><b>82</b></div>
+          </section>
+
+          <section class="panel">
+            <p class="eyebrow">History</p><h3 class="side-title">Recent recruiting activity</h3>
+            <div class="history-list">
+              <div><i></i><p><strong>Qualified by AI</strong><span>Today, 4:21 PM</span></p></div>
+              <div><i></i><p><strong>Replied interested</strong><span>Today, 4:13 PM</span></p></div>
+              <div><i></i><p><strong>Outreach sent</strong><span>Today, 3:58 PM</span></p></div>
+              <div><i></i><p><strong>Matched to Job 26-37123</strong><span>Today, 3:42 PM</span></p></div>
+            </div>
+          </section>
+
+          <section class="panel ask-job-ai">
+            <p class="eyebrow">Recruit AI</p><h3>Ask about Dana</h3>
+            <p>Use profile evidence, job matches, readiness, and conversation context.</p>
+            <button class="ai-prompt">What is still missing for submission?</button>
+            <button class="ai-prompt">Compare Dana with the next 3 candidates</button>
+          </section>
+        </aside>
+      </div>
     </section>
     <section class="view" id="customers"><div class="placeholder-panel"><p class="eyebrow">Customers</p><h2>Your customer portfolio</h2><p>Customer-owned jobs, recruiter accountability, SLA status, candidate supply, and submissions.</p></div></section>
     <section class="view" id="conversations"><div class="placeholder-panel"><p class="eyebrow">Conversations</p><h2>Unified SMS and email qualification</h2><p>AI continues approved qualification and hands off only when human judgment is needed.</p></div></section>
