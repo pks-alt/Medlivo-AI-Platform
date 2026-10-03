@@ -1,0 +1,8 @@
+{
+  "name": "medlivo-ai-platform",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter @medlivo/recruiter-web dev",
+    "build:web": "pnpm --filter @medlivo/recruiter-web build"
+  }
+}
