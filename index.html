@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Medlivo Recruit AI</title>
+<meta name="description" content="Medlivo AI recruiter command center prototype.">
+<link rel="stylesheet" href="assets/recruiter.css">
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-mark">M</div><div><strong>Medlivo</strong><span>Recruit AI</span></div></div>
+    <nav>
+      <button class="nav-item active" data-view="today">Today</button>
+      <button class="nav-item" data-view="jobs">Jobs</button>
+      <button class="nav-item" data-view="candidates">Candidates</button>
+      <button class="nav-item" data-view="customers">Customers</button>
+      <button class="nav-item" data-view="conversations">Conversations</button>
+      <button class="nav-item" data-view="submissions">Submissions</button>
+      <button class="nav-item" data-view="analytics">Analytics</button>
+    </nav>
+    <div class="sidebar-foot">
+      <div class="avatar">PS</div>
+      <div><strong>PK Samal</strong><span>Admin · Medlivo</span></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Recruiter command center</p>
+        <h1 id="pageTitle">Today</h1>
+      </div>
+      <div class="top-actions">
+        <div class="search-box">
+          <span>⌕</span>
+          <input id="globalSearch" placeholder="Ask Recruit AI or search jobs and candidates">
+          <kbd>⌘ K</kbd>
+        </div>
+        <button class="icon-btn" aria-label="Notifications">3</button>
+      </div>
+    </header>
+
+    <section class="view active" id="today">
+      <div class="hero-grid">
+        <div class="hero-card">
+          <p class="eyebrow">Good afternoon</p>
+          <h2>What should you work on next?</h2>
+          <p class="sub">AI prioritizes your assigned customers, jobs, candidate replies, and submission-ready work.</p>
+          <div class="hero-actions">
+            <button class="primary">Review 7 submission-ready candidates</button>
+            <button class="secondary">Open priority jobs</button>
+          </div>
+        </div>
+        <div class="ai-card">
+          <div class="ai-head"><span class="pulse"></span><strong>AI working for you</strong></div>
+          <div class="ai-metrics">
+            <div><strong>32</strong><span>Jobs actively matching</span></div>
+            <div><strong>418</strong><span>Candidates evaluated</span></div>
+            <div><strong>54</strong><span>Conversations active</span></div>
+            <div><strong>21</strong><span>Qualified today</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section-head"><div><p class="eyebrow">Needs your attention</p><h3>Highest-value next actions</h3></div><button class="text-btn">View all</button></div>
+      <div class="task-list">
+        <article class="task"><div class="task-icon hot">1</div><div class="task-body"><div><strong>7 candidates are submission ready</strong><span>Rehabilitation · 4 jobs</span></div><p>All hard requirements verified. Recruiter approval is required before submission.</p></div><button>Review</button></article>
+        <article class="task"><div class="task-icon reply">2</div><div class="task-body"><div><strong>12 candidates replied interested</strong><span>Nursing & Allied · overnight</span></div><p>AI completed qualification on 8. Four need recruiter judgment.</p></div><button>Open queue</button></article>
+        <article class="task"><div class="task-icon risk">3</div><div class="task-body"><div><strong>3 priority jobs are at SLA risk</strong><span>2 customers</span></div><p>Candidate supply is healthy, but outreach volume is below target.</p></div><button>Review plan</button></article>
+      </div>
+
+      <div class="two-col">
+        <section class="panel">
+          <div class="section-head compact"><div><p class="eyebrow">My priority jobs</p><h3>Where AI sees the best opportunity</h3></div></div>
+          <div class="job-table">
+            <div class="table-row head"><span>Job</span><span>Customer</span><span>Strong matches</span><span>Status</span></div>
+            <div class="table-row"><span><strong>Physical Therapist</strong><small>Dallas, TX</small></span><span>Axiom Rehab</span><span>43</span><span class="badge green">Healthy</span></div>
+            <div class="table-row"><span><strong>ICU RN</strong><small>Seattle, WA</small></span><span>Providence</span><span>37</span><span class="badge amber">Needs outreach</span></div>
+            <div class="table-row"><span><strong>Hospitalist</strong><small>Phoenix, AZ</small></span><span>Regional Health</span><span>11</span><span class="badge blue">Qualifying</span></div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="section-head compact"><div><p class="eyebrow">Recent responses</p><h3>Candidate conversations</h3></div></div>
+          <div class="response-list">
+            <div><span class="avatar small">JS</span><p><strong>Jamie S.</strong><span>PT · Dallas</span><small>Interested. Available Oct 19. TX license active.</small></p><span class="badge green">Near Ready</span></div>
+            <div><span class="avatar small">MR</span><p><strong>Morgan R.</strong><span>ICU RN · Seattle</span><small>Open to nights. Needs WA license confirmation.</small></p><span class="badge amber">1 gap</span></div>
+            <div><span class="avatar small">AK</span><p><strong>Alex K.</strong><span>Hospitalist · Phoenix</span><small>Available for Nov blocks. Privileging history found.</small></p><span class="badge blue">Qualified</span></div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section class="view" id="jobs">
+      <div class="placeholder-panel"><p class="eyebrow">Jobs</p><h2>Assigned requisitions with AI match supply</h2><p>This view will combine recruiter ownership, customer priority, matching status, outreach activity, and submission pipeline.</p></div>
+    </section>
+    <section class="view" id="candidates">
+      <div class="placeholder-panel"><p class="eyebrow">Candidates</p><h2>Unified candidate intelligence</h2><p>Canonical profiles, resume evidence, licenses, availability, conversations, and job matches in one place.</p></div>
+    </section>
+    <section class="view" id="customers"><div class="placeholder-panel"><p class="eyebrow">Customers</p><h2>Your customer portfolio</h2><p>Customer-owned jobs, recruiter accountability, SLA status, candidate supply, and submissions.</p></div></section>
+    <section class="view" id="conversations"><div class="placeholder-panel"><p class="eyebrow">Conversations</p><h2>Unified SMS and email qualification</h2><p>AI continues approved qualification and hands off only when human judgment is needed.</p></div></section>
+    <section class="view" id="submissions"><div class="placeholder-panel"><p class="eyebrow">Submissions</p><h2>Submission-ready review queue</h2><p>Evidence, readiness, gaps, recruiter approval, and JobDiva write-back.</p></div></section>
+    <section class="view" id="analytics"><div class="placeholder-panel"><p class="eyebrow">Analytics</p><h2>Recruiting productivity and funnel health</h2><p>Submission-ready volume, recruiter time saved, submissions, interviews, placements, and pilot performance.</p></div></section>
+  </main>
+</div>
+<script src="assets/recruiter.js"></script>
+</body>
+</html>
