@@ -93,7 +93,118 @@
     </section>
 
     <section class="view" id="jobs">
-      <div class="placeholder-panel"><p class="eyebrow">Jobs</p><h2>Assigned requisitions with AI match supply</h2><p>This view will combine recruiter ownership, customer priority, matching status, outreach activity, and submission pipeline.</p></div>
+      <div class="job-switcher">
+        <button class="job-pill" data-job="rn"><span>Nursing &amp; Allied</span><strong>Registered Nurse</strong><small>Job 26-13176</small></button>
+        <button class="job-pill" data-job="ot"><span>Rehabilitation</span><strong>Occupational Therapist</strong><small>Job 26-31915</small></button>
+        <button class="job-pill active" data-job="uro"><span>Locum Tenens</span><strong>Urologist</strong><small>Job 26-37123</small></button>
+      </div>
+
+      <section class="job-detail-shell">
+        <div class="job-detail-head">
+          <div>
+            <div class="job-kicker"><span class="division-dot"></span><span id="jobDivision">Locum Tenens</span><span>Job <b id="jobId">26-37123</b></span></div>
+            <h2 id="jobTitle">Urologist</h2>
+            <div class="job-meta" id="jobMeta">
+              <span>Kearney, NE</span><span>$360–$420/hour</span><span>Start: ASAP</span><span>Posted Sep 2, 2026</span>
+            </div>
+          </div>
+          <div class="job-head-actions">
+            <button class="secondary">Edit priority</button>
+            <button class="primary">Approve outreach</button>
+          </div>
+        </div>
+
+        <div class="job-status-strip">
+          <div><span>Primary recruiter</span><strong>Rey Rivera</strong></div>
+          <div><span>AI status</span><strong class="status-live"><i></i> Matching active</strong></div>
+          <div><span>Strong matches</span><strong>18</strong></div>
+          <div><span>Submission ready</span><strong>3</strong></div>
+          <div><span>SLA</span><strong class="status-good">On track</strong></div>
+        </div>
+
+        <div class="job-content-grid">
+          <div class="job-main-col">
+            <section class="panel job-requirements">
+              <div class="section-head compact">
+                <div><p class="eyebrow">Job intelligence</p><h3>What this job requires</h3></div>
+                <span class="prototype-note">Requirements below are prototype fields until JobDiva API data is connected.</span>
+              </div>
+              <div class="requirement-grid">
+                <div><span>Profession</span><strong id="reqProfession">Physician</strong></div>
+                <div><span>Specialty</span><strong id="reqSpecialty">Urology</strong></div>
+                <div><span>Location</span><strong id="reqLocation">Kearney, Nebraska</strong></div>
+                <div><span>Start timing</span><strong id="reqStart">ASAP</strong></div>
+                <div><span>License</span><strong id="reqLicense">NE active or ready before start</strong></div>
+                <div><span>Schedule</span><strong id="reqSchedule">Confirm with client</strong></div>
+              </div>
+              <div class="hard-gates">
+                <div class="hard-gates-head"><strong>Hard gates</strong><span>Only candidates who pass these move into deeper scoring.</span></div>
+                <div class="gate-chips"><span>Correct specialty</span><span>Location/travel feasible</span><span>License-ready</span><span>Start-date compatible</span></div>
+              </div>
+            </section>
+
+            <section class="panel candidate-panel">
+              <div class="section-head compact match-head">
+                <div><p class="eyebrow">AI candidate supply</p><h3>Best candidates to work now</h3></div>
+                <div class="match-filters"><button class="filter active">Best overall</button><button class="filter">Available</button><button class="filter">License ready</button><button class="filter">Near ready</button></div>
+              </div>
+
+              <article class="candidate-match">
+                <div class="candidate-rank">1</div>
+                <div class="candidate-identity"><span class="avatar match-avatar">DP</span><div><strong>Dr. Dana Patel</strong><span>Urologist · Omaha, NE</span><small>Prototype candidate</small></div></div>
+                <div class="score-ring"><strong>94</strong><span>Match</span></div>
+                <div class="candidate-signals"><span class="signal good">Clinical 98</span><span class="signal good">License ready</span><span class="signal good">Available</span><span class="signal neutral">Engagement 82</span></div>
+                <div class="match-reason"><strong>Why matched</strong><p>Same specialty, Nebraska location, strong recent experience signal, and start timing appears compatible.</p></div>
+                <div class="candidate-actions"><button class="primary small-btn">Review</button><button class="secondary small-btn">Approve outreach</button></div>
+              </article>
+
+              <article class="candidate-match">
+                <div class="candidate-rank">2</div>
+                <div class="candidate-identity"><span class="avatar match-avatar">RM</span><div><strong>Dr. Riley Morgan</strong><span>Urologist · Kansas City, MO</span><small>Prototype candidate</small></div></div>
+                <div class="score-ring"><strong>89</strong><span>Match</span></div>
+                <div class="candidate-signals"><span class="signal good">Clinical 95</span><span class="signal warn">License to confirm</span><span class="signal good">Travel willing</span><span class="signal neutral">Engagement 78</span></div>
+                <div class="match-reason"><strong>Why matched</strong><p>Strong specialty alignment and travel fit. Nebraska license readiness needs confirmation before submission-ready status.</p></div>
+                <div class="candidate-actions"><button class="primary small-btn">Review</button><button class="secondary small-btn">Qualify</button></div>
+              </article>
+
+              <article class="candidate-match">
+                <div class="candidate-rank">3</div>
+                <div class="candidate-identity"><span class="avatar match-avatar">SJ</span><div><strong>Dr. Sam Jordan</strong><span>Urologist · Denver, CO</span><small>Prototype candidate</small></div></div>
+                <div class="score-ring"><strong>86</strong><span>Match</span></div>
+                <div class="candidate-signals"><span class="signal good">Clinical 92</span><span class="signal warn">License pathway</span><span class="signal good">Travel willing</span><span class="signal warn">Availability stale</span></div>
+                <div class="match-reason"><strong>Why matched</strong><p>Relevant specialty history and travel willingness. AI should refresh availability and state-license timing before outreach.</p></div>
+                <div class="candidate-actions"><button class="primary small-btn">Review</button><button class="secondary small-btn">Refresh availability</button></div>
+              </article>
+            </section>
+          </div>
+
+          <aside class="job-side-col">
+            <section class="panel supply-card">
+              <p class="eyebrow">Candidate funnel</p><h3>18 strong matches</h3>
+              <div class="funnel-row"><span>Eligible after hard gates</span><strong>126</strong></div>
+              <div class="funnel-row"><span>Strong match</span><strong>18</strong></div>
+              <div class="funnel-row"><span>Outreach approved</span><strong>11</strong></div>
+              <div class="funnel-row"><span>Interested</span><strong>7</strong></div>
+              <div class="funnel-row"><span>Near ready</span><strong>5</strong></div>
+              <div class="funnel-row final"><span>Submission ready</span><strong>3</strong></div>
+            </section>
+
+            <section class="panel ai-activity-card">
+              <p class="eyebrow">AI activity</p><h3>Working this requisition</h3>
+              <div class="activity"><i></i><p><strong>Matching refreshed</strong><span>18 strong candidates remain after hard gates</span><small>4 min ago</small></p></div>
+              <div class="activity"><i></i><p><strong>2 replies qualified</strong><span>Availability and travel preference confirmed</span><small>22 min ago</small></p></div>
+              <div class="activity"><i></i><p><strong>1 readiness gap found</strong><span>State license timing needs verification</span><small>41 min ago</small></p></div>
+            </section>
+
+            <section class="panel ask-job-ai">
+              <p class="eyebrow">Recruit AI</p><h3>Ask about this job</h3>
+              <p>Search, compare, or take approved actions without leaving the requisition.</p>
+              <button class="ai-prompt">Show candidates who can be submission ready this week</button>
+              <button class="ai-prompt">Who has worked for this client before?</button>
+            </section>
+          </aside>
+        </div>
+      </section>
     </section>
     <section class="view" id="candidates">
       <div class="placeholder-panel"><p class="eyebrow">Candidates</p><h2>Unified candidate intelligence</h2><p>Canonical profiles, resume evidence, licenses, availability, conversations, and job matches in one place.</p></div>
