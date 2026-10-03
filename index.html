@@ -323,7 +323,126 @@
       </div>
     </section>
     <section class="view" id="customers"><div class="placeholder-panel"><p class="eyebrow">Customers</p><h2>Your customer portfolio</h2><p>Customer-owned jobs, recruiter accountability, SLA status, candidate supply, and submissions.</p></div></section>
-    <section class="view" id="conversations"><div class="placeholder-panel"><p class="eyebrow">Conversations</p><h2>Unified SMS and email qualification</h2><p>AI continues approved qualification and hands off only when human judgment is needed.</p></div></section>
+    <section class="view" id="conversations">
+      <div class="conversation-layout">
+        <aside class="conversation-list panel">
+          <div class="conversation-list-head">
+            <div><p class="eyebrow">Conversations</p><h3>Active candidate threads</h3></div>
+            <span class="badge blue">18 active</span>
+          </div>
+          <div class="conversation-tabs"><button class="active">All</button><button>Needs me</button><button>AI handling</button></div>
+
+          <button class="conversation-item active">
+            <span class="avatar small">DP</span>
+            <span class="conversation-item-copy"><strong>Dr. Dana Patel</strong><span>Urologist · Job 26-37123</span><small>AI completed qualification · 4 min ago</small></span>
+            <span class="conversation-state ready">Near Ready</span>
+          </button>
+          <button class="conversation-item">
+            <span class="avatar small">MR</span>
+            <span class="conversation-item-copy"><strong>Morgan R.</strong><span>ICU RN · Seattle</span><small>Needs recruiter judgment · 12 min ago</small></span>
+            <span class="conversation-state attention">Needs me</span>
+          </button>
+          <button class="conversation-item">
+            <span class="avatar small">JS</span>
+            <span class="conversation-item-copy"><strong>Jamie S.</strong><span>Physical Therapist · Dallas</span><small>AI qualifying · 19 min ago</small></span>
+            <span class="conversation-state ai">AI active</span>
+          </button>
+          <button class="conversation-item">
+            <span class="avatar small">AK</span>
+            <span class="conversation-item-copy"><strong>Alex K.</strong><span>Hospitalist · Phoenix</span><small>Waiting for response · 44 min ago</small></span>
+            <span class="conversation-state waiting">Waiting</span>
+          </button>
+        </aside>
+
+        <section class="conversation-thread panel">
+          <div class="thread-head">
+            <div class="thread-person"><span class="avatar">DP</span><div><strong>Dr. Dana Patel</strong><span>Urologist · Omaha, NE</span></div></div>
+            <div class="thread-meta"><span>SMS</span><span>AI qualified</span><button>Open profile</button></div>
+          </div>
+
+          <div class="thread-context">
+            <div><span>Job</span><strong>Urologist · Kearney, NE</strong></div>
+            <div><span>Match</span><strong>94</strong></div>
+            <div><span>Readiness</span><strong>Near Ready</strong></div>
+            <div><span>Owner</span><strong>Rey Rivera</strong></div>
+          </div>
+
+          <div class="thread-body">
+            <div class="thread-day">Today</div>
+            <div class="message system"><span>AI outreach approved by recruiter at 3:55 PM</span></div>
+
+            <div class="message outbound">
+              <div class="message-bubble">
+                <p>Hi Dana, this is Medlivo. We have a Urology opportunity in Kearney, Nebraska that appears to align with your background. Would you be open to hearing the details?</p>
+                <small>Medlivo AI · SMS · 3:58 PM</small>
+              </div>
+            </div>
+
+            <div class="message inbound">
+              <div class="message-bubble">
+                <p>Yes, I’m interested. I’m finishing my current coverage soon and can talk after 5.</p>
+                <small>Dana · 4:07 PM</small>
+              </div>
+            </div>
+
+            <div class="message outbound">
+              <div class="message-bubble">
+                <p>Great. A few quick questions so I can make sure the opportunity is worth your time. Are you available to start around October 19, and are you open to travel within Nebraska?</p>
+                <small>Medlivo AI · 4:08 PM</small>
+              </div>
+            </div>
+
+            <div class="message inbound">
+              <div class="message-bubble">
+                <p>Yes to both. October 19 works and travel in Nebraska is fine.</p>
+                <small>Dana · 4:12 PM</small>
+              </div>
+            </div>
+
+            <div class="message outbound">
+              <div class="message-bubble">
+                <p>Thank you. I have enough to move this forward. A Medlivo recruiter will review the remaining client-specific item and follow up with you.</p>
+                <small>Medlivo AI · 4:13 PM</small>
+              </div>
+            </div>
+
+            <div class="qualification-complete">
+              <div><span class="check">✓</span><div><strong>AI qualification complete</strong><p>Interest, availability, travel preference, and license readiness are captured.</p></div></div>
+              <button>Review summary</button>
+            </div>
+          </div>
+
+          <div class="thread-compose">
+            <div class="handoff-banner"><span class="pulse"></span><p><strong>AI can continue this conversation.</strong><span>Recruiter takeover is available anytime.</span></p><button>Take over</button></div>
+            <div class="compose-row"><textarea placeholder="Type a recruiter message or ask AI to draft one"></textarea><button class="secondary">Draft with AI</button><button class="primary">Send</button></div>
+          </div>
+        </section>
+
+        <aside class="conversation-insights">
+          <section class="panel insight-card">
+            <p class="eyebrow">Qualification summary</p><h3>Ready for recruiter review</h3>
+            <div class="insight-row"><span>Interest</span><strong class="status-good">Confirmed</strong></div>
+            <div class="insight-row"><span>Availability</span><strong>Oct 19</strong></div>
+            <div class="insight-row"><span>Travel</span><strong>Yes</strong></div>
+            <div class="insight-row"><span>License</span><strong class="status-good">Ready</strong></div>
+            <div class="insight-row"><span>Open gaps</span><strong class="status-warn">1 item</strong></div>
+          </section>
+
+          <section class="panel insight-card">
+            <p class="eyebrow">Next best action</p><h3>Close one client-specific gap</h3>
+            <p class="insight-copy">The core job fit is strong. One client-specific submission item still needs confirmation.</p>
+            <button class="primary full-btn">Request missing item</button>
+          </section>
+
+          <section class="panel ask-job-ai">
+            <p class="eyebrow">Recruit AI</p><h3>Ask about this thread</h3>
+            <p>Use the full candidate profile, job context, and conversation history.</p>
+            <button class="ai-prompt">Summarize this for recruiter handoff</button>
+            <button class="ai-prompt">What should I verify before submission?</button>
+          </section>
+        </aside>
+      </div>
+    </section>
     <section class="view" id="submissions"><div class="placeholder-panel"><p class="eyebrow">Submissions</p><h2>Submission-ready review queue</h2><p>Evidence, readiness, gaps, recruiter approval, and JobDiva write-back.</p></div></section>
     <section class="view" id="analytics"><div class="placeholder-panel"><p class="eyebrow">Analytics</p><h2>Recruiting productivity and funnel health</h2><p>Submission-ready volume, recruiter time saved, submissions, interviews, placements, and pilot performance.</p></div></section>
   </main>
