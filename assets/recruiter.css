@@ -118,3 +118,29 @@
 .pilot-funnel{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}.pilot-funnel div{padding:12px;border-radius:9px;background:#f7fafb}.pilot-funnel strong,.pilot-funnel span{display:block}.pilot-funnel strong{font-size:17px}.pilot-funnel span{font-size:8.3px;color:var(--muted);margin-top:3px}
 @media(max-width:1100px){.manager-kpis{grid-template-columns:repeat(3,1fr)}.manager-grid{grid-template-columns:1fr}.manager-side{grid-template-columns:1fr 1fr}.manager-bottom-grid{grid-template-columns:1fr}.manager-row{grid-template-columns:1.5fr 1fr .5fr .5fr .7fr}.manager-row>span:nth-child(5),.manager-row>span:nth-child(6){display:none}}
 @media(max-width:760px){.manager-head{display:grid}.manager-filters{justify-content:flex-start}.manager-kpis{grid-template-columns:repeat(2,1fr)}.manager-side{grid-template-columns:1fr}.manager-row{grid-template-columns:1.5fr .8fr .5fr}.manager-row>span:nth-child(n+4){display:none}.risk-job-list>div{grid-template-columns:1fr auto}.risk-job-list>div>span:not(.badge){display:none}.pilot-funnel{grid-template-columns:repeat(2,1fr)}}
+
+/* Final UX consistency pass */
+:root{--radius-lg:15px;--radius-md:11px;--shadow-soft:0 4px 16px rgba(16,38,65,.035)}
+button{font-family:inherit}
+.panel,.hero-card,.job-detail-head,.candidate-profile-head,.customer-overview-head,.manager-head,.submission-head{box-shadow:var(--shadow-soft)}
+.primary,.secondary,.text-btn,.quiet-btn,.ai-prompt,.filter,.job-pill,.nav-item{transition:background .15s ease,border-color .15s ease,transform .15s ease,box-shadow .15s ease}
+.primary:hover{transform:translateY(-1px);box-shadow:0 7px 16px rgba(16,38,65,.13)}
+.secondary:hover,.job-pill:hover,.ai-prompt:hover{border-color:#a4b7c2;background:#fff}
+.section-head h3,.side-title{color:var(--navy)}
+.badge{letter-spacing:.01em}
+.status-good{font-weight:800}
+.topbar{border-bottom:1px solid rgba(223,231,237,.65);margin-bottom:18px}
+.view{animation:viewFade .16s ease}
+@keyframes viewFade{from{opacity:.7;transform:translateY(2px)}to{opacity:1;transform:none}}
+.hero-card,.ai-card{min-height:190px}
+.task,.customer-card,.candidate-match,.account-job,.conversation-item,.manager-alert,.risk-job-list>div{transition:background .15s ease,border-color .15s ease}
+.task:hover,.customer-card:hover,.account-job:hover,.risk-job-list>div:hover{background:#fbfdfe}
+.candidate-match:first-of-type,.account-job:first-child,.manager-row:nth-child(2){border-top:0}
+.job-meta,.candidate-profile-identity p,.customer-overview-head p:last-child,.manager-head p:last-child{line-height:1.45}
+.prototype-note{font-style:normal}
+.full-btn{cursor:pointer}
+@media(max-width:680px){
+  .topbar{margin-bottom:14px}
+  .hero-actions,.candidate-profile-actions,.job-head-actions{flex-wrap:wrap}
+  .primary,.secondary{min-height:38px}
+}
