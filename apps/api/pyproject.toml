@@ -1,0 +1,11 @@
+[project]
+name = "medlivo-ai-api"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi[standard]==0.141.1",
+  "pydantic-settings>=2.0,<3.0",
+]
+
+[tool.uv]
+package = false
