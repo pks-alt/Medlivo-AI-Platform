@@ -626,7 +626,75 @@
         </aside>
       </div>
     </section>
-    <section class="view" id="analytics"><div class="placeholder-panel"><p class="eyebrow">Analytics</p><h2>Recruiting productivity and funnel health</h2><p>Submission-ready volume, recruiter time saved, submissions, interviews, placements, and pilot performance.</p></div></section>
+    <section class="view" id="analytics">
+      <div class="manager-head">
+        <div><p class="eyebrow">Manager dashboard</p><h2>Team performance and intervention</h2><p>See recruiter workload, jobs at risk, submission-ready pipeline, and where manager action can unblock progress.</p></div>
+        <div class="manager-filters"><button class="active">All divisions</button><button>Nursing &amp; Allied</button><button>Rehabilitation</button><button>Locum Tenens</button></div>
+      </div>
+
+      <div class="manager-kpis">
+        <div><span>Active recruiters</span><strong>18</strong><small>Across 3 divisions</small></div>
+        <div><span>Active jobs</span><strong>312</strong><small>Assigned to pilot teams</small></div>
+        <div><span>Submission ready</span><strong>47</strong><small>Awaiting recruiter action</small></div>
+        <div><span>Jobs at risk</span><strong class="status-warn">9</strong><small>Predicted SLA risk</small></div>
+        <div><span>Interviews</span><strong>21</strong><small>Current pipeline</small></div>
+        <div><span>Placements</span><strong>8</strong><small>Pilot period</small></div>
+      </div>
+
+      <div class="manager-grid">
+        <section class="panel manager-main">
+          <div class="section-head compact"><div><p class="eyebrow">Team workload</p><h3>Recruiter capacity and outcomes</h3></div><button class="text-btn">Manage assignments</button></div>
+          <div class="manager-table">
+            <div class="manager-row manager-row-head"><span>Recruiter</span><span>Division</span><span>Jobs</span><span>Ready</span><span>Replies</span><span>Risk</span><span>Capacity</span></div>
+            <div class="manager-row"><span class="recruiter-cell"><b class="avatar small">RR</b><span><strong>Rey Rivera</strong><small>Primary recruiter</small></span></span><span>Locum Tenens</span><span>28</span><span>9</span><span>17</span><span class="risk-low">Low</span><span><i class="capacity-bar"><b style="width:72%"></b></i><small>72%</small></span></div>
+            <div class="manager-row"><span class="recruiter-cell"><b class="avatar small">LM</b><span><strong>Lael McCarty</strong><small>Team lead</small></span></span><span>Rehabilitation</span><span>34</span><span>12</span><span>24</span><span class="risk-med">Medium</span><span><i class="capacity-bar"><b style="width:88%"></b></i><small>88%</small></span></div>
+            <div class="manager-row"><span class="recruiter-cell"><b class="avatar small">AK</b><span><strong>Anita K.</strong><small>Recruiter</small></span></span><span>Nursing &amp; Allied</span><span>31</span><span>8</span><span>19</span><span class="risk-high">High</span><span><i class="capacity-bar"><b style="width:96%"></b></i><small>96%</small></span></div>
+            <div class="manager-row"><span class="recruiter-cell"><b class="avatar small">DS</b><span><strong>David S.</strong><small>Recruiter</small></span></span><span>Rehabilitation</span><span>22</span><span>7</span><span>13</span><span class="risk-low">Low</span><span><i class="capacity-bar"><b style="width:61%"></b></i><small>61%</small></span></div>
+          </div>
+        </section>
+
+        <aside class="manager-side">
+          <section class="panel">
+            <p class="eyebrow">Manager attention</p><h3 class="side-title">Where to intervene</h3>
+            <div class="manager-alerts">
+              <div class="manager-alert high"><span>1</span><p><strong>3 Nursing jobs likely to miss SLA</strong><small>Low outreach volume and recruiter capacity above 90%.</small></p><button>Review</button></div>
+              <div class="manager-alert medium"><span>2</span><p><strong>5 near-ready candidates stalled</strong><small>One missing credential or client-specific item.</small></p><button>Unblock</button></div>
+              <div class="manager-alert low"><span>3</span><p><strong>Rehab team has spare capacity</strong><small>AI recommends shifting low-risk qualification work.</small></p><button>Rebalance</button></div>
+            </div>
+          </section>
+
+          <section class="panel ask-job-ai">
+            <p class="eyebrow">Manager AI</p><h3>Ask about the team</h3>
+            <p>Use recruiter workload, job risk, candidate supply, submissions, and SLA context.</p>
+            <button class="ai-prompt">Which recruiters need workload relief?</button>
+            <button class="ai-prompt">What jobs are most likely to miss SLA?</button>
+          </section>
+        </aside>
+      </div>
+
+      <div class="manager-bottom-grid">
+        <section class="panel">
+          <div class="section-head compact"><div><p class="eyebrow">At-risk jobs</p><h3>Predicted SLA risk</h3></div><button class="text-btn">View all</button></div>
+          <div class="risk-job-list">
+            <div><p><strong>ICU RN</strong><span>Providence · Seattle, WA</span></p><span>24 strong matches</span><span>7 replies</span><span class="badge amber">High risk</span><button>Open</button></div>
+            <div><p><strong>Occupational Therapist</strong><span>Axiom Rehab · Houston, TX</span></p><span>14 strong matches</span><span>5 replies</span><span class="badge amber">Medium</span><button>Open</button></div>
+            <div><p><strong>Hospitalist</strong><span>Regional Health · Phoenix, AZ</span></p><span>11 strong matches</span><span>4 replies</span><span class="badge blue">Watch</span><button>Open</button></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="section-head compact"><div><p class="eyebrow">Pilot funnel</p><h3>Quality through the pipeline</h3></div></div>
+          <div class="pilot-funnel">
+            <div><strong>1,248</strong><span>Strong matches</span></div>
+            <div><strong>386</strong><span>Interested</span></div>
+            <div><strong>214</strong><span>Qualified</span></div>
+            <div><strong>47</strong><span>Submission ready</span></div>
+            <div><strong>21</strong><span>Interviews</span></div>
+            <div><strong>8</strong><span>Placements</span></div>
+          </div>
+        </section>
+      </div>
+    </section>
   </main>
 </div>
 <script src="assets/recruiter.js"></script>
