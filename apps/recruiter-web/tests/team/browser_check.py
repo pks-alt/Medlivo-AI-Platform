@@ -1,5 +1,5 @@
-"""HTTPS browser tests. Google authorization is simulated; no external requests allowed.
-In CI the private API is the real PR #3 code, with PostgreSQL browser-session storage.
+"""HTTPS browser tests. Google authorization is simulated on loopback.
+Uses the real private API and PostgreSQL browser-session storage with synthetic records.
 """
 import json
 import os
@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from urllib.parse import urlparse, parse_qs, urlencode
+from urllib.parse import urlparse, parse_qs
 from playwright.sync_api import sync_playwright
 ORIGIN='https://localhost:9443'
 CASE='00000000-0000-0000-0000-000000000100'
@@ -22,7 +22,7 @@ def check(value,name):
 
 with tempfile.TemporaryDirectory() as folder:
     folder=Path(folder)
-    subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(folder/'tls.key'),'-out',str(folder/'tls.crt'),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost'],check=True,capture_output=True)
+    subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-keyout',str(folder/'tls.key'),'-out',str(folder/'tls.crt'),'-days','1','-subj','/CN=localhost','-addext','subjectAltName=DNS:localhost,IP:127.0.0.1'],check=True,capture_output=True)
     env={**os.environ,'TEAM_TEST_TLS_KEY':str(folder/'tls.key'),'TEAM_TEST_TLS_CERT':str(folder/'tls.crt'),'TEAM_FIXTURE_DIR':str(folder)}
     log=open(OUT/'fixture.log','w')
     server=subprocess.Popen(['node','tests/team/browser-fixture.mjs'],env=env,stdout=log,stderr=log)
@@ -41,20 +41,18 @@ with tempfile.TemporaryDirectory() as folder:
                 if server.poll() is not None:raise RuntimeError('Fixture failed: '+(OUT/'fixture.log').read_text())
                 time.sleep(.2)
             check(ready is not None,'HTTPS test server starts')
-            if os.getenv('TEAM_E2E_REAL_API')=='1':
-                check(ready['realApi'],'Browser test uses actual private workspace API')
-                check(ready['postgres'],'Browser session data is stored in PostgreSQL')
+            check(ready['realApi'],'Browser test uses actual private workspace API')
+            check(ready['postgres'],'Browser session data is stored in PostgreSQL')
             def context(actor):
                 ctx=browser.new_context(ignore_https_errors=True,viewport={'width':1440,'height':1000})
+                # Synthetic identity selection exists only on the isolated test server.
+                ctx.add_cookies([{'name':'medlivo_test_actor','value':actor,'url':ORIGIN,'secure':True,'httpOnly':True,'sameSite':'Lax'}])
                 def route_handler(route):
                     url=urlparse(route.request.url)
-                    if url.hostname=='accounts.google.com':
-                        q=parse_qs(url.query)
-                        fake=ctx.request.get(ORIGIN+'/_test/authorize?'+urlencode({'actor':actor,'nonce':q['nonce'][0],'challenge':q['code_challenge'][0]})).json()
-                        route.fulfill(status=302,headers={'Location':ORIGIN+'/api/team/auth/callback?'+urlencode({'state':q['state'][0],'code':fake['code']})},body='')
-                    elif url.hostname=='localhost':route.continue_()
-                    else:unexpected.append(route.request.url);route.abort()
+                    if url.hostname in {'localhost','127.0.0.1'}:route.continue_()
+                    else:unexpected.append(url.hostname);route.abort()
                 ctx.route('**/*',route_handler)
+                ctx.on('request',lambda req: unexpected.append(urlparse(req.url).hostname) if urlparse(req.url).hostname not in {'localhost','127.0.0.1'} else None)
                 page=ctx.new_page();page.on('pageerror',lambda e:errors.append(str(e)))
                 return ctx,page
             recruiter,page=context('recruiter-a')
@@ -105,7 +103,7 @@ with tempfile.TemporaryDirectory() as folder:
             stranger,sp=context('unprovisioned');sp.goto(ORIGIN+'/team',wait_until='networkidle');sp.get_by_role('link',name='Continue with Google').click();sp.get_by_text('Your Google account is not enabled for this workspace. Please contact your administrator.',exact=True).wait_for()
             check(stranger.request.get(ORIGIN+'/api/team/cases').status==401,'Unprovisioned Google identity cannot establish a workspace session')
             check(not errors,'No uncaught browser errors')
-            check(not unexpected,'No requests to JobDiva or non-test external services')
+            check(not unexpected,'No requests to Google, JobDiva or other non-test external services')
             browser.close()
     finally:
         server.terminate()
@@ -113,6 +111,6 @@ with tempfile.TemporaryDirectory() as folder:
         except subprocess.TimeoutExpired:server.kill()
         log.close()
         print('TEST fixture diagnostics:\n'+(OUT/'fixture.log').read_text()[-8000:],flush=True)
-    report={'passed':len(checks),'checks':checks,'browser_errors':errors,'unexpected_network_requests':unexpected,'google_signin':'simulated authorization provider; real Google not tested','private_api':'actual PR #3 service' if ready and ready['realApi'] else 'synthetic API double','session_storage':'PostgreSQL' if ready and ready['postgres'] else 'in-memory test adapter','production_deployed':False}
+    report={'passed':len(checks),'checks':checks,'browser_errors':errors,'unexpected_network_requests':unexpected,'google_signin':'simulated loopback authorization provider; real Google not tested','private_api':'actual PR #3 service with synthetic SQLite records','session_storage':'PostgreSQL','production_deployed':False}
     (OUT/'browser-result.json').write_text(json.dumps(report,indent=2))
     print(json.dumps(report,indent=2))

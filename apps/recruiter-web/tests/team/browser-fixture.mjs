@@ -1,84 +1,75 @@
-/** Integration-only HTTPS server: Google is simulated, production gateway and UI are reused.
- * Binds ONLY loopback; never imported by production routes. No production env bypass.
- * Diagnostics below contain only synthetic route paths/statuses, never token values.
+/** TEST ONLY. HTTPS loopback harness around the production gateway and real private API.
+ * Google is simulated on another loopback site. No production route imports this file.
+ * Diagnostics contain route paths/statuses only, never token values or callback queries.
  */
 import {createServer} from 'node:https';
 import {readFile,writeFile} from 'node:fs/promises';
-import {createHash,generateKeyPairSync,sign,verify,randomBytes,randomUUID} from 'node:crypto';
+import {createHash,generateKeyPairSync,sign,randomBytes,randomUUID} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {createGateway} from '../../lib/team/core.mjs';
 import {renderTeam} from '../../lib/team/ui.mjs';
-import {MemoryStore,CASE,USER,OTHER,MANAGER} from './helpers.mjs';
+import {googleVerifier} from '../../lib/team/google.mjs';
 import {PostgresSessionStore} from '../../lib/team/session-store.mjs';
+import {Pool} from 'pg';
+if(!process.env.TEAM_TEST_POSTGRES_URL || !process.env.TEAM_FIXTURE_DIR)throw new Error('Disposable test database and directory required');
 const origin='https://localhost:9443',now=()=>Math.floor(Date.now()/1000);
-const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048});
-const codes=new Map(),tokens=new Map(),receipts=new Map();
-const people={'recruiter-a':{id:USER,display_name:'Alex Chen',role:'recruiter'},'recruiter-b':{id:OTHER,display_name:'Taylor Morgan',role:'recruiter'},'manager-a':{id:MANAGER,display_name:'Jordan Lee',role:'manager'}};
-const item={id:CASE,title:'TEST · Physical Therapist · Dallas',owner_user_id:USER,version:1},notes=[],tasks=[],audit=[];
+const {privateKey,publicKey}=generateKeyPairSync('rsa',{modulusLength:2048}),codes=new Map();
 const result=(value,status=200)=>Response.json(value,{status});
-let backendProcess,pgPool,pgControl,pgSchema;
-let store=new MemoryStore();
-if(process.env.TEAM_TEST_POSTGRES_URL){
- const {Pool}=await import('pg');pgSchema='wb_browser_'+randomUUID().replaceAll('-','');pgControl=new Pool({connectionString:process.env.TEAM_TEST_POSTGRES_URL});await pgControl.query('CREATE SCHEMA '+pgSchema);
- pgPool=new Pool({connectionString:process.env.TEAM_TEST_POSTGRES_URL,options:'-c search_path='+pgSchema});
- await pgPool.query(await readFile(new URL('../../../../services/team-workspace/migrations/002_browser_sessions.sql',import.meta.url),'utf8'));
- store=new PostgresSessionStore(pgPool);
-}
-let realApi=false;
-if(process.env.TEAM_E2E_REAL_API==='1'){
- const file=process.env.TEAM_FIXTURE_DIR+'/public.pem';await writeFile(file,publicKey.export({type:'spki',format:'pem'}));
- backendProcess=spawn('python',['tests/team/backend_fixture.py'],{env:{...process.env,TEAM_FIXTURE_PUBLIC_KEY:file},stdio:['ignore','ignore','inherit']});
- for(let i=0;i<80;i++){try{if((await fetch('http://127.0.0.1:9409/health')).ok){realApi=true;break;}}catch{}await new Promise(r=>setTimeout(r,250));}
- if(!realApi)throw new Error('Synthetic private API fixture did not start');
-}
-async function mockApi(token,path,options){
- const claims=tokens.get(token),member=people[claims?.sub];if(!member)return result({},403);
- if(path==='/me')return result(member);
- const permitted=member.role==='manager'||item.owner_user_id===member.id;
- if(path.startsWith('/cases?')||path==='/cases')return result({items:permitted?[item]:[],next_cursor:null});
- if(!path.startsWith('/cases/'+CASE)||!permitted)return result({},404);
- if(path==='/cases/'+CASE)return result(item);
- const type=path.split('/')[3]?.split('?')[0],body=options.body?JSON.parse(options.body):null;
- if(options.method==='GET')return result(type==='eligible-owners'?{items:member.role==='manager'?Object.values(people).filter(p=>p.role==='recruiter'):[],truncated:false}:{items:({notes,tasks,audit})[type]||[],next_cursor:null});
- const key=member.id+':'+options.key;if(receipts.has(key))return result(receipts.get(key),201);
- let value;
- if(type==='notes'){value={id:randomUUID(),body:body.body,actor_user_id:member.id,created_at:new Date().toISOString()};notes.push(value);}
- if(type==='tasks'&&options.method==='POST'){value={id:randomUUID(),title:body.title,due_at:body.due_at,status:'open',version:1};tasks.push(value);}
- if(type==='tasks'&&options.method==='PATCH'){value=tasks.find(t=>t.id===path.split('/')[4]);if(!value)return result({},404);if(value.version!==body.expected_version)return result({},409);value.status=body.status;value.version++;}
- if(type==='reassign'){if(member.role!=='manager')return result({},403);if(item.version!==body.expected_version)return result({},409);item.owner_user_id=body.owner_user_id;item.version++;value=item;}
- audit.push({id:randomUUID(),action:type==='notes'?'note.created':type==='reassign'?'case.reassigned':'task.updated',actor_user_id:member.id,created_at:new Date().toISOString(),details:{reason:body.reason}});
- receipts.set(key,value);return result(value,options.method==='POST'&&type!=='reassign'?201:200);
-}
-const api=realApi?async(token,path,options)=>fetch('http://127.0.0.1:9409/api/v1/team'+path,{method:options.method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(options.key?{'Idempotency-Key':options.key}:{})},body:options.body,redirect:'error'}):mockApi;
-let verifier=async(token,nonce)=>{const claims=tokens.get(token);if(!claims||claims.nonce!==nonce||claims.exp<=now())throw new Error('invalid test token');const parts=token.split('.');if(!verify('RSA-SHA256',Buffer.from(parts[0]+'.'+parts[1]),publicKey,Buffer.from(parts[2],'base64url')))throw new Error();return {sub:claims.sub,exp:claims.exp};};
-try{const {googleVerifier}=await import('../../lib/team/google.mjs');verifier=googleVerifier('test.apps.googleusercontent.com','example.test',publicKey);}
-catch(e){if(process.env.GITHUB_ACTIONS)throw e;}
+const schema='wb_browser_'+randomUUID().replaceAll('-','');
+const control=new Pool({connectionString:process.env.TEAM_TEST_POSTGRES_URL});await control.query('CREATE SCHEMA '+schema);
+const pool=new Pool({connectionString:process.env.TEAM_TEST_POSTGRES_URL,options:'-c search_path='+schema});
+await pool.query(await readFile(new URL('../../../../services/team-workspace/migrations/002_browser_sessions.sql',import.meta.url),'utf8'));
+const store=new PostgresSessionStore(pool);
+const file=process.env.TEAM_FIXTURE_DIR+'/public.pem';await writeFile(file,publicKey.export({type:'spki',format:'pem'}));
+const backend=spawn('python',['tests/team/backend_fixture.py'],{env:{...process.env,TEAM_FIXTURE_PUBLIC_KEY:file},stdio:['ignore','ignore','inherit']});
+let ready=false;
+for(let i=0;i<80;i++){try{if((await fetch('http://127.0.0.1:9409/health')).ok){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,250));}
+if(!ready)throw new Error('Synthetic private API fixture did not start');
+const verify=googleVerifier('test.apps.googleusercontent.com','example.test',publicKey);
 const gateway=createGateway({config:{origin,apiUrl:'https://private-test.run.app',clientId:'test.apps.googleusercontent.com',clientSecret:'test-only-secret',domain:'example.test',encryptionKey:randomBytes(32),sessionSeconds:3300,idleSeconds:1800},store,
- api:async(...args)=>{const r=await api(...args);console.log('TEST private API',args[1].split('?')[0],r.status);return r;},
- verifyIdToken:async(...args)=>{try{const r=await verifier(...args);console.log('TEST ID token verified');return r;}catch(e){console.log('TEST ID token verification rejected');throw e;}},
+ api:async(token,path,options)=>{
+  const r=await fetch('http://127.0.0.1:9409/api/v1/team'+path,{method:options.method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(options.key?{'Idempotency-Key':options.key}:{})},body:options.body,redirect:'error'});
+  console.log('TEST private API',path.split('?')[0],r.status);return r;
+ },
+ verifyIdToken:async(...args)=>{const r=await verify(...args);console.log('TEST ID token verified');return r;},
  fetcher:async(url,options)=>{
-  const code=options.body.get('code'),flow=codes.get(code);codes.delete(code);console.log('TEST token exchange: code found',Boolean(flow));
+  if(String(url)!=='https://oauth2.googleapis.com/token')throw new Error('Unexpected test token endpoint');
+  const code=options.body.get('code'),flow=codes.get(code);codes.delete(code);
   if(!flow||createHash('sha256').update(options.body.get('code_verifier')).digest('base64url')!==flow.challenge)return result({},400);
+  console.log('TEST PKCE challenge matched');
   const claims={iss:'https://accounts.google.com',aud:'test.apps.googleusercontent.com',sub:flow.actor,hd:'example.test',email_verified:true,nonce:flow.nonce,iat:now(),exp:now()+3600};
   const prefix=Buffer.from(JSON.stringify({alg:'RS256',kid:'synthetic'})).toString('base64url')+'.'+Buffer.from(JSON.stringify(claims)).toString('base64url');
-  console.log('TEST PKCE challenge matched');
-  const token=prefix+'.'+sign('RSA-SHA256',Buffer.from(prefix),privateKey).toString('base64url');tokens.set(token,claims);return result({id_token:token});
+  return result({id_token:prefix+'.'+sign('RSA-SHA256',Buffer.from(prefix),privateKey).toString('base64url')});
  }});
 const server=createServer({key:await readFile(process.env.TEAM_TEST_TLS_KEY),cert:await readFile(process.env.TEAM_TEST_TLS_CERT)},async(req,res)=>{
  try{
   const url=new URL(req.url,origin);let response;
-  if(url.pathname==='/_test/ready')response=result({ready:true,realApi,postgres:Boolean(pgPool)});
-  else if(url.pathname==='/_test/authorize'){
-   const code=randomUUID();codes.set(code,{actor:url.searchParams.get('actor'),nonce:url.searchParams.get('nonce'),challenge:url.searchParams.get('challenge')});response=result({code});
+  if(url.pathname==='/_test/ready')response=result({ready:true,realApi:true,postgres:true});
+  else if(url.pathname==='/_test/identity-provider'){
+   const code=randomUUID();codes.set(code,{actor:url.searchParams.get('actor'),nonce:url.searchParams.get('nonce'),challenge:url.searchParams.get('code_challenge')});
+   const callback=new URL('/api/team/auth/callback',origin);callback.searchParams.set('state',url.searchParams.get('state'));callback.searchParams.set('code',code);
+   response=new Response(null,{status:303,headers:{Location:callback.href}});
   }else if(url.pathname==='/team')response=renderTeam(true);
   else if(url.pathname.startsWith('/api/team')){
    const parts=[];for await(const chunk of req)parts.push(chunk);
    response=await gateway(new Request(url,{method:req.method,headers:req.headers,...(parts.length?{body:Buffer.concat(parts)}:{})}));
   }else response=new Response(null,{status:404});
+  // Rewrite ONLY this test server's Google redirect to a loopback provider on
+  // another site (127.0.0.1 vs localhost), exercising SameSite=Lax callbacks.
+  // Production core/runtime have no provider override or actor-cookie switch.
+  if(url.pathname==='/api/team/auth/start'&&response.status===303){
+   const target=new URL(response.headers.get('location'));
+   if(target.origin!=='https://accounts.google.com')throw new Error('Unexpected authorization target');
+   const simulated=new URL('https://127.0.0.1:9443/_test/identity-provider');simulated.search=target.search;
+   const actor=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('medlivo_test_actor='))?.split('=')[1];
+   simulated.searchParams.set('actor',actor||'unprovisioned');response.headers.set('Location',simulated.href);
+  }
   console.log('TEST browser HTTP',url.pathname,response.status,'cookies present',Boolean(req.headers.cookie),'location',response.headers.has('location')?new URL(response.headers.get('location'),origin).pathname:'none');
-  res.statusCode=response.status;for(const [k,v]of response.headers)if(k!=='set-cookie')res.setHeader(k,v);if(response.headers.getSetCookie().length)res.setHeader('Set-Cookie',response.headers.getSetCookie());res.end(Buffer.from(await response.arrayBuffer()));
+  res.statusCode=response.status;for(const [k,v]of response.headers)if(k!=='set-cookie')res.setHeader(k,v);
+  if(response.headers.getSetCookie().length)res.setHeader('Set-Cookie',response.headers.getSetCookie());
+  res.end(Buffer.from(await response.arrayBuffer()));
  }catch(e){console.log('TEST fixture exception type',e?.constructor?.name);res.statusCode=500;res.end('Fixture error');}
 });
 server.listen(9443,'127.0.0.1',()=>console.log('TEST fixture ready'));
-async function close(){server.close();backendProcess?.kill();if(pgPool)await pgPool.end();if(pgControl){await pgControl.query('DROP SCHEMA '+pgSchema+' CASCADE');await pgControl.end();}process.exit(0);}
+async function close(){server.close();backend.kill();await pool.end();await control.query('DROP SCHEMA '+schema+' CASCADE');await control.end();process.exit(0);}
 process.on('SIGTERM',close);process.on('SIGINT',close);
