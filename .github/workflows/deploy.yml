@@ -55,7 +55,8 @@ jobs:
             --service-account=medlivo-ai-api@medlivo-ai-platform.iam.gserviceaccount.com
             --add-cloudsql-instances=medlivo-ai-platform:us-west1:medlivo-ai-postgres
             --set-secrets=DATABASE_URL=medlivo-ai-database-url:latest
-            --set-env-vars=USE_MOCK_DATA=false,ENVIRONMENT=development
+            --set-env-vars=USE_MOCK_DATA=true,ENVIRONMENT=development
+            --allow-unauthenticated
 
       - name: Show API URL
         run: echo "${{ steps.deploy.outputs.url }}"
@@ -99,6 +100,7 @@ jobs:
           flags: >-
             --service-account=medlivo-recruit-web@medlivo-ai-platform.iam.gserviceaccount.com
             --set-env-vars=NEXT_PUBLIC_API_URL=${{ steps.api-url.outputs.url }}
+            --allow-unauthenticated
 
       - name: Show Recruiter Web URL
         run: echo "${{ steps.deploy.outputs.url }}"
