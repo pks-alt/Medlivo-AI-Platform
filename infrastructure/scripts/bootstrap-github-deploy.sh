@@ -45,3 +45,23 @@ echo
 echo "Bootstrap complete."
 echo "GCP_WORKLOAD_IDENTITY_PROVIDER=${PROVIDER_NAME}"
 echo "GCP_DEPLOY_SERVICE_ACCOUNT=${DEPLOYER_EMAIL}"
+
+
+# RUNTIME SERVICE ACCOUNT PERMISSIONS
+API_SA="medlivo-ai-api@${PROJECT_ID}.iam.gserviceaccount.com"
+WEB_SA="medlivo-recruit-web-01@${PROJECT_ID}.iam.gserviceaccount.com"
+
+# Allow GitHub deployer to attach the runtime service accounts to Cloud Run.
+for TARGET_SA in "$API_SA" "$WEB_SA"; do
+  gcloud iam service-accounts add-iam-policy-binding "$TARGET_SA"     --member="serviceAccount:${DEPLOYER_EMAIL}"     --role="roles/iam.serviceAccountUser"     --quiet
+done
+
+# API runtime permissions.
+gcloud projects add-iam-policy-binding "$PROJECT_ID"   --member="serviceAccount:${API_SA}"   --role="roles/cloudsql.client"   --quiet
+
+if gcloud secrets describe medlivo-ai-database-url >/dev/null 2>&1; then
+  gcloud secrets add-iam-policy-binding medlivo-ai-database-url     --member="serviceAccount:${API_SA}"     --role="roles/secretmanager.secretAccessor"     --quiet
+fi
+
+echo
+echo "Runtime service-account permissions configured."
