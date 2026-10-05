@@ -17,7 +17,14 @@ assert.match(await page.text(),/login-layout/);
 const blocked=await get('/api/team/session');
 assert.equal(blocked.status,503); assert.match(blocked.headers.get('cache-control'),/no-store/);
 assert.match((await blocked.json()).detail,/not configured/);
-for(const path of ['/jobs','/jobs/sample','/candidates/sample','/api/v1/jobs','/workspace-preview/','/lib/team/core.mjs','/tests/team/fixture-server.mjs','/.env']) {
+// Check canonical paths: Next.js normalizes trailing slashes before route lookup.
+for(const path of ['/jobs','/jobs/sample','/candidates/sample','/api/v1/jobs','/workspace-preview','/lib/team/core.mjs','/tests/team/fixture-server.mjs','/.env']) {
   assert.equal((await get(path)).status,404,`${path} must not be present in the staging-only image`);
 }
-console.log('PASS: actual Next.js staging image renders team setup; credentials absent; all legacy, source and test paths return 404.');
+// Allow only the exact expected normalization, never an arbitrary redirect.
+// Fetches remain manual; a redirect alone is NOT evidence that a route is absent.
+const previewSlash=await get('/workspace-preview/');
+assert.equal(previewSlash.status,308,'Expected trailing-slash normalization');
+assert.equal(previewSlash.headers.get('location'),'/workspace-preview','Unexpected preview redirect target');
+assert.equal((await get('/workspace-preview')).status,404,'Preview redirect destination must remain unavailable');
+console.log('PASS: staging web setup, security headers, disabled session endpoint, and unavailable legacy/source/test routes verified (preview: 308 then 404).');
