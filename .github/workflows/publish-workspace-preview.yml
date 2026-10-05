@@ -1,0 +1,173 @@
+name: Publish and verify sample workspace
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/publish-workspace-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: publish-sample-workspace
+  cancel-in-progress: false
+
+jobs:
+  publish-preview:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      PREVIEW_URL: https://pks-alt.github.io/Medlivo-AI-Platform/workspace-preview/
+      EXPECTED_SHA256: 87c73df07dfc320c0e38c1075b153cc715289b49df4afeb6f3b298e8d98d0c48
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Reconstruct and verify the original standalone sample
+        run: |
+          python3 - <<'PY'
+          import base64, gzip, hashlib, json, os
+          from pathlib import Path
+          root = Path('workspace-preview')
+          parts = [root / f'build-part-{i:02d}.txt' for i in range(1, 6)]
+          raw = gzip.decompress(base64.b64decode(''.join(p.read_text().strip() for p in parts), validate=True))
+          digest = hashlib.sha256(raw).hexdigest()
+          if digest != os.environ['EXPECTED_SHA256']:
+              raise SystemExit('Artifact checksum mismatch; refusing to publish')
+          raw.decode('utf-8')
+          target = root / 'index.html'
+          exists = target.exists()
+          if exists and target.read_bytes() != raw:
+              raise SystemExit('A different preview already exists; refusing to overwrite it')
+          target.write_bytes(raw)
+          payload = {'message': 'Publish JobDiva-independent sample recruiter workspace', 'branch': 'main', 'content': base64.b64encode(raw).decode()}
+          (Path(os.environ['RUNNER_TEMP']) / 'preview-create.json').write_text(json.dumps(payload))
+          with open(os.environ['GITHUB_ENV'], 'a') as out:
+              out.write(f'PREVIEW_ALREADY_EXISTS={str(exists).lower()}\n')
+          print(f'Original artifact verified: {len(raw)} bytes; SHA256 {digest}')
+          PY
+
+      - name: Commit only the new preview page
+        if: env.PREVIEW_ALREADY_EXISTS != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method PUT "repos/${GITHUB_REPOSITORY}/contents/workspace-preview/index.html" \
+            --input "${RUNNER_TEMP}/preview-create.json" --jq '.commit.sha'
+
+      - name: Request a build of the existing GitHub Pages site
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/pages/builds" --jq '.status'
+
+      - name: Install isolated browser verification tools
+        run: |
+          npm install --prefix "${RUNNER_TEMP}/preview-browser" --no-audit --no-fund --no-save playwright@1.56.1
+          "${RUNNER_TEMP}/preview-browser/node_modules/.bin/playwright" install --with-deps chromium
+
+      - name: Verify GitHub Pages serves the exact artifact
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, time, urllib.request, urllib.error
+          for attempt in range(36):
+              try:
+                  request = urllib.request.Request(os.environ['PREVIEW_URL'] + '?verify=' + str(time.time_ns()), headers={'Cache-Control': 'no-cache'})
+                  with urllib.request.urlopen(request, timeout=20) as response:
+                      data = response.read()
+                  if hashlib.sha256(data).hexdigest() == os.environ['EXPECTED_SHA256']:
+                      print('PASS: hosted preview HTTP 200 and SHA256 matches the original workspace')
+                      break
+              except (urllib.error.URLError, TimeoutError):
+                  pass
+              time.sleep(5)
+          else:
+              raise SystemExit('GitHub Pages has not served the verified artifact; publication is not confirmed')
+          PY
+
+      - name: Verify live browser navigation and storage
+        run: |
+          cat > "${RUNNER_TEMP}/preview-browser/verify.cjs" <<'JS'
+          const { chromium } = require('playwright');
+          const assert = require('node:assert/strict');
+          const fs = require('node:fs');
+          const path = require('node:path');
+          (async () => {
+            const browser = await chromium.launch({headless:true});
+            const context = await browser.newContext({viewport:{width:1440,height:1000}});
+            const page = await context.newPage();
+            const errors = [];
+            page.on('pageerror', e => errors.push(e.message));
+            const out = path.join(process.env.GITHUB_WORKSPACE, 'preview-verification');
+            fs.mkdirSync(out, {recursive:true});
+            const checks = [];
+            try {
+              const response = await page.goto(process.env.PREVIEW_URL, {waitUntil:'networkidle'});
+              assert.equal(response.status(), 200);
+              await page.locator('h1').filter({hasText:'Today'}).waitFor();
+              assert.match(await page.locator('.demo-banner').innerText(), /SAMPLE MODE/);
+              assert.match(await page.locator('.sidebar').innerText(), /JobDiva disconnected/);
+              checks.push('Live Today screen renders with sample-only disclosure');
+              await page.screenshot({path:path.join(out,'desktop.png'),fullPage:true});
+              for (const [route, title] of [['jobs','Jobs'],['candidates','Candidates'],['customers','Customers'],['conversations','Conversations'],['submissions','Submissions'],['followups','Follow-ups'],['manager','Manager'],['settings','Settings']]) {
+                await page.locator(`nav a[href="#${route}"]`).click();
+                await page.waitForFunction(expected => document.querySelector('h1')?.textContent === expected, title);
+                assert.ok((await page.locator('main').innerText()).trim().length > 30);
+                assert.doesNotMatch(await page.locator('main').innerText(), /This view could not be rendered/);
+                checks.push(`Live navigation: ${title}`);
+              }
+              await page.selectOption('#persona','demo-manager');
+              await page.locator('nav a[href="#manager"]').click();
+              await page.getByRole('heading',{name:'Balance the work. Keep accountability.'}).waitFor();
+              await page.reload({waitUntil:'networkidle'});
+              assert.equal(await page.locator('#persona').inputValue(),'demo-manager');
+              checks.push('Hosted-origin demo persona persists across reload');
+              await page.selectOption('#persona','demo-rehab');
+              await page.goto(process.env.PREVIEW_URL+'#jobs/job-1', {waitUntil:'networkidle'});
+              await page.getByRole('heading',{name:'Physical Therapist',exact:true}).waitFor();
+              checks.push('Live job detail renders');
+              await page.goto(process.env.PREVIEW_URL+'#candidates/candidate-1?job=job-1', {waitUntil:'networkidle'});
+              await page.getByRole('heading',{name:'Jamie Sullivan',exact:true}).waitFor();
+              await page.locator('input[data-check="References reviewed"]').check();
+              await page.getByRole('button',{name:'Mark ready for review',exact:true}).click();
+              await page.getByRole('button',{name:'Approve sample packet',exact:true}).click();
+              await page.reload({waitUntil:'networkidle'});
+              await page.getByRole('button',{name:'Preview packet',exact:true}).click();
+              assert.match(await page.locator('dialog pre').innerText(), /SYNTHETIC/);
+              assert.match(await page.locator('dialog pre').innerText(), /NOT SUBMITTED/);
+              checks.push('Qualification, sample approval and saved packet survive live-origin reload');
+              await page.keyboard.press('Escape');
+              await page.setViewportSize({width:390,height:844});
+              await page.locator('nav a[href="#today"]').click();
+              await page.waitForFunction(() => document.querySelector('h1')?.textContent === 'Today');
+              assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+              await page.screenshot({path:path.join(out,'mobile.png'),fullPage:true});
+              checks.push('Live mobile view has no horizontal page overflow');
+              assert.deepEqual(errors, []);
+              checks.push('No uncaught browser JavaScript errors');
+              fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({url:process.env.PREVIEW_URL,passed:true,checks,errors,scope:'Public synthetic preview only; no JobDiva or Cloud Run connection'},null,2));
+              console.log(JSON.stringify({passed:true,checks,errors},null,2));
+            } catch (error) {
+              await page.screenshot({path:path.join(out,'failure.png'),fullPage:true}).catch(()=>{});
+              fs.writeFileSync(path.join(out,'result.json'),JSON.stringify({passed:false,checks,errors,failure:error.message},null,2));
+              throw error;
+            } finally { await browser.close(); }
+          })().catch(error => { console.error(error); process.exitCode=1; });
+          JS
+          node "${RUNNER_TEMP}/preview-browser/verify.cjs"
+
+      - name: Save browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workspace-pages-browser-verification
+          path: preview-verification/
+          if-no-files-found: ignore
+          retention-days: 7
