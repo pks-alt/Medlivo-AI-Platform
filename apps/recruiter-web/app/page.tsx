@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { getDashboard, getJobs } from "@/lib/api";
 
 export default async function Home() {
@@ -12,7 +13,7 @@ export default async function Home() {
   return (
     <main className="shell">
       <aside className="sidebar">
-        <div className="brand"><b>M</b><span>Medlivo<br/><small>Recruit AI</small></span></div>
+        <div className="brand brandLogo"><Image src="https://www.medlivo.com/assets/brand/medlivo-logo.png" alt="Medlivo" width={150} height={42} priority /><small>Recruit AI</small></div>
         <nav>
           <a className="active" href="/">Today</a>
           <a href="/jobs">Jobs</a>
