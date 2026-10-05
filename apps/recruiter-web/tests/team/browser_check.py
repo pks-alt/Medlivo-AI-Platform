@@ -18,6 +18,7 @@ checks=[];errors=[];unexpected=[]
 def check(value,name):
     assert value,name
     checks.append(name)
+    print('PASS:',name,flush=True)
 
 with tempfile.TemporaryDirectory() as folder:
     folder=Path(folder)
@@ -62,7 +63,13 @@ with tempfile.TemporaryDirectory() as folder:
             page.screenshot(path=str(OUT/'signin-desktop.png'),full_page=True)
             check(page.get_by_text('Welcome back.',exact=True).is_visible(),'Sign-in page loads with no persona impersonation control')
             page.get_by_role('link',name='Continue with Google').click()
-            page.get_by_role('heading',name='TEST · Physical Therapist · Dallas',exact=True).wait_for()
+            try:
+                page.get_by_role('heading',name='TEST · Physical Therapist · Dallas',exact=True).wait_for()
+            except Exception:
+                page.screenshot(path=str(OUT/'signin-failure.png'),full_page=True)
+                print('TEST sign-in result path:',urlparse(page.url).path,'error:',parse_qs(urlparse(page.url).query).get('error'),flush=True)
+                print('TEST synthetic page text:',page.locator('body').inner_text()[:2000],flush=True)
+                raise
             check(page.locator('#noteForm').is_visible(),'OAuth callback opens authorized work item')
             cookies=recruiter.cookies()
             session=[c for c in cookies if c['name']=='__Host-medlivo-team'][0]
@@ -105,6 +112,7 @@ with tempfile.TemporaryDirectory() as folder:
         try:server.wait(timeout=8)
         except subprocess.TimeoutExpired:server.kill()
         log.close()
+        print('TEST fixture diagnostics:\n'+(OUT/'fixture.log').read_text()[-8000:],flush=True)
     report={'passed':len(checks),'checks':checks,'browser_errors':errors,'unexpected_network_requests':unexpected,'google_signin':'simulated authorization provider; real Google not tested','private_api':'actual PR #3 service' if ready and ready['realApi'] else 'synthetic API double','session_storage':'PostgreSQL' if ready and ready['postgres'] else 'in-memory test adapter','production_deployed':False}
     (OUT/'browser-result.json').write_text(json.dumps(report,indent=2))
     print(json.dumps(report,indent=2))
