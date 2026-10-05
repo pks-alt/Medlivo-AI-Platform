@@ -49,7 +49,12 @@ echo "GCP_DEPLOY_SERVICE_ACCOUNT=${DEPLOYER_EMAIL}"
 
 # RUNTIME SERVICE ACCOUNT PERMISSIONS
 API_SA="medlivo-ai-api@${PROJECT_ID}.iam.gserviceaccount.com"
-WEB_SA="medlivo-recruit-web-01@${PROJECT_ID}.iam.gserviceaccount.com"
+WEB_SA="medlivo-recruit-web@${PROJECT_ID}.iam.gserviceaccount.com"
+
+if ! gcloud iam service-accounts describe "$API_SA" >/dev/null 2>&1; then
+  gcloud iam service-accounts create medlivo-ai-api \
+    --display-name="Medlivo AI API"
+fi
 
 # Allow GitHub deployer to attach the runtime service accounts to Cloud Run.
 for TARGET_SA in "$API_SA" "$WEB_SA"; do
