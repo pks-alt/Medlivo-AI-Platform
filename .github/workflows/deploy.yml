@@ -97,7 +97,7 @@ jobs:
           project_id: ${{ env.PROJECT_ID }}
           image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.WEB_SERVICE }}:${{ github.sha }}
           flags: >-
-            --service-account=medlivo-recruit-web-01@medlivo-ai-platform.iam.gserviceaccount.com
+            --service-account=medlivo-recruit-web@medlivo-ai-platform.iam.gserviceaccount.com
             --set-env-vars=NEXT_PUBLIC_API_URL=${{ steps.api-url.outputs.url }}
 
       - name: Show Recruiter Web URL
