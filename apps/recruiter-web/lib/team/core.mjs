@@ -107,8 +107,8 @@ export function validateConfig(env) {
 }
 function endpoint(path, method, query) {
   const id = '[0-9a-fA-F-]{36}', root = `/cases/${id}`;
-  const read = ['/me', '/cases', root, `${root}/(?:notes|tasks|audit|eligible-owners)`];
-  const write = [`${root}/(?:notes|tasks|reassign)`];
+  const read = ['/me', '/cases', '/admin/users', '/admin/teams', root, `${root}/(?:notes|tasks|audit|eligible-owners)`];
+  const write = ['/admin/users', `${root}/(?:notes|tasks|reassign)`];
   const patterns = method === 'GET' ? read : method === 'POST' ? write : method === 'PATCH' ? [`${root}/tasks/${id}`] : [];
   if (!patterns.some(p => new RegExp('^' + p + '$').test(path))) throw new SafeError(404, 'This action is not available.');
   for (const segment of path.split('/')) if (segment.includes('-') && segment.length === 36 && !UUID.test(segment)) throw new SafeError(400, 'Invalid work item.');
