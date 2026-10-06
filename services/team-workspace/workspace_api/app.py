@@ -93,6 +93,10 @@ def build_app(store, verifier):
     def me(who=Depends(identity)):
         return store.me(who)
 
+    @app.get(prefix + "/admin/teams")
+    def admin_teams(who=Depends(identity)):
+        return store.admin_teams(who)
+
     @app.get(prefix + "/admin/users")
     def admin_users(who=Depends(identity)):
         return store.admin_users(who)
