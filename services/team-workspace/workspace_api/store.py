@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from uuid import uuid4
-from sqlalchemy import select, insert, update, and_, true
+from sqlalchemy import select, insert, update, and_, true, text
 from sqlalchemy.exc import IntegrityError
 from . import tables as t
 from .auth import Identity
@@ -39,10 +39,16 @@ class WorkspaceStore:
         self.engine = engine
 
     def _principal(self, conn, identity: Identity):
-        row = conn.execute(select(t.users).join(t.identities, and_(
-            t.users.c.id == t.identities.c.user_id, t.users.c.tenant_id == t.identities.c.tenant_id
-        )).where(t.identities.c.provider == identity.provider, t.identities.c.subject == identity.subject,
-                 t.users.c.is_active.is_(True))).mappings().first()
+        def lookup():
+            return conn.execute(select(t.users).join(t.identities, and_(
+                t.users.c.id == t.identities.c.user_id, t.users.c.tenant_id == t.identities.c.tenant_id
+            )).where(t.identities.c.provider == identity.provider, t.identities.c.subject == identity.subject,
+                     t.users.c.is_active.is_(True))).mappings().first()
+        row = lookup()
+        if row is None:
+            conn.execute(text("SELECT * FROM workspace_admin.bind_google_identity(:provider,:subject,:email)"),
+                         {"provider": identity.provider, "subject": identity.subject, "email": identity.email}).all()
+            row = lookup()
         if row is None or row["role"] not in {"admin", "manager", "recruiter"}:
             raise AccessError(403, "Workspace access is not enabled for this account")
         return row
@@ -70,6 +76,38 @@ class WorkspaceStore:
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
             return {key: principal[key] for key in ("id", "display_name", "role")}
+
+    def admin_users(self, identity):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "admin":
+                raise AccessError(403, "Administrator access required")
+            rows = conn.execute(
+                select(t.users.c.id, t.users.c.email, t.users.c.display_name, t.users.c.role, t.users.c.is_active,
+                       t.profiles.c.team_id)
+                .outerjoin(t.profiles, and_(t.profiles.c.user_id == t.users.c.id,
+                                            t.profiles.c.tenant_id == t.users.c.tenant_id))
+                .where(t.users.c.tenant_id == principal["tenant_id"])
+                .order_by(t.users.c.email)
+                .limit(501)
+            ).mappings().all()
+            return {"items": [dict(row) for row in rows[:500]], "truncated": len(rows) > 500}
+
+    def admin_provision_user(self, identity, value):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "admin":
+                raise AccessError(403, "Administrator access required")
+            row = conn.execute(text(
+                "SELECT * FROM workspace_admin.provision_user("
+                ":actor_user_id,:email,:display_name,:role,:team_id,:is_active)"
+            ), {"actor_user_id": principal["id"], "email": value.email,
+                "display_name": value.display_name, "role": value.role,
+                "team_id": str(value.team_id) if value.team_id else None,
+                "is_active": value.is_active}).mappings().first()
+            if row is None:
+                raise AccessError(422, "User could not be provisioned with those settings")
+            return dict(row)
 
     def list_cases(self, identity, *, after=None, limit=50):
         with self.engine.begin() as conn:
