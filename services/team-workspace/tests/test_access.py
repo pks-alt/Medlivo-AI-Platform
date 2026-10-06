@@ -28,7 +28,7 @@ def test_invalid_claims_are_rejected(verifier, token, claims):
 
 def test_valid_signature_and_identity(verifier, token):
     assert verifier.verify(token()) == Identity("google", "recruiter-a", "recruiter-a@example.test")
-    assert verifier.verify(token(iss="accounts.google.com")) == Identity("google", "recruiter-a")
+    assert verifier.verify(token(iss="accounts.google.com")) == Identity("google", "recruiter-a", "recruiter-a@example.test")
 
 
 def test_wrong_signature_rejected(verifier, token):
