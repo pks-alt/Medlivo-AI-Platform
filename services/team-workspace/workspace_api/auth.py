@@ -17,6 +17,7 @@ class AuthenticationError(Exception):
 class Identity:
     provider: str
     subject: str
+    email: str
 
 
 class GoogleIdentityVerifier:
@@ -40,7 +41,7 @@ class GoogleIdentityVerifier:
             claims = jwt.decode(
                 token, self._key(token), algorithms=["RS256"], audience=self.client_id,
                 issuer=["accounts.google.com", "https://accounts.google.com"],
-                options={"require": ["exp", "iat", "iss", "aud", "sub", "email_verified", "hd"], "strict_aud": True},
+                options={"require": ["exp", "iat", "iss", "aud", "sub", "email", "email_verified", "hd"], "strict_aud": True},
                 leeway=0,
             )
             if claims.get("email_verified") is not True or claims.get("hd") != self.hosted_domain:
@@ -48,9 +49,15 @@ class GoogleIdentityVerifier:
             if "azp" in claims and claims["azp"] != self.client_id:
                 raise AuthenticationError("Authentication required")
             subject = claims["sub"]
+            email = claims["email"]
             if not isinstance(subject, str) or not 1 <= len(subject) <= 255:
                 raise AuthenticationError("Authentication required")
-            return Identity("google", subject)
+            if not isinstance(email, str) or not 3 <= len(email) <= 320 or email.strip() != email:
+                raise AuthenticationError("Authentication required")
+            email = email.lower()
+            if not email.endswith("@" + self.hosted_domain):
+                raise AuthenticationError("Authentication required")
+            return Identity("google", subject, email)
         except AuthenticationError:
             raise
         except (jwt.PyJWTError, ValueError, TypeError, KeyError, OSError):
