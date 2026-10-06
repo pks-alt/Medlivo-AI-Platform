@@ -34,14 +34,11 @@ load JobDiva records, or replace the public GitHub Pages preview. It extends PR 
 | Project / region | `medlivo-ai-platform` / `us-west1` |
 | Private team API | `medlivo-team-api-staging` |
 | Team login frontend | `medlivo-team-web-staging` |
-| Separate PostgreSQL instance | `medlivo-team-staging` |
+| PostgreSQL instance | `medlivo-ai-postgres` (shared instance, isolated staging databases) |
 | API runtime identity | `medlivo-team-api-staging@medlivo-ai-platform.iam.gserviceaccount.com` |
 | Browser runtime identity | `medlivo-team-web-staging@medlivo-ai-platform.iam.gserviceaccount.com` |
 
-The new SQL instance requires an operator's cost/region/backup review before creation.
-Do not reuse the existing `medlivo-ai-postgres` connection or production database
-secret just to make staging start. A separate staging project could provide stronger
-isolation but would need its own reviewed configuration, not bypassing these guards.
+`medlivo-ai-postgres` is the approved server for this staging pilot after capacity review. Staging does not reuse the production database or production database credential. It uses two separate databases, `medlivo_team_staging` and `medlivo_team_sessions_staging`, plus separate least-privilege runtime accounts. A separate SQL instance remains an optional stronger-isolation choice for production-scale or higher-risk testing, not a prerequisite for this pilot.
 
 ## What the operator does next
 
@@ -107,8 +104,7 @@ proof. Values are validated locally but credentials are never included.
 | TEAM_SESSION_KEY | medlivo-team-staging-session-key |
 
 The API URL uses `postgresql+psycopg://`; the session URL uses `postgresql://`.
-Both must point to the reviewed staging database through its Cloud SQL Unix socket
-or properly verified TLS; separate roles remain mandatory. The manifest references
+Both must point through the Cloud SQL Unix socket for `medlivo-ai-postgres`, with the API URL targeting `medlivo_team_staging` and the session URL targeting `medlivo_team_sessions_staging`; separate roles remain mandatory. The manifest references
 cannot prove what a secret contains. An administrator must verify this privately.
 Secrets access is per named secret, not project-wide. Never grant the browser runtime
 read access to canonical candidate tables or the API database credential.
