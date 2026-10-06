@@ -77,6 +77,19 @@ class WorkspaceStore:
             principal = self._principal(conn, identity)
             return {key: principal[key] for key in ("id", "display_name", "role")}
 
+    def admin_teams(self, identity):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "admin":
+                raise AccessError(403, "Administrator access required")
+            rows = conn.execute(
+                select(t.teams.c.id, t.teams.c.name, t.teams.c.division, t.teams.c.manager_user_id)
+                .where(t.teams.c.tenant_id == principal["tenant_id"])
+                .order_by(t.teams.c.name)
+                .limit(201)
+            ).mappings().all()
+            return {"items": [dict(row) for row in rows[:200]], "truncated": len(rows) > 200}
+
     def admin_users(self, identity):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
