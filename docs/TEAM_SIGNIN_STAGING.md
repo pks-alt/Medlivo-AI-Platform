@@ -56,9 +56,7 @@ it does not merge the other pending Cloud Run/API or JobDiva connector changes.
    the EXACT redirect URI `https://<approved-origin>/api/team/auth/callback`. The real
    client ID must match `WORKSPACE_GOOGLE_CLIENT_ID` on the private API. A Google `hd`
    request hint is not authorization; both gateway and private API validate the claim.
-3. Apply migration `001_workspace.sql` (previous milestone) to the staging canonical DB.
-   Apply `002_browser_sessions.sql` to the staging session DB. They may share a Cloud SQL
-   instance, but use separate least-privilege runtime DB accounts.
+3. Use `medlivo-ai-postgres` for this pilot only with isolated databases: `medlivo_team_staging` for the private API and `medlivo_team_sessions_staging` for browser sessions. Apply migration `001_workspace.sql` to the staging canonical DB and `002_browser_sessions.sql` to the staging session DB. Use separate least-privilege runtime DB accounts and never reuse the production database credential.
 4. Grant the gateway DB role only SELECT/INSERT/UPDATE/DELETE on `wb_login` and `wb_session`.
    It must not own tables or read/modify canonical candidates, identity bindings or roles.
    The private API continues to use its separately reviewed runtime grants.
