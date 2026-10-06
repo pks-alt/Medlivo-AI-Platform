@@ -16,7 +16,7 @@ PROJECT = "medlivo-ai-platform"
 REGION = "us-west1"
 API = "medlivo-team-api-staging"
 WEB = "medlivo-team-web-staging"
-SQL = "medlivo-team-staging"
+SQL = "medlivo-ai-postgres"
 REGISTRY = f"{REGION}-docker.pkg.dev/{PROJECT}/medlivo-ai-containers"
 SECRETS = {
     "WORKSPACE_DATABASE_URL": "medlivo-team-staging-api-database-url",
@@ -182,12 +182,12 @@ def inventory(reader=cloud_json):
     else:
         found = next((s for s in sql["value"] if s.get("name") == SQL), None)
         if not found:
-            add("staging_database", "missing", "Dedicated staging SQL instance not listed; no database was created or reused")
+            add("staging_database", "missing", "Approved shared SQL instance not listed; staging must use isolated databases and roles")
         else:
             ok = found.get("region") == REGION and found.get("state") == "RUNNABLE" and str(found.get("databaseVersion", "")).startswith("POSTGRES_")
             add("staging_database", "pass" if ok else "review",
                 {"name": SQL, "region_matches": found.get("region") == REGION, "runnable_postgres": ok,
-                 "note": "Does not verify schema, grants, secrets, backups or application connectivity"})
+                 "note": "Shared instance approved for staging only with separate medlivo_team_staging and medlivo_team_sessions_staging databases and least-privilege roles; this inventory does not verify those database-level controls"})
     secrets = reader(["secrets", "list"])
     if not secrets["readable"]:
         add("staging_secret_metadata", "unknown", secrets["reason"])
