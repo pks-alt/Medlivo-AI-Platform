@@ -158,7 +158,23 @@ class WorkspaceStore:
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
             self._case(conn, principal, case_id)
-            statement = select(table).where(table.c.tenant_id == principal["tenant_id"], table.c.case_id == case_id)
+            if kind == "audit":
+                statement = (
+                    select(t.audit, t.users.c.display_name.label("actor_display_name"))
+                    .join(t.users, and_(
+                        t.users.c.id == t.audit.c.actor_user_id,
+                        t.users.c.tenant_id == t.audit.c.tenant_id,
+                    ))
+                    .where(
+                        t.audit.c.tenant_id == principal["tenant_id"],
+                        t.audit.c.case_id == case_id,
+                    )
+                )
+            else:
+                statement = select(table).where(
+                    table.c.tenant_id == principal["tenant_id"],
+                    table.c.case_id == case_id,
+                )
             if after:
                 statement = statement.where(table.c.id > after)
             return self._page(conn.execute(statement.order_by(table.c.id).limit(limit + 1)).mappings().all(), limit)
