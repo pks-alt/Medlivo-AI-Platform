@@ -8,12 +8,13 @@ export function googleVerifier(clientId, domain, keySet) {
     try {
       const {payload,protectedHeader}=await jwtVerify(token,keys,{algorithms:['RS256'],audience:clientId,
         issuer:['https://accounts.google.com','accounts.google.com'],clockTolerance:0,maxTokenAge:'1h',
-        requiredClaims:['exp','iat','iss','aud','sub','email_verified','hd','nonce']});
+        requiredClaims:['exp','iat','iss','aud','sub','email','email_verified','hd','nonce']});
       if(protectedHeader.alg!=='RS256' || payload.aud!==clientId || payload.hd!==domain ||
           payload.email_verified!==true || (payload.azp!==undefined && payload.azp!==clientId) ||
-          !same(payload.nonce,nonce) || typeof payload.sub!=='string' || !payload.sub || payload.sub.length>255)
+          !same(payload.nonce,nonce) || typeof payload.sub!=='string' || !payload.sub || payload.sub.length>255 ||
+          typeof payload.email!=='string' || payload.email.toLowerCase().endsWith('@'+domain)===false)
         throw new Error();
-      return {sub:payload.sub,exp:payload.exp};
+      return {sub:payload.sub,email:payload.email.toLowerCase(),exp:payload.exp};
     } catch { throw new SafeError(401,'Google sign-in could not be verified. Please try again.'); }
   };
 }
