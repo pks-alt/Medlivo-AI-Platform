@@ -19,7 +19,7 @@ CASE = ROOT + "/cases/" + idn(100)
     {"aud": "another-client.apps.googleusercontent.com"}, {"aud": [AUDIENCE, "second-client"]},
     {"iss": "https://attacker.example"}, {"exp": 1}, {"iat": 9999999999},
     {"hd": "another.example"}, {"hd": ""}, {"email_verified": False},
-    {"email_verified": "true"}, {"sub": ""}, {"azp": "another-client"},
+    {"email_verified": "true"}, {"email": "other@wrong.example"}, {"email": ""}, {"sub": ""}, {"azp": "another-client"},
 ])
 def test_invalid_claims_are_rejected(verifier, token, claims):
     with pytest.raises(AuthenticationError):
@@ -27,7 +27,7 @@ def test_invalid_claims_are_rejected(verifier, token, claims):
 
 
 def test_valid_signature_and_identity(verifier, token):
-    assert verifier.verify(token()) == Identity("google", "recruiter-a")
+    assert verifier.verify(token()) == Identity("google", "recruiter-a", "recruiter-a@example.test")
     assert verifier.verify(token(iss="accounts.google.com")) == Identity("google", "recruiter-a")
 
 
