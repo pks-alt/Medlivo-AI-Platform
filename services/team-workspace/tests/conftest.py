@@ -29,7 +29,8 @@ def token(keys):
     def issue(subject="recruiter-a", **overrides):
         timestamp = int(time.time())
         values = {"iss": "https://accounts.google.com", "aud": AUDIENCE, "sub": subject,
-                  "iat": timestamp - 5, "exp": timestamp + 3600, "email_verified": True, "hd": DOMAIN}
+                  "email": subject + "@" + DOMAIN, "iat": timestamp - 5, "exp": timestamp + 3600,
+                  "email_verified": True, "hd": DOMAIN}
         values.update(overrides)
         return jwt.encode(values, keys[0], algorithm="RS256", headers={"kid": "synthetic-test-key"})
     return issue
