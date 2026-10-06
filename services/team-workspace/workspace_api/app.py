@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from .auth import AuthenticationError, GoogleIdentityVerifier
 from .config import Settings
-from .schemas import NoteInput, TaskInput, TaskUpdate, Reassignment
+from .schemas import NoteInput, TaskInput, TaskUpdate, Reassignment, AdminUserInput
 from .store import WorkspaceStore, AccessError
 
 
@@ -92,6 +92,14 @@ def build_app(store, verifier):
     @app.get(prefix + "/me")
     def me(who=Depends(identity)):
         return store.me(who)
+
+    @app.get(prefix + "/admin/users")
+    def admin_users(who=Depends(identity)):
+        return store.admin_users(who)
+
+    @app.post(prefix + "/admin/users", status_code=201)
+    def admin_provision_user(value: AdminUserInput, who=Depends(identity)):
+        return store.admin_provision_user(who, value)
 
     @app.get(prefix + "/cases")
     def cases(after: UUID | None = None, limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
