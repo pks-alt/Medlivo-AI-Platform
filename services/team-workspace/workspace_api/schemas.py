@@ -33,3 +33,19 @@ class Reassignment(StrictInput):
     owner_user_id: UUID
     reason: str = Field(min_length=5, max_length=500)
     expected_version: int = Field(ge=1)
+
+
+class AdminUserInput(StrictInput):
+    email: str = Field(min_length=6, max_length=320)
+    display_name: str = Field(min_length=1, max_length=200)
+    role: Literal["admin", "manager", "recruiter", "operations"]
+    team_id: UUID | None = None
+    is_active: bool = True
+
+    @field_validator("email")
+    @classmethod
+    def require_medlivo_email(cls, value):
+        value = value.lower()
+        if not value.endswith("@medlivo.com") or any(ch.isspace() for ch in value):
+            raise ValueError("Use an approved Medlivo email address")
+        return value
