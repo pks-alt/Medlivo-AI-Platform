@@ -11,7 +11,8 @@ test('live configuration rejects insecure origins, invalid keys and database TLS
  const env={TEAM_WORKSPACE_ENABLED:'true',TEAM_APP_ORIGIN:ORIGIN,TEAM_API_URL:'https://team.run.app',TEAM_GOOGLE_CLIENT_ID:'test.apps.googleusercontent.com',TEAM_GOOGLE_CLIENT_SECRET:'synthetic',TEAM_SESSION_KEY:randomBytes(32).toString('base64'),TEAM_SESSION_DATABASE_URL:'postgresql://test:synthetic@db.example.test/staging?sslmode=verify-full'};
  assert.ok(validateConfig(env));
  for(const change of [{TEAM_APP_ORIGIN:'http://workspace.example.test'},{TEAM_APP_ORIGIN:ORIGIN+'/path'},{TEAM_API_URL:'https://attacker.example'},{TEAM_SESSION_KEY:'short'},{TEAM_SESSION_DATABASE_URL:'postgresql://db/staging'}])assert.throws(()=>validateConfig({...env,...change}));
- assert.ok(validateConfig({...env,TEAM_SESSION_DATABASE_URL:'postgresql://test:synthetic@localhost/staging?host=/cloudsql/project:region:instance'}));
+ assert.ok(validateConfig({...env,TEAM_SESSION_DATABASE_URL:'postgresql://test:synthetic@/staging?host=/cloudsql/project:region:instance'}));
+ assert.throws(()=>validateConfig({...env,TEAM_SESSION_DATABASE_URL:'postgresql://test:synthetic@localhost/staging?host=/cloudsql/project:region:instance'}));
 });
 test('encryption is randomized and binds ciphertext to session ID',()=>{
  const key=randomBytes(32),payload={idToken:'private-token'};
