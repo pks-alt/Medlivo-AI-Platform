@@ -110,6 +110,13 @@ def test_cross_tenant_admin_cannot_read_notes(client, headers):
     assert client.get(CASE + "/notes", headers=headers("admin-foreign")).status_code == 404
 
 
+def test_activity_includes_actor_display_name(client, headers):
+    client.post(CASE + "/notes", json={"body": "Synthetic named activity"}, headers=headers())
+    rows = client.get(CASE + "/audit", headers=headers("manager-a")).json()["items"]
+    assert rows[0]["actor_user_id"] == idn(10)
+    assert rows[0]["actor_display_name"] == "Synthetic recruiter-a"
+
+
 def test_pagination_is_bounded_and_scoped(client, headers):
     first = client.get(ROOT + "/cases?limit=1", headers=headers("manager-a")).json()
     second = client.get(ROOT + "/cases?limit=1&after=" + first["next_cursor"], headers=headers("manager-a")).json()
