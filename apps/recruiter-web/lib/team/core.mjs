@@ -88,9 +88,20 @@ export function validateConfig(env) {
       encryptionKey.toString('base64') !== env.TEAM_SESSION_KEY ||
       !env.TEAM_SESSION_DATABASE_URL?.startsWith('postgresql://')) fail();
   // TLS or Cloud SQL Unix socket are required for the session database in production.
-  const db = new URL(env.TEAM_SESSION_DATABASE_URL);
+  // WHATWG URL rejects PostgreSQL socket URLs with an intentionally empty network host
+  // (postgresql://user:pass@/db?host=/cloudsql/...), so validate that supported form
+  // using a localhost placeholder only for parsing. The original URL is passed to pg.
+  const databaseUrl = env.TEAM_SESSION_DATABASE_URL;
+  const socketForm = /^postgresql:\/\/[^/?#@]+:[^/?#@]+@\//.test(databaseUrl);
+  let db;
+  try {
+    db = new URL(socketForm ? databaseUrl.replace('@/', '@localhost/') : databaseUrl);
+  } catch { fail(); }
   const host = db.searchParams.get('host');
-  if (!(host?.startsWith('/cloudsql/') || db.searchParams.get('sslmode') === 'verify-full')) fail();
+  const cloudSqlSocket = socketForm && host?.startsWith('/cloudsql/');
+  const verifiedTls = !socketForm && db.protocol === 'postgresql:' && db.hostname &&
+    db.searchParams.get('sslmode') === 'verify-full';
+  if (!(cloudSqlSocket || verifiedTls)) fail();
   return {origin, apiUrl, clientId, clientSecret, domain, encryptionKey,
     databaseUrl:env.TEAM_SESSION_DATABASE_URL, sessionSeconds:3300, idleSeconds:1800};
 }
