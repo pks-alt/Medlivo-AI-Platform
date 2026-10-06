@@ -47,7 +47,7 @@ class ManifestTests(unittest.TestCase):
             refs = [v['valueFrom']['secretKeyRef'] for v in runtime['containers'][0]['env'] if 'valueFrom' in v]
             self.assertEqual(len(refs), 1 if kind == 'api' else 3)
             self.assertTrue(all(r['key'] == '1' for r in refs))
-        self.assertNotIn('medlivo-ai-postgres', json.dumps(specs))
+        self.assertIn(f'{s.PROJECT}:{s.REGION}:medlivo-ai-postgres', json.dumps(specs))
         self.assertNotIn('DATABASE_URL=postgres', json.dumps(specs))
 
     def test_production_target_changes_are_rejected(self):
