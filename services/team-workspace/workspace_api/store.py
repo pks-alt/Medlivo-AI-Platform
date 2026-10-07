@@ -305,6 +305,30 @@ class WorkspaceStore:
                 "recruiters": recruiters,
             }
 
+    def list_candidates(self, identity, *, after=None, limit=50):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            statement = select(t.candidates.c.id, t.candidates.c.canonical_name).where(
+                t.candidates.c.tenant_id == principal["tenant_id"]
+            )
+            if after:
+                statement = statement.where(t.candidates.c.id > after)
+            rows = conn.execute(statement.order_by(t.candidates.c.id).limit(limit + 1)).mappings().all()
+            return self._page(rows, limit)
+
+    def get_candidate(self, identity, candidate_id):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            row = conn.execute(
+                select(t.candidates.c.id, t.candidates.c.canonical_name).where(
+                    t.candidates.c.id == candidate_id,
+                    t.candidates.c.tenant_id == principal["tenant_id"],
+                )
+            ).mappings().first()
+            if row is None:
+                raise AccessError(404, "Candidate not found")
+            return clean(row)
+
     def list_jobs(self, identity, *, after=None, limit=50):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
