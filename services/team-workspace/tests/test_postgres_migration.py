@@ -41,9 +41,14 @@ def test_admin_user_management_migration_is_audited_and_guarded(seeded):
         pytest.skip("Requires PostgreSQL administrator functions")
     root = Path(__file__).parents[1] / "migrations"
     with seeded.begin() as conn:
+        # Production canonical tables live in public. CI isolates every test in
+        # a temporary search_path schema, so qualify this migration to that
+        # disposable schema without weakening production schema qualification.
+        test_schema = conn.scalar(text("SELECT current_schema()"))
         conn.exec_driver_sql((root/"001_workspace.sql").read_text())
         conn.exec_driver_sql((root/"003_identity_admin.sql").read_text())
-        sql = (root/"004_admin_user_management.sql").read_text()
+        sql = (root/"004_admin_user_management.sql").read_text().replace(
+            "public.", '"' + test_schema + '".')
         conn.exec_driver_sql(sql)
         conn.exec_driver_sql(sql)
 
