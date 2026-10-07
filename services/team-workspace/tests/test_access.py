@@ -297,6 +297,15 @@ def test_foreign_keys_reject_cross_tenant_note(seeded):
         conn.execute(insert(t.notes).values(id=str(uuid4()),tenant_id=idn(2),case_id=idn(100),actor_user_id=idn(20),body="Synthetic",created_at=now()))
 
 
+def test_clean_serializes_postgres_uuid_values():
+    from uuid import UUID
+    from workspace_api.store import clean
+    value = UUID("00000000-0000-0000-0000-000000000123")
+    assert clean({"user_id": value, "team_id": value}) == {
+        "user_id": str(value), "team_id": str(value)
+    }
+
+
 def test_database_error_is_sanitized(client, headers, monkeypatch):
     from sqlalchemy.exc import OperationalError
     def fail(*args): raise OperationalError("SELECT secret", {}, Exception("postgresql://password@host"))
