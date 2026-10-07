@@ -47,9 +47,10 @@ function shell(){const user=session.member;
  expiryTimer=setTimeout(()=>login('Your session has ended. Please sign in again.'),Math.max(0,session.expires*1000-Date.now()));
 }
 function drawCases(){
- $('#caseCount').textContent=cases.length;
- $('#workList').innerHTML=cases.length?cases.map(c=>'<button class="case-card '+(active?.id===c.id?'active':'')+'" data-case="'+esc(c.id)+'"><strong>'+esc(c.title)+'</strong><small>'+(c.owner_user_id===session.member.id?'Assigned to you':'Team work item')+' · Version '+esc(c.version)+'</small></button>').join(''):'<div class="panel empty">No work items are assigned to this account yet. Your administrator can assign a test work item.</div>';
- $('#moreCases').hidden=!nextCase;
+ const count=$('#caseCount'),list=$('#workList'),moreButton=$('#moreCases');
+ if(count)count.textContent=cases.length;
+ if(list)list.innerHTML=cases.length?cases.map(c=>'<button class="case-card '+(active?.id===c.id?'active':'')+'" data-case="'+esc(c.id)+'"><strong>'+esc(c.title)+'</strong><small>'+(c.owner_user_id===session.member.id?'Assigned to you':'Team work item')+' · Version '+esc(c.version)+'</small></button>').join(''):'<div class="panel empty">No work items are assigned to this account yet. Your administrator can assign a test work item.</div>';
+ if(moreButton)moreButton.hidden=!nextCase;
 }
 async function loadCases(append=false){const result=await call('/cases?limit=50'+(append&&nextCase?'&after='+encodeURIComponent(nextCase):''));cases=append?[...cases,...result.items]:result.items;nextCase=result.next_cursor;drawCases();}
 async function loadCase(id){
