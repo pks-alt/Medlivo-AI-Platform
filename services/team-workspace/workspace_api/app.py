@@ -2,7 +2,7 @@
 from contextlib import asynccontextmanager
 from uuid import UUID
 from datetime import date
-from fastapi import FastAPI, Depends, HTTPException, Header, Query
+from fastapi import FastAPI, Depends, HTTPException, Header, Query, UploadFile, File, Form
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -33,7 +33,11 @@ class LimitsMiddleware:
             await send(message)
         if scope["method"] in {"POST", "PUT", "PATCH"}:
             headers = dict(scope.get("headers", []))
-            if headers.get(b"content-type", b"").split(b";", 1)[0].strip().lower() != b"application/json":
+            content_type = headers.get(b"content-type", b"")
+            media_type = content_type.split(b";", 1)[0].strip().lower()
+            path = scope.get("path", "")
+            xlsx_upload = path.endswith("/job-intake/upload") and media_type == b"multipart/form-data"
+            if media_type != b"application/json" and not xlsx_upload:
                 return await JSONResponse({"detail": "JSON body required"}, 415)(scope, receive, secure_send)
             body = bytearray()
             while True:
@@ -41,7 +45,7 @@ class LimitsMiddleware:
                 if message["type"] == "http.disconnect":
                     return
                 body.extend(message.get("body", b""))
-                max_body = 1048576 if b"/job-intake/" in scope.get("path", "").encode() else 16384
+                max_body = 5 * 1024 * 1024 if xlsx_upload else (1048576 if "/job-intake/" in path else 16384)
                 if len(body) > max_body:
                     return await JSONResponse({"detail": "Request body is too large"}, 413)(scope, receive, secure_send)
                 if not message.get("more_body", False):
@@ -125,6 +129,27 @@ def build_app(store, verifier):
     @app.get(prefix + "/job-intake/batches")
     def job_intake_batches(limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
         return store.list_job_intake_batches(who, limit=limit)
+
+    @app.post(prefix + "/job-intake/upload", status_code=201)
+    async def upload_job_intake(
+        customer_name: str = Form(min_length=1, max_length=200),
+        division: str = Form(),
+        source_file: UploadFile = File(),
+        team_id: UUID | None = Form(default=None),
+        idempotency_key: UUID = Header(),
+        who=Depends(identity),
+    ):
+        if division not in {"Rehabilitation", "Nursing & Allied", "Locum Tenens"}:
+            raise HTTPException(422, "Unsupported division")
+        filename = (source_file.filename or "").strip()
+        if not filename.lower().endswith(".xlsx"):
+            raise HTTPException(422, "Upload an .xlsx workbook")
+        content = await source_file.read()
+        return store.upload_job_intake_xlsx(
+            who, str(idempotency_key), customer_name=customer_name, division=division,
+            source_filename=filename, team_id=str(team_id) if team_id is not None else None,
+            content=content,
+        )
 
     @app.post(prefix + "/job-intake/batches", status_code=201)
     def create_job_intake_batch(value: JobIntakeBatchInput, idempotency_key: UUID = Header(), who=Depends(identity)):
