@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -56,3 +56,33 @@ class AdminUserUpdate(StrictInput):
     role: Literal["admin", "manager", "recruiter"]
     team_id: UUID | None = None
     is_active: bool
+
+
+class JobIntakeBatchInput(StrictInput):
+    customer_name: str = Field(min_length=1, max_length=200)
+    division: Literal["Rehabilitation", "Nursing & Allied", "Locum Tenens"]
+    source_filename: str = Field(min_length=1, max_length=255)
+    team_id: UUID | None = None
+    mapping: dict[str, str] = Field(default_factory=dict)
+
+
+class CustomerJobMappingInput(StrictInput):
+    customer_name: str = Field(min_length=1, max_length=200)
+    division: Literal["Rehabilitation", "Nursing & Allied", "Locum Tenens"]
+    mapping: dict[str, str]
+
+
+class WeeklyGoalInput(StrictInput):
+    week_start: date
+    submissions_target: int = Field(ge=0, le=1000)
+    interviews_target: int = Field(ge=0, le=1000)
+    closures_target: int = Field(ge=0, le=1000)
+    priority_jobs_target: int = Field(default=0, ge=0, le=1000)
+    notes: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("week_start")
+    @classmethod
+    def require_monday(cls, value):
+        if value.weekday() != 0:
+            raise ValueError("week_start must be a Monday")
+        return value
