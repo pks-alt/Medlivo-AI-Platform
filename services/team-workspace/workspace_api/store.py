@@ -531,3 +531,263 @@ class WorkspaceStore:
             return dict(case, owner_user_id=owner_user_id, version=expected_version + 1, updated_at=timestamp)
         return self._mutate(identity, case_id, key, "case.reassigned", {"owner_user_id": owner_user_id,
                              "reason": reason, "expected_version": expected_version}, apply)
+
+
+    def _global_mutate(self, identity, key, action, payload, callback):
+        fingerprint = hashlib.sha256(json.dumps({"action": action, "payload": payload},
+            sort_keys=True, separators=(",", ":"), default=json_value).encode()).hexdigest()
+        try:
+            with self.engine.begin() as conn:
+                principal = self._principal(conn, identity)
+                replay = self._receipt(conn, principal, key, fingerprint)
+                if replay is not None:
+                    return replay
+                result = clean(callback(conn, principal))
+                conn.execute(insert(t.operations).values(
+                    tenant_id=principal["tenant_id"], actor_user_id=principal["id"],
+                    idempotency_key=key, fingerprint=fingerprint, result=result, created_at=now()))
+                return result
+        except IntegrityError:
+            with self.engine.begin() as conn:
+                principal = self._principal(conn, identity)
+                replay = self._receipt(conn, principal, key, fingerprint)
+                if replay is not None:
+                    return replay
+            raise AccessError(409, "Conflicting change; reload before retrying") from None
+
+    def _team_allowed(self, conn, principal, team_id):
+        if principal["role"] == "admin":
+            return conn.execute(select(t.teams.c.id).where(
+                t.teams.c.id == team_id, t.teams.c.tenant_id == principal["tenant_id"]
+            )).first() is not None
+        if principal["role"] == "manager":
+            return conn.execute(select(t.teams.c.id).where(
+                t.teams.c.id == team_id, t.teams.c.tenant_id == principal["tenant_id"],
+                t.teams.c.manager_user_id == principal["id"]
+            )).first() is not None
+        return False
+
+    def create_job_intake_batch(self, identity, key, value):
+        payload = {
+            "customer_name": value.customer_name, "division": value.division,
+            "source_filename": value.source_filename,
+            "team_id": str(value.team_id) if value.team_id else None,
+            "mapping": value.mapping,
+        }
+        def apply(conn, principal):
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+            team_id = str(value.team_id) if value.team_id else None
+            if principal["role"] == "manager":
+                managed = conn.execute(select(t.teams.c.id).where(
+                    t.teams.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                    t.teams.c.division == value.division,
+                ).order_by(t.teams.c.id).limit(2)).scalars().all()
+                if team_id is None:
+                    if len(managed) != 1:
+                        raise AccessError(422, "Select the team for this intake batch")
+                    team_id = managed[0]
+            if team_id is not None and not self._team_allowed(conn, principal, team_id):
+                raise AccessError(422, "Select a team you are authorized to manage")
+            timestamp = now()
+            row = dict(
+                id=uid(), tenant_id=principal["tenant_id"], team_id=team_id,
+                uploaded_by=principal["id"], customer_name=value.customer_name,
+                division=value.division, source_filename=value.source_filename,
+                status="draft", mapping=value.mapping, row_count=0, ready_count=0,
+                review_count=0, duplicate_count=0, created_at=timestamp, updated_at=timestamp,
+            )
+            conn.execute(insert(t.job_intake_batches).values(**row))
+            return row
+        return self._global_mutate(identity, key, "job_intake.batch.created", payload, apply)
+
+    def list_job_intake_batches(self, identity, *, limit=50):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            statement = select(t.job_intake_batches).where(
+                t.job_intake_batches.c.tenant_id == principal["tenant_id"]
+            )
+            if principal["role"] == "manager":
+                managed_teams = select(t.teams.c.id).where(
+                    t.teams.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+                statement = statement.where(t.job_intake_batches.c.team_id.in_(managed_teams))
+            elif principal["role"] != "admin":
+                raise AccessError(403, "Manager access required")
+            rows = conn.execute(statement.order_by(
+                t.job_intake_batches.c.created_at.desc(), t.job_intake_batches.c.id.desc()
+            ).limit(limit)).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
+    def upsert_customer_job_mapping(self, identity, key, value):
+        payload = {"customer_name": value.customer_name, "division": value.division, "mapping": value.mapping}
+        def apply(conn, principal):
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+            where = and_(
+                t.customer_job_mappings.c.tenant_id == principal["tenant_id"],
+                t.customer_job_mappings.c.customer_name == value.customer_name,
+                t.customer_job_mappings.c.division == value.division,
+            )
+            old = conn.execute(select(t.customer_job_mappings).where(where)).mappings().first()
+            timestamp = now()
+            if old:
+                conn.execute(update(t.customer_job_mappings).where(where).values(
+                    mapping=value.mapping, updated_by=principal["id"], updated_at=timestamp
+                ))
+                return dict(old, mapping=value.mapping, updated_by=principal["id"], updated_at=timestamp)
+            row = dict(
+                id=uid(), tenant_id=principal["tenant_id"], customer_name=value.customer_name,
+                division=value.division, mapping=value.mapping, updated_by=principal["id"],
+                created_at=timestamp, updated_at=timestamp,
+            )
+            conn.execute(insert(t.customer_job_mappings).values(**row))
+            return row
+        return self._global_mutate(identity, key, "job_intake.mapping.upserted", payload, apply)
+
+    def list_customer_job_mappings(self, identity, *, division=None):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+            statement = select(t.customer_job_mappings).where(
+                t.customer_job_mappings.c.tenant_id == principal["tenant_id"]
+            )
+            if division:
+                statement = statement.where(t.customer_job_mappings.c.division == division)
+            rows = conn.execute(statement.order_by(
+                t.customer_job_mappings.c.customer_name, t.customer_job_mappings.c.division
+            ).limit(500)).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
+    def set_weekly_goal(self, identity, recruiter_user_id, key, value):
+        payload = {
+            "recruiter_user_id": recruiter_user_id, "week_start": value.week_start.isoformat(),
+            "submissions_target": value.submissions_target, "interviews_target": value.interviews_target,
+            "closures_target": value.closures_target, "priority_jobs_target": value.priority_jobs_target,
+            "notes": value.notes,
+        }
+        def apply(conn, principal):
+            recruiter = conn.execute(
+                select(t.users.c.id, t.profiles.c.team_id)
+                .join(t.profiles, and_(
+                    t.profiles.c.user_id == t.users.c.id,
+                    t.profiles.c.tenant_id == t.users.c.tenant_id,
+                ))
+                .where(
+                    t.users.c.id == recruiter_user_id,
+                    t.users.c.tenant_id == principal["tenant_id"],
+                    t.users.c.role == "recruiter",
+                    t.users.c.is_active.is_(True),
+                )
+            ).mappings().first()
+            if recruiter is None:
+                raise AccessError(404, "Recruiter not found")
+            if principal["role"] == "recruiter":
+                if principal["id"] != recruiter_user_id:
+                    raise AccessError(403, "Recruiters can set only their own goals")
+            elif principal["role"] in {"manager", "admin"}:
+                if principal["role"] == "manager" and not self._team_allowed(conn, principal, recruiter["team_id"]):
+                    raise AccessError(403, "Recruiter is outside your team")
+            else:
+                raise AccessError(403, "Workspace access required")
+            where = and_(
+                t.weekly_goals.c.tenant_id == principal["tenant_id"],
+                t.weekly_goals.c.recruiter_user_id == recruiter_user_id,
+                t.weekly_goals.c.week_start == value.week_start,
+            )
+            timestamp = now()
+            existing = conn.execute(select(t.weekly_goals).where(where)).mappings().first()
+            values = dict(
+                team_id=recruiter["team_id"],
+                submissions_target=value.submissions_target,
+                interviews_target=value.interviews_target,
+                closures_target=value.closures_target,
+                priority_jobs_target=value.priority_jobs_target,
+                notes=value.notes, updated_at=timestamp,
+            )
+            if existing:
+                conn.execute(update(t.weekly_goals).where(where).values(**values))
+                return dict(existing, **values)
+            row = dict(
+                id=uid(), tenant_id=principal["tenant_id"], recruiter_user_id=recruiter_user_id,
+                created_by=principal["id"], created_at=timestamp, week_start=value.week_start, **values
+            )
+            conn.execute(insert(t.weekly_goals).values(**row))
+            return row
+        return self._global_mutate(identity, key, "weekly_goal.set", payload, apply)
+
+    def weekly_review(self, identity, week_start, *, team_id=None):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+            if team_id is not None and not self._team_allowed(conn, principal, team_id):
+                raise AccessError(403, "Team is outside your scope")
+            teams_stmt = select(t.teams.c.id, t.teams.c.name, t.teams.c.division).where(
+                t.teams.c.tenant_id == principal["tenant_id"]
+            )
+            if principal["role"] == "manager":
+                teams_stmt = teams_stmt.where(t.teams.c.manager_user_id == principal["id"])
+            if team_id is not None:
+                teams_stmt = teams_stmt.where(t.teams.c.id == team_id)
+            team_rows = conn.execute(teams_stmt).mappings().all()
+            team_ids = [r["id"] for r in team_rows]
+            if not team_ids:
+                return {"week_start": week_start.isoformat(), "teams": [], "recruiters": []}
+            recruiters = conn.execute(
+                select(t.users.c.id, t.users.c.display_name, t.users.c.email, t.profiles.c.team_id)
+                .join(t.profiles, and_(
+                    t.profiles.c.user_id == t.users.c.id,
+                    t.profiles.c.tenant_id == t.users.c.tenant_id,
+                ))
+                .where(
+                    t.users.c.tenant_id == principal["tenant_id"],
+                    t.users.c.role == "recruiter", t.users.c.is_active.is_(True),
+                    t.profiles.c.team_id.in_(team_ids),
+                )
+                .order_by(t.users.c.display_name, t.users.c.email)
+            ).mappings().all()
+            goals = conn.execute(select(t.weekly_goals).where(
+                t.weekly_goals.c.tenant_id == principal["tenant_id"],
+                t.weekly_goals.c.team_id.in_(team_ids),
+                t.weekly_goals.c.week_start == week_start,
+            )).mappings().all()
+            snapshots = conn.execute(select(t.weekly_snapshots).where(
+                t.weekly_snapshots.c.tenant_id == principal["tenant_id"],
+                t.weekly_snapshots.c.team_id.in_(team_ids),
+                t.weekly_snapshots.c.week_start == week_start,
+            )).mappings().all()
+            goal_by_user = {r["recruiter_user_id"]: r for r in goals}
+            snap_by_user = {r["recruiter_user_id"]: r for r in snapshots}
+            items = []
+            for recruiter in recruiters:
+                goal = goal_by_user.get(recruiter["id"])
+                actual = snap_by_user.get(recruiter["id"])
+                targets = {
+                    "submissions": goal["submissions_target"] if goal else 0,
+                    "interviews": goal["interviews_target"] if goal else 0,
+                    "closures": goal["closures_target"] if goal else 0,
+                    "priority_jobs": goal["priority_jobs_target"] if goal else 0,
+                }
+                actuals = {
+                    "submissions": actual["submissions_actual"] if actual else 0,
+                    "interviews": actual["interviews_actual"] if actual else 0,
+                    "closures": actual["closures_actual"] if actual else 0,
+                    "offers": actual["offers_actual"] if actual else 0,
+                    "starts": actual["starts_actual"] if actual else 0,
+                    "qualified": actual["qualified_actual"] if actual else 0,
+                    "responses": actual["responses_actual"] if actual else 0,
+                }
+                items.append({
+                    **dict(recruiter), "targets": targets, "actuals": actuals,
+                    "notes": goal["notes"] if goal else None,
+                    "actuals_generated_at": actual["generated_at"] if actual else None,
+                })
+            return {
+                "week_start": week_start.isoformat(),
+                "teams": [dict(r) for r in team_rows],
+                "recruiters": clean(items),
+            }
