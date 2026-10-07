@@ -107,7 +107,7 @@ with tempfile.TemporaryDirectory() as folder:
             check(summary.get_by_text('Open follow-ups',exact=True).is_visible(),'Manager overview shows open follow-up metric')
             check(summary.get_by_text('Overdue follow-ups',exact=True).is_visible(),'Manager overview shows overdue follow-up metric')
             check(mp.get_by_role('heading',name='Recruiter workload',exact=True).is_visible(),'Manager overview shows recruiter workload')
-            workload=mp.get_by_role('table',name='Recruiter workload')
+            workload=mp.locator('table.manager-table')
             workload.get_by_text('Alex Chen',exact=True).wait_for()
             check(True,'Manager overview includes managed-team recruiter')
             check(mp.get_by_text('Synthetic recruiter-other',exact=True).count()==0,'Manager overview excludes recruiters from other teams')
