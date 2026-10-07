@@ -45,7 +45,11 @@ class WorkspaceStore:
             )).where(t.identities.c.provider == identity.provider, t.identities.c.subject == identity.subject,
                      t.users.c.is_active.is_(True))).mappings().first()
         row = lookup()
-        if row is None and conn.dialect.name == "postgresql":
+        # Automatic first-login binding is deliberately limited to the same
+        # Medlivo email namespace enforced by the guarded database function.
+        # Other verified domains remain ordinary unprovisioned access denials.
+        if (row is None and conn.dialect.name == "postgresql"
+                and identity.email.lower().endswith("@medlivo.com")):
             conn.execute(text("SELECT * FROM workspace_admin.bind_google_identity(:provider,:subject,:email)"),
                          {"provider": identity.provider, "subject": identity.subject, "email": identity.email}).all()
             row = lookup()
