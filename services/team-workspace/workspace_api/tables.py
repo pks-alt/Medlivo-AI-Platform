@@ -56,6 +56,12 @@ audit = Table("ws_audit", metadata, U("id", primary_key=True), U("tenant_id", nu
               Column("details", JSON, nullable=False), D("created_at", nullable=False),
               ForeignKeyConstraint(["tenant_id", "case_id"], ["ws_case.tenant_id", "ws_case.id"]),
               ForeignKeyConstraint(["tenant_id", "actor_user_id"], ["app_user.tenant_id", "app_user.id"]))
+admin_audit = Table("ws_admin_audit", metadata, U("id", primary_key=True), U("tenant_id", nullable=False),
+                    U("actor_user_id", nullable=False), U("target_user_id", nullable=False),
+                    S("action", nullable=False), Column("before_state", JSON, nullable=False),
+                    Column("after_state", JSON, nullable=False), D("created_at", nullable=False),
+                    ForeignKeyConstraint(["tenant_id", "actor_user_id"], ["app_user.tenant_id", "app_user.id"]),
+                    ForeignKeyConstraint(["tenant_id", "target_user_id"], ["app_user.tenant_id", "app_user.id"]))
 operations = Table("ws_operation", metadata, U("tenant_id", primary_key=True), U("actor_user_id", primary_key=True),
                    U("idempotency_key", primary_key=True), S("fingerprint", nullable=False),
                    Column("result", JSON, nullable=False), D("created_at", nullable=False),
