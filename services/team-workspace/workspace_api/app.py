@@ -12,7 +12,7 @@ from .auth import AuthenticationError, GoogleIdentityVerifier
 from .config import Settings
 from .schemas import (
     NoteInput, TaskInput, TaskUpdate, Reassignment, AdminUserInput, AdminUserUpdate,
-    JobIntakeBatchInput, CustomerJobMappingInput, WeeklyGoalInput,
+    JobIntakeBatchInput, CustomerJobMappingInput, WeeklyGoalInput, JobIntakeRowsInput,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -41,7 +41,8 @@ class LimitsMiddleware:
                 if message["type"] == "http.disconnect":
                     return
                 body.extend(message.get("body", b""))
-                if len(body) > 16384:
+                max_body = 1048576 if b"/job-intake/" in scope.get("path", "").encode() else 16384
+                if len(body) > max_body:
                     return await JSONResponse({"detail": "Request body is too large"}, 413)(scope, receive, secure_send)
                 if not message.get("more_body", False):
                     break
@@ -128,6 +129,15 @@ def build_app(store, verifier):
     @app.post(prefix + "/job-intake/batches", status_code=201)
     def create_job_intake_batch(value: JobIntakeBatchInput, idempotency_key: UUID = Header(), who=Depends(identity)):
         return store.create_job_intake_batch(who, str(idempotency_key), value)
+
+    @app.post(prefix + "/job-intake/batches/{batch_id}/rows")
+    def process_job_intake_rows(batch_id: UUID, value: JobIntakeRowsInput,
+                                idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.ingest_job_intake_rows(who, str(batch_id), str(idempotency_key), value)
+
+    @app.get(prefix + "/job-intake/batches/{batch_id}/items")
+    def job_intake_items(batch_id: UUID, limit: int = Query(default=200, ge=1, le=500), who=Depends(identity)):
+        return store.list_job_intake_items(who, str(batch_id), limit=limit)
 
     @app.get(prefix + "/job-intake/mappings")
     def job_intake_mappings(division: str | None = None, who=Depends(identity)):
