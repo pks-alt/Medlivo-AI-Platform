@@ -626,6 +626,14 @@ class WorkspaceStore:
         def apply(conn, principal):
             if principal["role"] not in {"manager", "admin"}:
                 raise AccessError(403, "Manager access required")
+            if principal["role"] == "manager":
+                allowed_division = conn.execute(select(t.teams.c.id).where(
+                    t.teams.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                    t.teams.c.division == value.division,
+                )).first()
+                if allowed_division is None:
+                    raise AccessError(403, "Division is outside your scope")
             where = and_(
                 t.customer_job_mappings.c.tenant_id == principal["tenant_id"],
                 t.customer_job_mappings.c.customer_name == value.customer_name,
@@ -655,6 +663,12 @@ class WorkspaceStore:
             statement = select(t.customer_job_mappings).where(
                 t.customer_job_mappings.c.tenant_id == principal["tenant_id"]
             )
+            if principal["role"] == "manager":
+                managed_divisions = select(t.teams.c.division).where(
+                    t.teams.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+                statement = statement.where(t.customer_job_mappings.c.division.in_(managed_divisions))
             if division:
                 statement = statement.where(t.customer_job_mappings.c.division == division)
             rows = conn.execute(statement.order_by(
