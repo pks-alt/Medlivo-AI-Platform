@@ -87,9 +87,16 @@ def seeded(engine):
         ])
         for user, tenant, team in [(10,1,30),(11,1,30),(15,1,31),(16,1,30),(20,2,32)]:
             conn.execute(insert(t.profiles).values(user_id=idn(user), tenant_id=idn(tenant), team_id=idn(team)))
-        for case, tenant, team, owner in [(100,1,30,10),(101,1,30,11),(102,1,31,15),(103,2,32,20)]:
+        for job, tenant, title in [
+            (200,1,"Synthetic Physical Therapist"), (201,1,"Synthetic Occupational Therapist"),
+            (202,1,"Synthetic Registered Nurse"), (203,2,"Synthetic Foreign Job"),
+        ]:
+            conn.execute(insert(t.jobs).values(id=idn(job), tenant_id=idn(tenant), title=title))
+        for case, tenant, team, owner, job in [
+            (100,1,30,10,200),(101,1,30,11,201),(102,1,31,15,202),(103,2,32,20,203)
+        ]:
             conn.execute(insert(t.cases).values(id=idn(case), tenant_id=idn(tenant), team_id=idn(team), owner_user_id=idn(owner),
-                title=f"Synthetic work item {case}", version=1, created_at=now(), updated_at=now()))
+                job_id=idn(job), title=f"Synthetic work item {case}", version=1, created_at=now(), updated_at=now()))
     return engine
 
 
