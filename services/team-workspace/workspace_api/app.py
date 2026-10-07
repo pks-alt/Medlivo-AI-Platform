@@ -117,6 +117,14 @@ def build_app(store, verifier):
     def manager_overview(who=Depends(identity)):
         return store.manager_overview(who)
 
+    @app.get(prefix + "/candidates")
+    def candidates(after: UUID | None = None, limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
+        return store.list_candidates(who, after=str(after) if after else None, limit=limit)
+
+    @app.get(prefix + "/candidates/{candidate_id}")
+    def candidate(candidate_id: UUID, who=Depends(identity)):
+        return store.get_candidate(who, str(candidate_id))
+
     @app.get(prefix + "/jobs")
     def jobs(after: UUID | None = None, limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
         return store.list_jobs(who, after=str(after) if after else None, limit=limit)
