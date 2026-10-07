@@ -147,6 +147,30 @@ def test_admin_overview_stays_inside_tenant(client, headers):
     assert idn(20) not in {row["id"] for row in data["recruiters"]}
 
 
+def test_jobs_are_tenant_scoped_for_all_supported_roles(client, headers):
+    for subject in ("recruiter-a", "manager-a", "admin-a"):
+        response = client.get(ROOT + "/jobs", headers=headers(subject))
+        assert response.status_code == 200
+        assert [row["id"] for row in response.json()["items"]] == [idn(200), idn(201), idn(202)]
+    foreign = client.get(ROOT + "/jobs", headers=headers("admin-foreign"))
+    assert [row["id"] for row in foreign.json()["items"]] == [idn(203)]
+
+
+def test_job_detail_hides_foreign_and_unknown_ids(client, headers):
+    assert client.get(ROOT + "/jobs/" + idn(200), headers=headers()).json()["title"] == "Synthetic Physical Therapist"
+    for job_id in (203, 999):
+        response = client.get(ROOT + "/jobs/" + idn(job_id), headers=headers())
+        assert response.status_code == 404
+        assert response.json() == {"detail": "Job not found"}
+
+
+def test_jobs_pagination_is_bounded(client, headers):
+    first = client.get(ROOT + "/jobs?limit=2", headers=headers()).json()
+    second = client.get(ROOT + "/jobs?limit=2&after=" + first["next_cursor"], headers=headers()).json()
+    assert [row["id"] for row in first["items"] + second["items"]] == [idn(200), idn(201), idn(202)]
+    assert client.get(ROOT + "/jobs?limit=101", headers=headers()).status_code == 422
+
+
 def test_hidden_and_nonexistent_return_same_result(client, headers):
     results = [client.get(ROOT + "/cases/" + idn(case), headers=headers()).json() for case in (101,103,999)]
     assert results == [{"detail": "Work item not found"}] * 3
