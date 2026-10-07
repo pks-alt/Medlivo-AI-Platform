@@ -37,7 +37,7 @@ const gateway=createGateway({config:{origin,apiUrl:'https://private-test.run.app
   const code=options.body.get('code'),flow=codes.get(code);codes.delete(code);
   if(!flow||createHash('sha256').update(options.body.get('code_verifier')).digest('base64url')!==flow.challenge)return result({},400);
   console.log('TEST PKCE challenge matched');
-  const claims={iss:'https://accounts.google.com',aud:'test.apps.googleusercontent.com',sub:flow.actor,hd:'example.test',email_verified:true,nonce:flow.nonce,iat:now(),exp:now()+3600};
+  const claims={iss:'https://accounts.google.com',aud:'test.apps.googleusercontent.com',sub:flow.actor,email:flow.actor+'@example.test',hd:'example.test',email_verified:true,nonce:flow.nonce,iat:now(),exp:now()+3600};
   const prefix=Buffer.from(JSON.stringify({alg:'RS256',kid:'synthetic'})).toString('base64url')+'.'+Buffer.from(JSON.stringify(claims)).toString('base64url');
   return result({id_token:prefix+'.'+sign('RSA-SHA256',Buffer.from(prefix),privateKey).toString('base64url')});
  }});
