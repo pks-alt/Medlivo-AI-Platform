@@ -114,7 +114,7 @@ function endpoint(path, method, query) {
     root, `${root}/(?:notes|tasks|audit|eligible-owners)`
   ];
   const post = [
-    '/admin/users', '/job-intake/batches', `/job-intake/batches/${id}/rows`,
+    '/admin/users', '/job-intake/upload', '/job-intake/batches', `/job-intake/batches/${id}/rows`,
     `${root}/(?:notes|tasks|reassign)`
   ];
   const put = ['/job-intake/mappings', `/recruiters/${id}/weekly-goals`];
@@ -204,18 +204,29 @@ export function createGateway({config, store, verifyIdToken, api, fetcher = fetc
   }
   async function proxy(request, url, data) {
     const method = request.method, resource = endpoint(url.pathname.slice('/api/team'.length), method, url.searchParams);
-    let body, key;
+    let body, key, contentType;
     if (method !== 'GET') {
       csrfCheck(request,data);
       key = request.headers.get('idempotency-key');
       if (!UUID.test(key || '')) throw new SafeError(400, 'A request identifier is required. Reload and try again.');
-      if (request.headers.get('content-type')?.split(';')[0].trim() !== 'application/json') throw new SafeError(415,'A JSON request is required.');
-      try { body = await boundedText(request, 16384); }
-      catch (error) { if (error instanceof SafeError) throw new SafeError(413,'The request body is too large.'); throw error; }
-      try { const value=JSON.parse(body); if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(); }
-      catch { throw new SafeError(400, 'Invalid request body.'); }
+      contentType = request.headers.get('content-type') || '';
+      const isXlsxUpload = resource === '/job-intake/upload' && method === 'POST';
+      if (isXlsxUpload) {
+        if (!contentType.toLowerCase().startsWith('multipart/form-data;')) throw new SafeError(415,'An Excel upload is required.');
+        const declared = Number(request.headers.get('content-length') || '0');
+        if (Number.isFinite(declared) && declared > 5 * 1024 * 1024) throw new SafeError(413,'The spreadsheet is too large.');
+        const bytes = await request.arrayBuffer();
+        if (bytes.byteLength > 5 * 1024 * 1024) throw new SafeError(413,'The spreadsheet is too large.');
+        body = bytes;
+      } else {
+        if (contentType.split(';')[0].trim() !== 'application/json') throw new SafeError(415,'A JSON request is required.');
+        try { body = await boundedText(request, resource.includes('/job-intake/') ? 1048576 : 16384); }
+        catch (error) { if (error instanceof SafeError) throw new SafeError(413,'The request body is too large.'); throw error; }
+        try { const value=JSON.parse(body); if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(); }
+        catch { throw new SafeError(400, 'Invalid request body.'); }
+      }
     }
-    const response = await api(data.idToken, resource, {method,body,key});
+    const response = await api(data.idToken, resource, {method,body,key,contentType});
     if (response.status === 401) { await store.removeSession(data.id); throw new SafeError(401, 'Your session has ended. Please sign in again.'); }
     if (!response.ok) {
       const message = {403:'You do not have permission for this action.',404:'Work item not found.',
