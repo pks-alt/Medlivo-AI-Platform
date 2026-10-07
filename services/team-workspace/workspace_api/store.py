@@ -305,6 +305,30 @@ class WorkspaceStore:
                 "recruiters": recruiters,
             }
 
+    def list_jobs(self, identity, *, after=None, limit=50):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            statement = select(t.jobs.c.id, t.jobs.c.title).where(
+                t.jobs.c.tenant_id == principal["tenant_id"]
+            )
+            if after:
+                statement = statement.where(t.jobs.c.id > after)
+            rows = conn.execute(statement.order_by(t.jobs.c.id).limit(limit + 1)).mappings().all()
+            return self._page(rows, limit)
+
+    def get_job(self, identity, job_id):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            row = conn.execute(
+                select(t.jobs.c.id, t.jobs.c.title).where(
+                    t.jobs.c.id == job_id,
+                    t.jobs.c.tenant_id == principal["tenant_id"],
+                )
+            ).mappings().first()
+            if row is None:
+                raise AccessError(404, "Job not found")
+            return clean(row)
+
     def list_cases(self, identity, *, after=None, limit=50):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
