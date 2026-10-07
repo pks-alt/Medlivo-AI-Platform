@@ -2,7 +2,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import hashlib
 import json
-from uuid import uuid4
+from uuid import UUID, uuid4
 from sqlalchemy import select, insert, update, and_, true, text
 from sqlalchemy.exc import IntegrityError
 from . import tables as t
@@ -27,6 +27,8 @@ def json_value(value):
     """JSON-compatible output for receipts, without serializing arbitrary objects."""
     if isinstance(value, datetime):
         return value.replace(tzinfo=timezone.utc).isoformat() if value.tzinfo is None else value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
     raise TypeError("Unsupported response value")
 
 
