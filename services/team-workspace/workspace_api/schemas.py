@@ -38,7 +38,7 @@ class Reassignment(StrictInput):
 class AdminUserInput(StrictInput):
     email: str = Field(min_length=6, max_length=320)
     display_name: str = Field(min_length=1, max_length=200)
-    role: Literal["admin", "manager", "recruiter", "operations"]
+    role: Literal["admin", "manager", "recruiter"]
     team_id: UUID | None = None
     is_active: bool = True
 
@@ -53,6 +53,6 @@ class AdminUserInput(StrictInput):
 
 class AdminUserUpdate(StrictInput):
     display_name: str = Field(min_length=1, max_length=200)
-    role: Literal["admin", "manager", "recruiter", "operations"]
+    role: Literal["admin", "manager", "recruiter"]
     team_id: UUID | None = None
     is_active: bool
