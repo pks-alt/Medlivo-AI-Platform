@@ -162,3 +162,99 @@ def test_manager_cannot_review_other_team(client, headers):
         headers=headers("manager-a"),
     )
     assert response.status_code == 403
+
+
+def test_rehab_rows_are_normalized_and_classified(client, headers):
+    created = client.post(
+        "/api/v1/team/job-intake/batches",
+        headers=headers("manager-a"),
+        json={
+            "customer_name": "Synthetic Rehab Customer",
+            "division": "Rehabilitation",
+            "source_filename": "rehab-jobs.xlsx",
+            "mapping": {
+                "Requisition ID": "requisition_id",
+                "Posting Title": "title",
+                "Location : Name Linked": "facility",
+                "Facility Location : City": "city",
+                "Facility Location : State/Province": "state",
+                "Bill Rate": "bill_rate",
+                "Start Date": "start_date",
+                "End Date": "end_date",
+                "Location : Location Setting": "setting",
+                "Hours Per Week": "hours_per_week",
+            },
+        },
+    )
+    assert created.status_code == 201
+    batch_id = created.json()["id"]
+
+    rows = [
+        {
+            "Requisition ID": "2026-135775",
+            "Posting Title": "Contract PT - Maternity Leave Coverage",
+            "Location : Name Linked": "The Terraces at San Joaquin Gardens",
+            "Facility Location : City": "Fresno",
+            "Facility Location : State/Province": "CA",
+            "Bill Rate": 85,
+            "Start Date": "2026-11-29",
+            "End Date": "2027-02-28",
+            "Location : Location Setting": "SNF",
+            "Hours Per Week": 32,
+        },
+        {
+            "Requisition ID": "2026-136203",
+            "Posting Title": "Contract PT",
+            "Location : Name Linked": "St John's United",
+            "Facility Location : City": "Billings",
+            "Facility Location : State/Province": "MT",
+            "Bill Rate": 85,
+            "Start Date": "2026-11-01",
+            "End Date": "2027-01-31",
+            "Location : Location Setting": "IL / AL",
+            "Hours Per Week": 32,
+        },
+        {
+            "Requisition ID": "2026-136203",
+            "Posting Title": "Contract PT",
+            "Location : Name Linked": "St John's United",
+            "Facility Location : City": "Billings",
+            "Facility Location : State/Province": "MT",
+            "Bill Rate": 85,
+            "Start Date": "2026-11-01",
+            "End Date": "2027-01-31",
+            "Location : Location Setting": "IL / AL",
+            "Hours Per Week": 32,
+        },
+        {
+            "Requisition ID": "2026-missing-title",
+            "Posting Title": "",
+            "Location : Name Linked": "Synthetic Facility",
+            "Facility Location : City": "Seattle",
+            "Facility Location : State/Province": "WA",
+            "Start Date": "2026-11-01",
+            "Hours Per Week": 40,
+        },
+    ]
+    processed = client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/rows",
+        headers=headers("manager-a"),
+        json={"rows": rows},
+    )
+    assert processed.status_code == 200
+    summary = processed.json()
+    assert summary["row_count"] == 4
+    assert summary["ready_count"] == 2
+    assert summary["duplicate_count"] == 1
+    assert summary["review_count"] == 1
+
+    reviewed = client.get(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items",
+        headers=headers("manager-a"),
+    )
+    assert reviewed.status_code == 200
+    items = reviewed.json()["items"]
+    assert items[0]["normalized_job"]["facility"] == "The Terraces at San Joaquin Gardens"
+    assert items[0]["normalized_job"]["hours_per_week"] == 32
+    assert items[2]["status"] == "duplicate"
+    assert items[3]["status"] == "review"
