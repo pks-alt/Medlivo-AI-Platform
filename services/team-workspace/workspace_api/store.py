@@ -174,11 +174,24 @@ class WorkspaceStore:
                         t.audit.c.case_id == case_id,
                     )
                 )
-            else:
+            elif kind == "notes":
                 statement = (
                     select(table, t.users.c.display_name.label("actor_display_name"))
                     .join(t.users, and_(
                         t.users.c.id == table.c.actor_user_id,
+                        t.users.c.tenant_id == table.c.tenant_id,
+                    ))
+                    .where(
+                        table.c.tenant_id == principal["tenant_id"],
+                        table.c.case_id == case_id,
+                    )
+                )
+            else:
+                statement = (
+                    select(table, table.c.created_by.label("actor_user_id"),
+                           t.users.c.display_name.label("actor_display_name"))
+                    .join(t.users, and_(
+                        t.users.c.id == table.c.created_by,
                         t.users.c.tenant_id == table.c.tenant_id,
                     ))
                     .where(
