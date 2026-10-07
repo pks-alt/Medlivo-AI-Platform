@@ -31,5 +31,3 @@ class JobDivaSettings(BaseSettings):
             raise ValueError("Authorization prefix must be empty or Bearer")
         return value
 
-
-settings = JobDivaSettings()
