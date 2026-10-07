@@ -110,6 +110,15 @@ def test_cross_tenant_admin_cannot_read_notes(client, headers):
     assert client.get(CASE + "/notes", headers=headers("admin-foreign")).status_code == 404
 
 
+def test_admin_routes_require_administrator_role(client, headers):
+    for path in ("/admin/users", "/admin/teams", "/admin/audit"):
+        assert client.get(ROOT + path, headers=headers()).status_code == 403
+    response = client.patch(ROOT + "/admin/users/" + idn(11),
+        json={"display_name":"Synthetic","role":"recruiter","team_id":idn(30),"is_active":True},
+        headers=headers())
+    assert response.status_code == 403
+
+
 def test_activity_includes_actor_display_name(client, headers):
     client.post(CASE + "/notes", json={"body": "Synthetic named activity"}, headers=headers())
     rows = client.get(CASE + "/audit", headers=headers("manager-a")).json()["items"]
