@@ -125,9 +125,9 @@ BEGIN
     ON rp.user_id=u.id AND rp.tenant_id=u.tenant_id
   WHERE u.id=v_user_id AND u.tenant_id=v_tenant_id;
 
-  INSERT INTO public.ws_admin_audit(id,tenant_id,actor_user_id,target_user_id,action,before_state,after_state)
+  INSERT INTO public.ws_admin_audit(id,tenant_id,actor_user_id,target_user_id,action,before_state,after_state,created_at)
   VALUES (gen_random_uuid(),v_tenant_id,p_actor_user_id,v_user_id,'user.provisioned',
-          COALESCE(v_before,'{}'::jsonb),COALESCE(v_after,'{}'::jsonb));
+          COALESCE(v_before,'{}'::jsonb),COALESCE(v_after,'{}'::jsonb),now());
 
   RETURN QUERY
   SELECT u.id,u.email,u.display_name,u.role,u.is_active,rp.team_id
@@ -236,9 +236,9 @@ BEGIN
     ON rp.user_id=u.id AND rp.tenant_id=u.tenant_id
   WHERE u.id=p_target_user_id AND u.tenant_id=v_tenant_id;
 
-  INSERT INTO public.ws_admin_audit(id,tenant_id,actor_user_id,target_user_id,action,before_state,after_state)
+  INSERT INTO public.ws_admin_audit(id,tenant_id,actor_user_id,target_user_id,action,before_state,after_state,created_at)
   VALUES (gen_random_uuid(),v_tenant_id,p_actor_user_id,p_target_user_id,'user.updated',
-          COALESCE(v_before,'{}'::jsonb),COALESCE(v_after,'{}'::jsonb));
+          COALESCE(v_before,'{}'::jsonb),COALESCE(v_after,'{}'::jsonb),now());
 
   RETURN QUERY
   SELECT u.id,u.email,u.display_name,u.role,u.is_active,rp.team_id
