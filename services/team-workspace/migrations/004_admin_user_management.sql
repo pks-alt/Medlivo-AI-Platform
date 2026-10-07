@@ -78,11 +78,20 @@ BEGIN
     ON rp.user_id=u.id AND rp.tenant_id=u.tenant_id
   WHERE u.tenant_id=v_tenant_id AND lower(u.email)=p_email;
 
-  INSERT INTO public.app_user(tenant_id,email,display_name,role,is_active)
-  VALUES (v_tenant_id,p_email,trim(p_display_name),p_role,p_is_active)
-  ON CONFLICT (tenant_id,email)
-  DO UPDATE SET display_name=EXCLUDED.display_name, role=EXCLUDED.role, is_active=EXCLUDED.is_active
-  RETURNING id INTO v_user_id;
+  SELECT u.id INTO v_user_id
+  FROM public.app_user u
+  WHERE u.tenant_id=v_tenant_id AND lower(u.email)=p_email
+  FOR UPDATE;
+
+  IF FOUND THEN
+    UPDATE public.app_user u
+    SET display_name=trim(p_display_name),role=p_role,is_active=p_is_active
+    WHERE u.id=v_user_id AND u.tenant_id=v_tenant_id;
+  ELSE
+    INSERT INTO public.app_user(tenant_id,email,display_name,role,is_active)
+    VALUES (v_tenant_id,p_email,trim(p_display_name),p_role,p_is_active)
+    RETURNING app_user.id INTO v_user_id;
+  END IF;
 
   UPDATE public.team SET manager_user_id=NULL
   WHERE tenant_id=v_tenant_id AND manager_user_id=v_user_id
