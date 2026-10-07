@@ -101,16 +101,26 @@ class WorkspaceStore:
             principal = self._principal(conn, identity)
             if principal["role"] != "admin":
                 raise AccessError(403, "Administrator access required")
+            google_identity = t.identities.alias("google_identity")
             rows = conn.execute(
                 select(t.users.c.id, t.users.c.email, t.users.c.display_name, t.users.c.role, t.users.c.is_active,
-                       t.profiles.c.team_id)
+                       t.profiles.c.team_id, google_identity.c.user_id.label("google_identity_user_id"))
                 .outerjoin(t.profiles, and_(t.profiles.c.user_id == t.users.c.id,
                                             t.profiles.c.tenant_id == t.users.c.tenant_id))
+                .outerjoin(google_identity, and_(
+                    google_identity.c.user_id == t.users.c.id,
+                    google_identity.c.tenant_id == t.users.c.tenant_id,
+                    google_identity.c.provider == "google"))
                 .where(t.users.c.tenant_id == principal["tenant_id"])
                 .order_by(t.users.c.email)
                 .limit(501)
             ).mappings().all()
-            return {"items": [dict(row) for row in rows[:500]], "truncated": len(rows) > 500}
+            items = []
+            for row in rows[:500]:
+                item = dict(row)
+                item["identity_bound"] = bool(item.pop("google_identity_user_id"))
+                items.append(item)
+            return {"items": items, "truncated": len(rows) > 500}
 
     def _admin_mutate(self, identity, key, action, payload, callback):
         fingerprint = hashlib.sha256(json.dumps({"action": action, "payload": payload},
