@@ -107,18 +107,33 @@ export function validateConfig(env) {
 }
 function endpoint(path, method, query) {
   const id = '[0-9a-fA-F-]{36}', root = `/cases/${id}`;
-  const read = ['/me', '/cases', '/jobs', `/jobs/${id}`, '/candidates', `/candidates/${id}`, '/manager/overview', '/admin/users', '/admin/teams', '/admin/audit', root, `${root}/(?:notes|tasks|audit|eligible-owners)`];
-  const write = ['/admin/users', `${root}/(?:notes|tasks|reassign)`];
-  const patterns = method === 'GET' ? read : method === 'POST' ? write :
-    method === 'PATCH' ? [`/admin/users/${id}`, `${root}/tasks/${id}`] : [];
+  const read = [
+    '/me', '/cases', '/jobs', `/jobs/${id}`, '/candidates', `/candidates/${id}`,
+    '/manager/overview', '/manager/weekly-review', '/admin/users', '/admin/teams', '/admin/audit',
+    '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings',
+    root, `${root}/(?:notes|tasks|audit|eligible-owners)`
+  ];
+  const post = [
+    '/admin/users', '/job-intake/batches', `/job-intake/batches/${id}/rows`,
+    `${root}/(?:notes|tasks|reassign)`
+  ];
+  const put = ['/job-intake/mappings', `/recruiters/${id}/weekly-goals`];
+  const patch = [`/admin/users/${id}`, `${root}/tasks/${id}`];
+  const patterns = method === 'GET' ? read : method === 'POST' ? post :
+    method === 'PUT' ? put : method === 'PATCH' ? patch : [];
   if (!patterns.some(p => new RegExp('^' + p + '$').test(path))) throw new SafeError(404, 'This action is not available.');
   for (const segment of path.split('/')) if (segment.includes('-') && segment.length === 36 && !UUID.test(segment)) throw new SafeError(400, 'Invalid work item.');
+
   const params = new URLSearchParams();
   for (const key of new Set(query.keys())) {
     const value = query.get(key);
-    if (method !== 'GET' || !['after','limit'].includes(key) || query.getAll(key).length !== 1 ||
-        (key === 'after' ? !UUID.test(value) : !/^(?:[1-9][0-9]?|100)$/.test(value))) throw new SafeError(400, 'Invalid request parameters.');
-    params.set(key, value);
+    if (method !== 'GET' || query.getAll(key).length !== 1) throw new SafeError(400, 'Invalid request parameters.');
+    if (key === 'after' && UUID.test(value)) params.set(key, value);
+    else if (key === 'limit' && /^(?:[1-9][0-9]{0,2}|500)$/.test(value) && Number(value) <= 500) params.set(key, value);
+    else if (key === 'team_id' && UUID.test(value)) params.set(key, value);
+    else if (key === 'week_start' && /^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/.test(value)) params.set(key, value);
+    else if (key === 'division' && ['Rehabilitation','Nursing & Allied','Locum Tenens'].includes(value)) params.set(key, value);
+    else throw new SafeError(400, 'Invalid request parameters.');
   }
   return path + (params.size ? '?' + params : '');
 }
