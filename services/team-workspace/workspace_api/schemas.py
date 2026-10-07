@@ -86,3 +86,8 @@ class WeeklyGoalInput(StrictInput):
         if value.weekday() != 0:
             raise ValueError("week_start must be a Monday")
         return value
+
+
+class JobIntakeRowsInput(StrictInput):
+    rows: list[dict[str, str | int | float | bool | None]] = Field(min_length=1, max_length=500)
+    mapping: dict[str, str] | None = None
