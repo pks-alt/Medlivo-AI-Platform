@@ -76,8 +76,8 @@ async function drawDetail(){
 }
 async function drawManager(){
  if(!managed())throw new Error('Manager access required.');
- const overview=await call('/manager/overview');
- await loadCases();
+ const [overview,caseResult]=await Promise.all([call('/manager/overview'),call('/cases?limit=50')]);
+ cases=caseResult.items||[];nextCase=caseResult.next_cursor;
  const totals=overview.totals||{},teams=overview.teams||[],recruiters=overview.recruiters||[];
  $('#pageTitle').textContent='Team overview';
  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.hasAttribute('data-manager')));
