@@ -92,11 +92,16 @@ def seeded(engine):
             (202,1,"Synthetic Registered Nurse"), (203,2,"Synthetic Foreign Job"),
         ]:
             conn.execute(insert(t.jobs).values(id=idn(job), tenant_id=idn(tenant), title=title))
-        for case, tenant, team, owner, job in [
-            (100,1,30,10,200),(101,1,30,11,201),(102,1,31,15,202),(103,2,32,20,203)
+        for candidate, tenant, name in [
+            (300,1,"Synthetic Candidate One"), (301,1,"Synthetic Candidate Two"),
+            (302,1,"Synthetic Candidate Three"), (303,2,"Synthetic Foreign Candidate"),
+        ]:
+            conn.execute(insert(t.candidates).values(id=idn(candidate), tenant_id=idn(tenant), canonical_name=name))
+        for case, tenant, team, owner, job, candidate in [
+            (100,1,30,10,200,300),(101,1,30,11,201,301),(102,1,31,15,202,302),(103,2,32,20,203,303)
         ]:
             conn.execute(insert(t.cases).values(id=idn(case), tenant_id=idn(tenant), team_id=idn(team), owner_user_id=idn(owner),
-                job_id=idn(job), title=f"Synthetic work item {case}", version=1, created_at=now(), updated_at=now()))
+                job_id=idn(job), candidate_id=idn(candidate), title=f"Synthetic work item {case}", version=1, created_at=now(), updated_at=now()))
     return engine
 
 
