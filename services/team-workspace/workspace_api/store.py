@@ -7,6 +7,7 @@ from sqlalchemy import select, insert, update, and_, true, text
 from sqlalchemy.exc import IntegrityError
 from . import tables as t
 from .auth import Identity
+from .job_intake import process_rows
 
 
 class AccessError(Exception):
@@ -805,3 +806,76 @@ class WorkspaceStore:
                 "teams": [dict(r) for r in team_rows],
                 "recruiters": clean(items),
             }
+
+
+    def ingest_job_intake_rows(self, identity, batch_id, key, value):
+        payload = {"batch_id": batch_id, "rows": value.rows, "mapping": value.mapping}
+        def apply(conn, principal):
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+            batch = conn.execute(select(t.job_intake_batches).where(
+                t.job_intake_batches.c.id == batch_id,
+                t.job_intake_batches.c.tenant_id == principal["tenant_id"],
+            ).with_for_update()).mappings().first()
+            if batch is None:
+                raise AccessError(404, "Job intake batch not found")
+            if batch["team_id"] is not None and not self._team_allowed(conn, principal, batch["team_id"]):
+                raise AccessError(403, "Job intake batch is outside your scope")
+            if batch["status"] not in {"draft", "review"}:
+                raise AccessError(409, "Only draft or review batches can be reprocessed")
+
+            mapping = value.mapping if value.mapping is not None else batch["mapping"]
+            if not mapping:
+                raise AccessError(422, "Map the spreadsheet columns before processing rows")
+
+            processed = process_rows(value.rows, mapping, batch["division"])
+            conn.execute(t.job_intake_items.delete().where(
+                t.job_intake_items.c.tenant_id == principal["tenant_id"],
+                t.job_intake_items.c.batch_id == batch_id,
+            ))
+            timestamp = now()
+            for item in processed:
+                conn.execute(insert(t.job_intake_items).values(
+                    id=uid(), tenant_id=principal["tenant_id"], batch_id=batch_id,
+                    duplicate_job_id=None, created_job_id=None, created_at=timestamp,
+                    updated_at=timestamp, **item,
+                ))
+            ready_count = sum(1 for item in processed if item["status"] == "ready")
+            review_count = sum(1 for item in processed if item["status"] == "review")
+            duplicate_count = sum(1 for item in processed if item["status"] == "duplicate")
+            conn.execute(update(t.job_intake_batches).where(
+                t.job_intake_batches.c.id == batch_id,
+                t.job_intake_batches.c.tenant_id == principal["tenant_id"],
+            ).values(
+                mapping=mapping, status="review", row_count=len(processed),
+                ready_count=ready_count, review_count=review_count,
+                duplicate_count=duplicate_count, updated_at=timestamp,
+            ))
+            return {
+                "batch_id": batch_id,
+                "status": "review",
+                "row_count": len(processed),
+                "ready_count": ready_count,
+                "review_count": review_count,
+                "duplicate_count": duplicate_count,
+            }
+        return self._global_mutate(identity, key, "job_intake.rows.processed", payload, apply)
+
+    def list_job_intake_items(self, identity, batch_id, *, limit=200):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+            batch = conn.execute(select(t.job_intake_batches).where(
+                t.job_intake_batches.c.id == batch_id,
+                t.job_intake_batches.c.tenant_id == principal["tenant_id"],
+            )).mappings().first()
+            if batch is None:
+                raise AccessError(404, "Job intake batch not found")
+            if batch["team_id"] is not None and not self._team_allowed(conn, principal, batch["team_id"]):
+                raise AccessError(403, "Job intake batch is outside your scope")
+            rows = conn.execute(select(t.job_intake_items).where(
+                t.job_intake_items.c.tenant_id == principal["tenant_id"],
+                t.job_intake_items.c.batch_id == batch_id,
+            ).order_by(t.job_intake_items.c.row_number).limit(limit)).mappings().all()
+            return {"batch": clean(batch), "items": [clean(row) for row in rows]}
