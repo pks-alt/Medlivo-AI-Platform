@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS public.ws_job_intake_batch (
   CONSTRAINT ws_job_intake_batch_status_ck CHECK (
     status IN ('draft','review','approved','syncing','synced','failed','cancelled')
   ),
+  CONSTRAINT ws_job_intake_batch_tenant_id_uq UNIQUE (tenant_id, id),
   CONSTRAINT ws_job_intake_batch_counts_ck CHECK (
     row_count >= 0 AND ready_count >= 0 AND review_count >= 0 AND duplicate_count >= 0
     AND ready_count + review_count + duplicate_count <= row_count
