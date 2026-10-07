@@ -110,7 +110,7 @@ function endpoint(path, method, query) {
   const read = [
     '/me', '/cases', '/jobs', `/jobs/${id}`, '/candidates', `/candidates/${id}`,
     '/manager/overview', '/manager/weekly-review', '/admin/users', '/admin/teams', '/admin/audit',
-    '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings',
+    '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings', `/recruiters/${id}/weekly-goals`,
     root, `${root}/(?:notes|tasks|audit|eligible-owners)`
   ];
   const post = [
