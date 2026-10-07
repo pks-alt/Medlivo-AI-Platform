@@ -1,6 +1,7 @@
 """Factory for a separate private service; existing recruiter API is untouched."""
 from contextlib import asynccontextmanager
 from uuid import UUID
+from datetime import date
 from fastapi import FastAPI, Depends, HTTPException, Header, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -9,7 +10,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from .auth import AuthenticationError, GoogleIdentityVerifier
 from .config import Settings
-from .schemas import NoteInput, TaskInput, TaskUpdate, Reassignment, AdminUserInput, AdminUserUpdate
+from .schemas import (
+    NoteInput, TaskInput, TaskUpdate, Reassignment, AdminUserInput, AdminUserUpdate,
+    JobIntakeBatchInput, CustomerJobMappingInput, WeeklyGoalInput,
+)
 from .store import WorkspaceStore, AccessError
 
 
@@ -116,6 +120,35 @@ def build_app(store, verifier):
     @app.get(prefix + "/manager/overview")
     def manager_overview(who=Depends(identity)):
         return store.manager_overview(who)
+
+    @app.get(prefix + "/job-intake/batches")
+    def job_intake_batches(limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
+        return store.list_job_intake_batches(who, limit=limit)
+
+    @app.post(prefix + "/job-intake/batches", status_code=201)
+    def create_job_intake_batch(value: JobIntakeBatchInput, idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.create_job_intake_batch(who, str(idempotency_key), value)
+
+    @app.get(prefix + "/job-intake/mappings")
+    def job_intake_mappings(division: str | None = None, who=Depends(identity)):
+        return store.list_customer_job_mappings(who, division=division)
+
+    @app.put(prefix + "/job-intake/mappings")
+    def save_job_intake_mapping(value: CustomerJobMappingInput, idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.upsert_customer_job_mapping(who, str(idempotency_key), value)
+
+    @app.put(prefix + "/recruiters/{recruiter_user_id}/weekly-goals")
+    def set_weekly_goal(recruiter_user_id: UUID, value: WeeklyGoalInput,
+                        idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.set_weekly_goal(who, str(recruiter_user_id), str(idempotency_key), value)
+
+    @app.get(prefix + "/manager/weekly-review")
+    def weekly_review(week_start: date, team_id: UUID | None = None, who=Depends(identity)):
+        if week_start.weekday() != 0:
+            raise HTTPException(422, "week_start must be a Monday")
+        return store.weekly_review(
+            who, week_start, team_id=str(team_id) if team_id is not None else None
+        )
 
     @app.get(prefix + "/candidates")
     def candidates(after: UUID | None = None, limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
