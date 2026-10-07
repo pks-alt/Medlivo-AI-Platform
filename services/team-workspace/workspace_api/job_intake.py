@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from io import BytesIO
 import re
 from typing import Any
+from openpyxl import load_workbook
 
 # Canonical Phase 1 fields. Customer spreadsheets can use any headers; mappings
 # translate them into these names before validation and JobDiva write-back.
@@ -134,3 +136,48 @@ def process_rows(rows: list[dict[str, Any]], mapping: dict[str, str], division: 
             "status": status,
         })
     return processed
+
+
+def parse_xlsx(content: bytes, *, max_rows: int = 500, max_columns: int = 100) -> tuple[list[str], list[dict[str, Any]]]:
+    if len(content) > 5 * 1024 * 1024:
+        raise ValueError("Spreadsheet exceeds the 5 MB upload limit")
+    workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
+    try:
+        sheet = workbook.active
+        rows = sheet.iter_rows(values_only=True)
+        try:
+            header_values = next(rows)
+        except StopIteration:
+            raise ValueError("Spreadsheet is empty") from None
+        if len(header_values) > max_columns:
+            raise ValueError("Spreadsheet has too many columns")
+        headers: list[str] = []
+        used: set[str] = set()
+        for index, value in enumerate(header_values, start=1):
+            base = str(value).strip() if value is not None else f"Column {index}"
+            if not base:
+                base = f"Column {index}"
+            candidate = base
+            suffix = 2
+            while candidate in used:
+                candidate = f"{base} ({suffix})"
+                suffix += 1
+            used.add(candidate)
+            headers.append(candidate)
+
+        result: list[dict[str, Any]] = []
+        for row_index, values in enumerate(rows, start=2):
+            if len(result) >= max_rows:
+                raise ValueError(f"Spreadsheet exceeds the {max_rows} row intake limit")
+            if all(value is None or (isinstance(value, str) and not value.strip()) for value in values):
+                continue
+            source: dict[str, Any] = {}
+            for i, header in enumerate(headers):
+                value = values[i] if i < len(values) else None
+                source[header] = json_safe(value)
+            result.append(source)
+        if not result:
+            raise ValueError("Spreadsheet has no job rows")
+        return headers, result
+    finally:
+        workbook.close()
