@@ -25,7 +25,7 @@ export function createPrivateApi(apiUrl, {fetcher=fetch, clock=()=>Math.floor(Da
   }
   return async function call(userToken,path,{method='GET',body,key}={}) {
     if(!path.startsWith('/') || path.includes('..') || path.includes('%') || path.includes('//') ||
-        !['GET','POST','PATCH'].includes(method)) throw new SafeError(404,'This action is not available.');
+        !['GET','POST','PUT','PATCH'].includes(method)) throw new SafeError(404,'This action is not available.');
     const headers={Accept:'application/json',Authorization:`Bearer ${userToken}`,
       'X-Serverless-Authorization':`Bearer ${await serviceToken()}`};
     if(body!==undefined) headers['Content-Type']='application/json';
