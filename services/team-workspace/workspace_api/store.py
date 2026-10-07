@@ -175,9 +175,16 @@ class WorkspaceStore:
                     )
                 )
             else:
-                statement = select(table).where(
-                    table.c.tenant_id == principal["tenant_id"],
-                    table.c.case_id == case_id,
+                statement = (
+                    select(table, t.users.c.display_name.label("actor_display_name"))
+                    .join(t.users, and_(
+                        t.users.c.id == table.c.actor_user_id,
+                        t.users.c.tenant_id == table.c.tenant_id,
+                    ))
+                    .where(
+                        table.c.tenant_id == principal["tenant_id"],
+                        table.c.case_id == case_id,
+                    )
                 )
             if after:
                 statement = statement.where(table.c.id > after)
