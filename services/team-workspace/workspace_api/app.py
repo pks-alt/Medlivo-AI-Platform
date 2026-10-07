@@ -113,6 +113,10 @@ def build_app(store, verifier):
     def admin_audit(limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
         return store.admin_audit(who, limit=limit)
 
+    @app.get(prefix + "/manager/overview")
+    def manager_overview(who=Depends(identity)):
+        return store.manager_overview(who)
+
     @app.get(prefix + "/cases")
     def cases(after: UUID | None = None, limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
         return store.list_cases(who, after=str(after) if after else None, limit=limit)
