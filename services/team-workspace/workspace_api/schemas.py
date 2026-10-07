@@ -49,3 +49,10 @@ class AdminUserInput(StrictInput):
         if not value.endswith("@medlivo.com") or any(ch.isspace() for ch in value):
             raise ValueError("Use an approved Medlivo email address")
         return value
+
+
+class AdminUserUpdate(StrictInput):
+    display_name: str = Field(min_length=1, max_length=200)
+    role: Literal["admin", "manager", "recruiter", "operations"]
+    team_id: UUID | None = None
+    is_active: bool
