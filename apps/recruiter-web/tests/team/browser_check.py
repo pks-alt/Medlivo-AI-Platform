@@ -70,6 +70,15 @@ with tempfile.TemporaryDirectory() as folder:
                 raise
             check(page.locator('#noteForm').is_visible(),'OAuth callback opens authorized work item')
             check(page.get_by_role('button',name='Team overview',exact=True).count()==0,'Recruiter does not see manager Team overview')
+            page.get_by_role('button',name='Jobs',exact=True).click()
+            page.get_by_role('heading',name='Jobs',exact=True).wait_for()
+            check(page.get_by_text('Synthetic Physical Therapist',exact=True).is_visible(),'Recruiter can browse tenant-scoped canonical jobs')
+            check(page.get_by_text('Synthetic Foreign Job',exact=True).count()==0,'Jobs screen excludes another tenant')
+            page.get_by_text('Synthetic Physical Therapist',exact=True).click()
+            page.get_by_text('Recruit AI job record',exact=True).wait_for()
+            check(page.get_by_text('READ ONLY',exact=True).is_visible(),'Job detail is explicitly read only')
+            page.get_by_role('button',name='My work',exact=True).click()
+            page.locator('#noteForm').wait_for()
             cookies=recruiter.cookies()
             session=[c for c in cookies if c['name']=='__Host-medlivo-team'][0]
             check(session['httpOnly'] and session['secure'] and session['sameSite']=='Lax','Browser cookie is Secure HttpOnly SameSite=Lax')
