@@ -177,6 +177,12 @@ def build_app(store, verifier):
                         idempotency_key: UUID = Header(), who=Depends(identity)):
         return store.set_weekly_goal(who, str(recruiter_user_id), str(idempotency_key), value)
 
+    @app.get(prefix + "/recruiters/{recruiter_user_id}/weekly-goals")
+    def recruiter_weekly_progress(recruiter_user_id: UUID, week_start: date, who=Depends(identity)):
+        if week_start.weekday() != 0:
+            raise HTTPException(422, "week_start must be a Monday")
+        return store.recruiter_weekly_progress(who, str(recruiter_user_id), week_start)
+
     @app.get(prefix + "/manager/weekly-review")
     def weekly_review(week_start: date, team_id: UUID | None = None, who=Depends(identity)):
         if week_start.weekday() != 0:
