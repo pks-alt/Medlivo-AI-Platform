@@ -119,6 +119,25 @@ def test_admin_routes_require_administrator_role(client, headers):
     assert response.status_code == 403
 
 
+def test_admin_user_list_exposes_only_identity_binding_status(client, headers):
+    response = client.get(ROOT + "/admin/users", headers=headers("admin-a"))
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert items
+    assert all(isinstance(row["identity_bound"], bool) for row in items)
+    assert all("subject" not in row and "google_subject" not in row for row in items)
+
+
+@pytest.mark.parametrize("method,payload", [
+    ("post", {"email":"ops@medlivo.com","display_name":"Operations","role":"operations","team_id":None,"is_active":True}),
+    ("patch", {"display_name":"Operations","role":"operations","team_id":None,"is_active":True}),
+])
+def test_admin_api_rejects_unsupported_operations_role(client, headers, method, payload):
+    url = ROOT + "/admin/users" if method == "post" else ROOT + "/admin/users/" + idn(11)
+    response = getattr(client, method)(url, json=payload, headers=headers("admin-a"))
+    assert response.status_code == 422
+
+
 def test_activity_includes_actor_display_name(client, headers):
     client.post(CASE + "/notes", json={"body": "Synthetic named activity"}, headers=headers())
     rows = client.get(CASE + "/audit", headers=headers("manager-a")).json()["items"]
