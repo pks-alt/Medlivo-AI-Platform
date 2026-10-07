@@ -17,6 +17,7 @@ tenant = Table("tenant", metadata, U("id", primary_key=True), S("slug", nullable
 users = Table("app_user", metadata, U("id", primary_key=True), U("tenant_id", nullable=False),
               S("email", nullable=False), S("display_name"), S("role", nullable=False),
               Column("is_active", Boolean, nullable=False), UniqueConstraint("tenant_id", "id"),
+              UniqueConstraint("tenant_id", "email"),
               ForeignKeyConstraint(["tenant_id"], ["tenant.id"]))
 teams = Table("team", metadata, U("id", primary_key=True), U("tenant_id", nullable=False),
               S("name", nullable=False), S("division", nullable=False), U("manager_user_id"),
