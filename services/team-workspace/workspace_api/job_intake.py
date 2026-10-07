@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
+from zipfile import ZipFile, BadZipFile
 import re
 from typing import Any
 from openpyxl import load_workbook
@@ -141,7 +142,14 @@ def process_rows(rows: list[dict[str, Any]], mapping: dict[str, str], division: 
 def parse_xlsx(content: bytes, *, max_rows: int = 500, max_columns: int = 100) -> tuple[list[str], list[dict[str, Any]]]:
     if len(content) > 5 * 1024 * 1024:
         raise ValueError("Spreadsheet exceeds the 5 MB upload limit")
-    workbook = load_workbook(BytesIO(content), read_only=True, data_only=True)
+    try:
+        with ZipFile(BytesIO(content)) as archive:
+            entries = archive.infolist()
+            if len(entries) > 1000 or sum(entry.file_size for entry in entries) > 50 * 1024 * 1024:
+                raise ValueError("Spreadsheet contents exceed safe processing limits")
+    except BadZipFile:
+        raise ValueError("The uploaded file is not a valid .xlsx workbook") from None
+    workbook = load_workbook(BytesIO(content), read_only=True, data_only=True, keep_links=False)
     try:
         sheet = workbook.active
         rows = sheet.iter_rows(values_only=True)
