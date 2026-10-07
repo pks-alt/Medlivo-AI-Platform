@@ -71,7 +71,7 @@ with tempfile.TemporaryDirectory() as folder:
             check(page.locator('#noteForm').is_visible(),'OAuth callback opens authorized work item')
             check(page.get_by_role('button',name='Team overview',exact=True).count()==0,'Recruiter does not see manager Team overview')
             page.get_by_role('button',name='Jobs',exact=True).click()
-            page.get_by_role('heading',name='Jobs',exact=True).wait_for()
+            page.locator('#pageTitle').get_by_text('Jobs',exact=True).wait_for()
             check(page.get_by_text('Synthetic Physical Therapist',exact=True).is_visible(),'Recruiter can browse tenant-scoped canonical jobs')
             check(page.get_by_text('Synthetic Foreign Job',exact=True).count()==0,'Jobs screen excludes another tenant')
             page.get_by_text('Synthetic Physical Therapist',exact=True).click()
