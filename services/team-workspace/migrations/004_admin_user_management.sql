@@ -88,9 +88,9 @@ BEGIN
     SET display_name=trim(p_display_name),role=p_role,is_active=p_is_active
     WHERE u.id=v_user_id AND u.tenant_id=v_tenant_id;
   ELSE
-    INSERT INTO public.app_user(tenant_id,email,display_name,role,is_active)
-    VALUES (v_tenant_id,p_email,trim(p_display_name),p_role,p_is_active)
-    RETURNING app_user.id INTO v_user_id;
+    v_user_id := gen_random_uuid();
+    INSERT INTO public.app_user(id,tenant_id,email,display_name,role,is_active)
+    VALUES (v_user_id,v_tenant_id,p_email,trim(p_display_name),p_role,p_is_active);
   END IF;
 
   UPDATE public.team SET manager_user_id=NULL
