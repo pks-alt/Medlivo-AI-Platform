@@ -107,7 +107,7 @@ export function validateConfig(env) {
 }
 function endpoint(path, method, query) {
   const id = '[0-9a-fA-F-]{36}', root = `/cases/${id}`;
-  const read = ['/me', '/cases', '/manager/overview', '/admin/users', '/admin/teams', '/admin/audit', root, `${root}/(?:notes|tasks|audit|eligible-owners)`];
+  const read = ['/me', '/cases', '/jobs', `/jobs/${id}`, '/manager/overview', '/admin/users', '/admin/teams', '/admin/audit', root, `${root}/(?:notes|tasks|audit|eligible-owners)`];
   const write = ['/admin/users', `${root}/(?:notes|tasks|reassign)`];
   const patterns = method === 'GET' ? read : method === 'POST' ? write :
     method === 'PATCH' ? [`/admin/users/${id}`, `${root}/tasks/${id}`] : [];
