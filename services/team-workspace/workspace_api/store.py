@@ -199,6 +199,112 @@ class WorkspaceStore:
             ).mappings().all()
             return {"items": [clean(row) for row in rows]}
 
+    def manager_overview(self, identity):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+
+            if principal["role"] == "manager":
+                team_rows = conn.execute(
+                    select(t.teams.c.id, t.teams.c.name, t.teams.c.division)
+                    .where(
+                        t.teams.c.tenant_id == principal["tenant_id"],
+                        t.teams.c.manager_user_id == principal["id"],
+                    )
+                    .order_by(t.teams.c.name)
+                ).mappings().all()
+            else:
+                team_rows = conn.execute(
+                    select(t.teams.c.id, t.teams.c.name, t.teams.c.division)
+                    .where(t.teams.c.tenant_id == principal["tenant_id"])
+                    .order_by(t.teams.c.name)
+                ).mappings().all()
+
+            team_ids = [row["id"] for row in team_rows]
+            if not team_ids:
+                return {
+                    "teams": [],
+                    "totals": {"work_items": 0, "active_recruiters": 0, "open_followups": 0, "overdue_followups": 0},
+                    "recruiters": [],
+                }
+
+            case_rows = conn.execute(
+                select(t.cases.c.id, t.cases.c.team_id, t.cases.c.owner_user_id)
+                .where(
+                    t.cases.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.team_id.in_(team_ids),
+                )
+            ).mappings().all()
+            case_ids = [row["id"] for row in case_rows]
+
+            recruiter_rows = conn.execute(
+                select(t.users.c.id, t.users.c.display_name, t.users.c.email, t.profiles.c.team_id)
+                .join(t.profiles, and_(
+                    t.profiles.c.user_id == t.users.c.id,
+                    t.profiles.c.tenant_id == t.users.c.tenant_id,
+                ))
+                .where(
+                    t.users.c.tenant_id == principal["tenant_id"],
+                    t.profiles.c.team_id.in_(team_ids),
+                    t.users.c.role == "recruiter",
+                    t.users.c.is_active.is_(True),
+                )
+                .order_by(t.users.c.display_name, t.users.c.email)
+            ).mappings().all()
+
+            open_tasks = []
+            if case_ids:
+                open_tasks = conn.execute(
+                    select(t.tasks.c.id, t.tasks.c.case_id, t.tasks.c.due_at)
+                    .where(
+                        t.tasks.c.tenant_id == principal["tenant_id"],
+                        t.tasks.c.case_id.in_(case_ids),
+                        t.tasks.c.status == "open",
+                    )
+                ).mappings().all()
+
+            owner_counts = {}
+            for row in case_rows:
+                owner_counts[row["owner_user_id"]] = owner_counts.get(row["owner_user_id"], 0) + 1
+
+            owner_by_case = {row["id"]: row["owner_user_id"] for row in case_rows}
+            task_counts = {}
+            overdue_counts = {}
+            timestamp = now()
+            for task in open_tasks:
+                owner_id = owner_by_case.get(task["case_id"])
+                if owner_id is None:
+                    continue
+                task_counts[owner_id] = task_counts.get(owner_id, 0) + 1
+                due_at = task["due_at"]
+                if due_at is not None:
+                    if due_at.tzinfo is None:
+                        due_at = due_at.replace(tzinfo=timezone.utc)
+                    if due_at < timestamp:
+                        overdue_counts[owner_id] = overdue_counts.get(owner_id, 0) + 1
+
+            recruiters = [{
+                "id": row["id"],
+                "display_name": row["display_name"],
+                "email": row["email"],
+                "team_id": row["team_id"],
+                "work_items": owner_counts.get(row["id"], 0),
+                "open_followups": task_counts.get(row["id"], 0),
+                "overdue_followups": overdue_counts.get(row["id"], 0),
+            } for row in recruiter_rows]
+
+            return {
+                "teams": [dict(row) for row in team_rows],
+                "totals": {
+                    "work_items": len(case_rows),
+                    "active_recruiters": len(recruiter_rows),
+                    "open_followups": len(open_tasks),
+                    "overdue_followups": sum(overdue_counts.values()),
+                },
+                "recruiters": recruiters,
+            }
+
     def list_cases(self, identity, *, after=None, limit=50):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
