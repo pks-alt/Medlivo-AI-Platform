@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime, timezone
+from datetime import datetime, date, timezone
 import hashlib
 import json
 from uuid import UUID, uuid4
@@ -28,6 +28,8 @@ def json_value(value):
     """JSON-compatible output for receipts, without serializing arbitrary objects."""
     if isinstance(value, datetime):
         return value.replace(tzinfo=timezone.utc).isoformat() if value.tzinfo is None else value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
     if isinstance(value, UUID):
         return str(value)
     raise TypeError("Unsupported response value")
