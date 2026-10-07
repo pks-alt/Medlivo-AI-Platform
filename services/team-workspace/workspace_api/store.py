@@ -110,21 +110,82 @@ class WorkspaceStore:
             ).mappings().all()
             return {"items": [dict(row) for row in rows[:500]], "truncated": len(rows) > 500}
 
-    def admin_provision_user(self, identity, value):
-        with self.engine.begin() as conn:
-            principal = self._principal(conn, identity)
-            if principal["role"] != "admin":
-                raise AccessError(403, "Administrator access required")
+    def _admin_mutate(self, identity, key, action, payload, callback):
+        fingerprint = hashlib.sha256(json.dumps({"action": action, "payload": payload},
+            sort_keys=True, separators=(",", ":"), default=json_value).encode()).hexdigest()
+        try:
+            with self.engine.begin() as conn:
+                principal = self._principal(conn, identity)
+                if principal["role"] != "admin":
+                    raise AccessError(403, "Administrator access required")
+                replay = self._receipt(conn, principal, key, fingerprint)
+                if replay is not None:
+                    return replay
+                result = clean(callback(conn, principal))
+                conn.execute(insert(t.operations).values(
+                    tenant_id=principal["tenant_id"], actor_user_id=principal["id"],
+                    idempotency_key=key, fingerprint=fingerprint, result=result, created_at=now()))
+                return result
+        except IntegrityError:
+            with self.engine.begin() as conn:
+                principal = self._principal(conn, identity)
+                if principal["role"] != "admin":
+                    raise AccessError(403, "Administrator access required")
+                replay = self._receipt(conn, principal, key, fingerprint)
+                if replay is not None:
+                    return replay
+            raise AccessError(409, "Conflicting administrator change; reload before retrying") from None
+
+    def admin_provision_user(self, identity, key, value):
+        payload = {"email": value.email, "display_name": value.display_name, "role": value.role,
+                   "team_id": str(value.team_id) if value.team_id else None, "is_active": value.is_active}
+        def apply(conn, principal):
             row = conn.execute(text(
                 "SELECT * FROM workspace_admin.provision_user("
                 ":actor_user_id,:email,:display_name,:role,:team_id,:is_active)"
-            ), {"actor_user_id": principal["id"], "email": value.email,
+            ), {"actor_user_id": principal["id"], **payload}).mappings().first()
+            if row is None:
+                raise AccessError(422, "User could not be provisioned with those settings")
+            return dict(row)
+        return self._admin_mutate(identity, key, "admin.user.provision", payload, apply)
+
+    def admin_update_user(self, identity, user_id, key, value):
+        payload = {"user_id": user_id, "display_name": value.display_name, "role": value.role,
+                   "team_id": str(value.team_id) if value.team_id else None, "is_active": value.is_active}
+        def apply(conn, principal):
+            row = conn.execute(text(
+                "SELECT * FROM workspace_admin.update_user("
+                ":actor_user_id,:target_user_id,:display_name,:role,:team_id,:is_active)"
+            ), {"actor_user_id": principal["id"], "target_user_id": user_id,
                 "display_name": value.display_name, "role": value.role,
                 "team_id": str(value.team_id) if value.team_id else None,
                 "is_active": value.is_active}).mappings().first()
             if row is None:
-                raise AccessError(422, "User could not be provisioned with those settings")
+                raise AccessError(422, "User could not be updated. Check the role, team, status, and self-lockout rules.")
             return dict(row)
+        return self._admin_mutate(identity, key, "admin.user.update", payload, apply)
+
+    def admin_audit(self, identity, *, limit=50):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "admin":
+                raise AccessError(403, "Administrator access required")
+            actor = t.users.alias("admin_actor")
+            target = t.users.alias("admin_target")
+            rows = conn.execute(
+                select(t.admin_audit,
+                       actor.c.display_name.label("actor_display_name"),
+                       target.c.display_name.label("target_display_name"),
+                       target.c.email.label("target_email"))
+                .join(actor, and_(actor.c.id == t.admin_audit.c.actor_user_id,
+                                  actor.c.tenant_id == t.admin_audit.c.tenant_id))
+                .join(target, and_(target.c.id == t.admin_audit.c.target_user_id,
+                                   target.c.tenant_id == t.admin_audit.c.tenant_id))
+                .where(t.admin_audit.c.tenant_id == principal["tenant_id"])
+                .order_by(t.admin_audit.c.created_at.desc(), t.admin_audit.c.id.desc())
+                .limit(limit)
+            ).mappings().all()
+            return {"items": [clean(row) for row in rows]}
 
     def list_cases(self, identity, *, after=None, limit=50):
         with self.engine.begin() as conn:
