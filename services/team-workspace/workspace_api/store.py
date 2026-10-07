@@ -36,7 +36,13 @@ def json_value(value):
 
 
 def clean(row):
-    return json.loads(json.dumps(dict(row), default=json_value))
+    if isinstance(row, list):
+        value = row
+    elif isinstance(row, tuple):
+        value = list(row)
+    else:
+        value = dict(row)
+    return json.loads(json.dumps(value, default=json_value))
 
 
 class WorkspaceStore:
