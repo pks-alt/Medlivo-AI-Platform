@@ -7,7 +7,7 @@ from sqlalchemy import select, insert, update, and_, true, text
 from sqlalchemy.exc import IntegrityError
 from . import tables as t
 from .auth import Identity
-from .job_intake import process_rows
+from .job_intake import process_rows, parse_xlsx, suggest_mapping
 
 
 class AccessError(Exception):
@@ -881,3 +881,69 @@ class WorkspaceStore:
                 t.job_intake_items.c.batch_id == batch_id,
             ).order_by(t.job_intake_items.c.row_number).limit(limit)).mappings().all()
             return {"batch": clean(batch), "items": [clean(row) for row in rows]}
+
+
+    def upload_job_intake_xlsx(self, identity, key, *, customer_name, division, source_filename, team_id, content):
+        payload = {
+            "customer_name": customer_name,
+            "division": division,
+            "source_filename": source_filename,
+            "team_id": team_id,
+            "content_sha256": hashlib.sha256(content).hexdigest(),
+        }
+        def apply(conn, principal):
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+            resolved_team_id = team_id
+            if principal["role"] == "manager":
+                managed = conn.execute(select(t.teams.c.id).where(
+                    t.teams.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                    t.teams.c.division == division,
+                ).order_by(t.teams.c.id).limit(2)).scalars().all()
+                if resolved_team_id is None:
+                    if len(managed) != 1:
+                        raise AccessError(422, "Select the team for this intake batch")
+                    resolved_team_id = managed[0]
+            if resolved_team_id is not None and not self._team_allowed(conn, principal, resolved_team_id):
+                raise AccessError(422, "Select a team you are authorized to manage")
+
+            try:
+                headers, rows = parse_xlsx(content)
+            except ValueError as error:
+                raise AccessError(422, str(error)) from None
+
+            saved = conn.execute(select(t.customer_job_mappings.c.mapping).where(
+                t.customer_job_mappings.c.tenant_id == principal["tenant_id"],
+                t.customer_job_mappings.c.customer_name == customer_name,
+                t.customer_job_mappings.c.division == division,
+            )).scalar_one_or_none()
+            mapping = saved or suggest_mapping(headers)
+            processed = process_rows(rows, mapping, division)
+            timestamp = now()
+            batch_id = uid()
+            ready_count = sum(1 for item in processed if item["status"] == "ready")
+            review_count = sum(1 for item in processed if item["status"] == "review")
+            duplicate_count = sum(1 for item in processed if item["status"] == "duplicate")
+            batch = dict(
+                id=batch_id, tenant_id=principal["tenant_id"], team_id=resolved_team_id,
+                uploaded_by=principal["id"], customer_name=customer_name,
+                division=division, source_filename=source_filename,
+                status="review", mapping=mapping, row_count=len(processed),
+                ready_count=ready_count, review_count=review_count,
+                duplicate_count=duplicate_count, created_at=timestamp, updated_at=timestamp,
+            )
+            conn.execute(insert(t.job_intake_batches).values(**batch))
+            for item in processed:
+                conn.execute(insert(t.job_intake_items).values(
+                    id=uid(), tenant_id=principal["tenant_id"], batch_id=batch_id,
+                    duplicate_job_id=None, created_job_id=None,
+                    created_at=timestamp, updated_at=timestamp, **item,
+                ))
+            return {
+                **batch,
+                "headers": headers,
+                "mapping_source": "saved" if saved else "suggested",
+                "recognized_columns": len(mapping),
+            }
+        return self._global_mutate(identity, key, "job_intake.xlsx.uploaded", payload, apply)
