@@ -98,10 +98,14 @@ BEGIN
     AND (p_role <> 'manager' OR id IS DISTINCT FROM p_team_id);
 
   IF p_role IN ('manager','recruiter') THEN
-    INSERT INTO public.recruiter_profile(user_id,tenant_id,team_id)
-    VALUES (v_user_id,v_tenant_id,p_team_id)
-    ON CONFLICT (user_id)
-    DO UPDATE SET tenant_id=EXCLUDED.tenant_id, team_id=EXCLUDED.team_id;
+    UPDATE public.recruiter_profile rp
+    SET tenant_id=v_tenant_id, team_id=p_team_id
+    WHERE rp.user_id=v_user_id;
+
+    IF NOT FOUND THEN
+      INSERT INTO public.recruiter_profile(user_id,tenant_id,team_id)
+      VALUES (v_user_id,v_tenant_id,p_team_id);
+    END IF;
   ELSE
     DELETE FROM public.recruiter_profile
     WHERE user_id=v_user_id AND tenant_id=v_tenant_id;
@@ -205,10 +209,14 @@ BEGIN
     AND (p_role<>'manager' OR id IS DISTINCT FROM p_team_id);
 
   IF p_role IN ('manager','recruiter') THEN
-    INSERT INTO public.recruiter_profile(user_id,tenant_id,team_id)
-    VALUES (p_target_user_id,v_tenant_id,p_team_id)
-    ON CONFLICT (user_id)
-    DO UPDATE SET tenant_id=EXCLUDED.tenant_id,team_id=EXCLUDED.team_id;
+    UPDATE public.recruiter_profile rp
+    SET tenant_id=v_tenant_id, team_id=p_team_id
+    WHERE rp.user_id=p_target_user_id;
+
+    IF NOT FOUND THEN
+      INSERT INTO public.recruiter_profile(user_id,tenant_id,team_id)
+      VALUES (p_target_user_id,v_tenant_id,p_team_id);
+    END IF;
   ELSE
     DELETE FROM public.recruiter_profile
     WHERE user_id=p_target_user_id AND tenant_id=v_tenant_id;
