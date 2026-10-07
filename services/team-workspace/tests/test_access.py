@@ -1,4 +1,5 @@
 import time
+from datetime import timedelta
 from uuid import uuid4
 import jwt
 import pytest
@@ -99,6 +100,51 @@ def test_cases_scoped_by_database_tenant_team_owner(client, headers, subject, ex
     response = client.get(ROOT + "/cases", headers=headers(subject))
     assert response.status_code == 200
     assert [r["id"] for r in response.json()["items"]] == [idn(n) for n in expected]
+
+
+def test_manager_overview_is_role_restricted(client, headers):
+    assert client.get(ROOT + "/manager/overview", headers=headers()).status_code == 403
+
+
+def test_manager_overview_is_scoped_to_managed_team(client, headers, seeded):
+    from workspace_api.store import now
+    with seeded.begin() as conn:
+        conn.execute(insert(t.tasks), [
+            {"id":idn(701),"tenant_id":idn(1),"case_id":idn(100),"created_by":idn(10),
+             "title":"Synthetic overdue","due_at":now()-timedelta(hours=1),"status":"open","version":1,
+             "created_at":now(),"updated_at":now()},
+            {"id":idn(702),"tenant_id":idn(1),"case_id":idn(101),"created_by":idn(11),
+             "title":"Synthetic future","due_at":now()+timedelta(days=1),"status":"open","version":1,
+             "created_at":now(),"updated_at":now()},
+            {"id":idn(703),"tenant_id":idn(1),"case_id":idn(102),"created_by":idn(15),
+             "title":"Other team","due_at":now()-timedelta(hours=1),"status":"open","version":1,
+             "created_at":now(),"updated_at":now()},
+        ])
+    response = client.get(ROOT + "/manager/overview", headers=headers("manager-a"))
+    assert response.status_code == 200
+    data = response.json()
+    assert [team["id"] for team in data["teams"]] == [idn(30)]
+    assert data["totals"] == {
+        "work_items": 2,
+        "active_recruiters": 2,
+        "open_followups": 2,
+        "overdue_followups": 1,
+    }
+    assert {row["id"] for row in data["recruiters"]} == {idn(10), idn(11)}
+    recruiter_a = next(row for row in data["recruiters"] if row["id"] == idn(10))
+    assert recruiter_a["work_items"] == 1
+    assert recruiter_a["open_followups"] == 1
+    assert recruiter_a["overdue_followups"] == 1
+
+
+def test_admin_overview_stays_inside_tenant(client, headers):
+    response = client.get(ROOT + "/manager/overview", headers=headers("admin-a"))
+    assert response.status_code == 200
+    data = response.json()
+    assert {team["id"] for team in data["teams"]} == {idn(30), idn(31)}
+    assert data["totals"]["work_items"] == 3
+    assert {row["id"] for row in data["recruiters"]} == {idn(10), idn(11), idn(15)}
+    assert idn(20) not in {row["id"] for row in data["recruiters"]}
 
 
 def test_hidden_and_nonexistent_return_same_result(client, headers):
