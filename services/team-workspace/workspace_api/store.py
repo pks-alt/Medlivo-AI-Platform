@@ -947,3 +947,63 @@ class WorkspaceStore:
                 "recognized_columns": len(mapping),
             }
         return self._global_mutate(identity, key, "job_intake.xlsx.uploaded", payload, apply)
+
+
+    def recruiter_weekly_progress(self, identity, recruiter_user_id, week_start):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            recruiter = conn.execute(
+                select(t.users.c.id, t.users.c.display_name, t.users.c.email, t.profiles.c.team_id)
+                .join(t.profiles, and_(
+                    t.profiles.c.user_id == t.users.c.id,
+                    t.profiles.c.tenant_id == t.users.c.tenant_id,
+                ))
+                .where(
+                    t.users.c.id == recruiter_user_id,
+                    t.users.c.tenant_id == principal["tenant_id"],
+                    t.users.c.role == "recruiter",
+                    t.users.c.is_active.is_(True),
+                )
+            ).mappings().first()
+            if recruiter is None:
+                raise AccessError(404, "Recruiter not found")
+            if principal["role"] == "recruiter":
+                if principal["id"] != recruiter_user_id:
+                    raise AccessError(403, "Recruiter progress is private to the recruiter and authorized managers")
+            elif principal["role"] == "manager":
+                if not self._team_allowed(conn, principal, recruiter["team_id"]):
+                    raise AccessError(403, "Recruiter is outside your team")
+            elif principal["role"] != "admin":
+                raise AccessError(403, "Workspace access required")
+
+            goal = conn.execute(select(t.weekly_goals).where(
+                t.weekly_goals.c.tenant_id == principal["tenant_id"],
+                t.weekly_goals.c.recruiter_user_id == recruiter_user_id,
+                t.weekly_goals.c.week_start == week_start,
+            )).mappings().first()
+            actual = conn.execute(select(t.weekly_snapshots).where(
+                t.weekly_snapshots.c.tenant_id == principal["tenant_id"],
+                t.weekly_snapshots.c.recruiter_user_id == recruiter_user_id,
+                t.weekly_snapshots.c.week_start == week_start,
+            )).mappings().first()
+            return clean({
+                "recruiter": dict(recruiter),
+                "week_start": week_start,
+                "targets": {
+                    "submissions": goal["submissions_target"] if goal else 0,
+                    "interviews": goal["interviews_target"] if goal else 0,
+                    "closures": goal["closures_target"] if goal else 0,
+                    "priority_jobs": goal["priority_jobs_target"] if goal else 0,
+                },
+                "actuals": {
+                    "submissions": actual["submissions_actual"] if actual else 0,
+                    "interviews": actual["interviews_actual"] if actual else 0,
+                    "closures": actual["closures_actual"] if actual else 0,
+                    "offers": actual["offers_actual"] if actual else 0,
+                    "starts": actual["starts_actual"] if actual else 0,
+                    "qualified": actual["qualified_actual"] if actual else 0,
+                    "responses": actual["responses_actual"] if actual else 0,
+                },
+                "notes": goal["notes"] if goal else None,
+                "actuals_generated_at": actual["generated_at"] if actual else None,
+            })
