@@ -4,7 +4,10 @@ from uuid import uuid4
 from workspace_api import tables as t
 from sqlalchemy import insert
 from workspace_api.store import now
-from .conftest import idn
+
+
+def idn(n):
+    return f"00000000-0000-0000-0000-{n:012d}"
 
 
 def test_manager_can_create_rehab_job_intake_batch(client, headers):
