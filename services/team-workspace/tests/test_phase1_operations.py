@@ -1,5 +1,7 @@
 from datetime import date
 from uuid import uuid4
+from io import BytesIO
+from openpyxl import Workbook
 
 from workspace_api import tables as t
 from sqlalchemy import insert
@@ -258,3 +260,54 @@ def test_rehab_rows_are_normalized_and_classified(client, headers):
     assert items[0]["normalized_job"]["hours_per_week"] == 32
     assert items[2]["status"] == "duplicate"
     assert items[3]["status"] == "review"
+
+
+def test_manager_can_upload_real_rehab_xlsx(client, headers):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append([
+        "Requisition ID", "Posting Title", "Location : Name Linked",
+        "Facility Location : City", "Facility Location : State/Province",
+        "Bill Rate", "Start Date", "End Date", "Location : Location Setting",
+        "Hours Per Week",
+    ])
+    sheet.append([
+        "2026-135775", "Contract PT - Maternity Leave Coverage",
+        "The Terraces at San Joaquin Gardens", "Fresno", "CA", 85,
+        "11/29/2026", "2/28/2027", "SNF", 32,
+    ])
+    sheet.append([
+        "2026-136203", "Contract PT", "St John's United", "Billings", "MT", 85,
+        "11/1/2026", "1/31/2027", "IL / AL", 32,
+    ])
+    buffer = BytesIO()
+    workbook.save(buffer)
+    workbook.close()
+
+    request_headers = headers("manager-a")
+    response = client.post(
+        "/api/v1/team/job-intake/upload",
+        headers=request_headers,
+        data={"customer_name": "Synthetic Rehab Customer", "division": "Rehabilitation"},
+        files={"source_file": (
+            "rehab-jobs.xlsx", buffer.getvalue(),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )},
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["row_count"] == 2
+    assert body["ready_count"] == 2
+    assert body["review_count"] == 0
+    assert body["duplicate_count"] == 0
+    assert body["mapping_source"] == "suggested"
+    assert body["recognized_columns"] >= 8
+
+    reviewed = client.get(
+        f"/api/v1/team/job-intake/batches/{body['id']}/items",
+        headers=headers("manager-a"),
+    )
+    assert reviewed.status_code == 200
+    items = reviewed.json()["items"]
+    assert items[0]["normalized_job"]["title"] == "Contract PT - Maternity Leave Coverage"
+    assert items[0]["normalized_job"]["facility"] == "The Terraces at San Joaquin Gardens"
