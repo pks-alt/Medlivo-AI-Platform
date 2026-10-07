@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import SQLAlchemyError
 from .auth import AuthenticationError, GoogleIdentityVerifier
 from .config import Settings
-from .schemas import NoteInput, TaskInput, TaskUpdate, Reassignment, AdminUserInput
+from .schemas import NoteInput, TaskInput, TaskUpdate, Reassignment, AdminUserInput, AdminUserUpdate
 from .store import WorkspaceStore, AccessError
 
 
@@ -102,8 +102,16 @@ def build_app(store, verifier):
         return store.admin_users(who)
 
     @app.post(prefix + "/admin/users", status_code=201)
-    def admin_provision_user(value: AdminUserInput, who=Depends(identity)):
-        return store.admin_provision_user(who, value)
+    def admin_provision_user(value: AdminUserInput, idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.admin_provision_user(who, str(idempotency_key), value)
+
+    @app.patch(prefix + "/admin/users/{user_id}")
+    def admin_update_user(user_id: UUID, value: AdminUserUpdate, idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.admin_update_user(who, str(user_id), str(idempotency_key), value)
+
+    @app.get(prefix + "/admin/audit")
+    def admin_audit(limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
+        return store.admin_audit(who, limit=limit)
 
     @app.get(prefix + "/cases")
     def cases(after: UUID | None = None, limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
