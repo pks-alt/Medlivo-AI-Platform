@@ -311,3 +311,34 @@ def test_manager_can_upload_real_rehab_xlsx(client, headers):
     items = reviewed.json()["items"]
     assert items[0]["normalized_job"]["title"] == "Contract PT - Maternity Leave Coverage"
     assert items[0]["normalized_job"]["facility"] == "The Terraces at San Joaquin Gardens"
+
+
+def test_recruiter_can_read_own_weekly_progress(client, headers):
+    saved = client.put(
+        f"/api/v1/team/recruiters/{idn(10)}/weekly-goals",
+        headers=headers("recruiter-a"),
+        json={
+            "week_start": "2026-10-05",
+            "submissions_target": 12,
+            "interviews_target": 5,
+            "closures_target": 2,
+            "priority_jobs_target": 8,
+        },
+    )
+    assert saved.status_code == 200
+    response = client.get(
+        f"/api/v1/team/recruiters/{idn(10)}/weekly-goals?week_start=2026-10-05",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["targets"]["submissions"] == 12
+    assert body["actuals"]["submissions"] == 0
+
+
+def test_recruiter_cannot_read_another_recruiters_weekly_progress(client, headers):
+    response = client.get(
+        f"/api/v1/team/recruiters/{idn(11)}/weekly-goals?week_start=2026-10-05",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 403
