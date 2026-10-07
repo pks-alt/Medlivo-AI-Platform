@@ -130,7 +130,7 @@ BEGIN
           COALESCE(v_before,'{}'::jsonb),COALESCE(v_after,'{}'::jsonb),now());
 
   RETURN QUERY
-  SELECT u.id,u.email,u.display_name,u.role,u.is_active,rp.team_id
+  SELECT u.id,u.email::text,u.display_name::text,u.role::text,u.is_active,rp.team_id
   FROM public.app_user u
   LEFT JOIN public.recruiter_profile rp
     ON rp.user_id=u.id AND rp.tenant_id=u.tenant_id
@@ -241,7 +241,7 @@ BEGIN
           COALESCE(v_before,'{}'::jsonb),COALESCE(v_after,'{}'::jsonb),now());
 
   RETURN QUERY
-  SELECT u.id,u.email,u.display_name,u.role,u.is_active,rp.team_id
+  SELECT u.id,u.email::text,u.display_name::text,u.role::text,u.is_active,rp.team_id
   FROM public.app_user u
   LEFT JOIN public.recruiter_profile rp
     ON rp.user_id=u.id AND rp.tenant_id=u.tenant_id
