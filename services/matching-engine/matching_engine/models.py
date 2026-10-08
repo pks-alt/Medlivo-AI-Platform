@@ -30,6 +30,7 @@ class CandidateMatchInput(StrictModel):
     care_settings: list[str] = Field(default_factory=list)
     resume_specialties: list[str] = Field(default_factory=list)
     clinical_skills: list[str] = Field(default_factory=list)
+    documented_experience_years: int | None = Field(default=None, ge=0, le=60)
     city: str | None = None
     state: str | None = None
     available_from: date | None = None
@@ -51,6 +52,7 @@ class JobMatchInput(StrictModel):
     required_license_states: list[str] = Field(default_factory=list)
     required_certifications: list[str] = Field(default_factory=list)
     required_skills: list[str] = Field(default_factory=list)
+    minimum_experience_years: int | None = Field(default=None, ge=0, le=50)
 
 
 class MatchGate(StrictModel):
