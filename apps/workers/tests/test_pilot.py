@@ -110,3 +110,49 @@ async def test_pilot_sequence_is_bounded_and_ordered(monkeypatch):
         ("enrich_candidates", 4, 2),
         ("match", 20),
     ]
+
+
+@pytest.mark.asyncio
+async def test_main_authenticates_jobdiva_before_running(monkeypatch):
+    monkeypatch.setenv("PILOT_ENABLED", "true")
+    monkeypatch.setenv("PILOT_TENANT_ID", "tenant-1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost/db")
+    monkeypatch.setenv("JOBDIVA_LIVE_ENABLED", "true")
+    monkeypatch.setenv("JOBDIVA_CLIENT_ID", "1")
+    monkeypatch.setenv("JOBDIVA_USERNAME", "user@example.com")
+    monkeypatch.setenv("JOBDIVA_PASSWORD", "secret")
+
+    calls = []
+
+    class FakeConnection:
+        async def close(self):
+            calls.append("close")
+
+    class FakeAsyncConnection:
+        @staticmethod
+        async def connect(url):
+            calls.append(("connect", url))
+            return FakeConnection()
+
+    class FakeClient:
+        def __init__(self, settings):
+            calls.append("client_init")
+        async def __aenter__(self):
+            calls.append("enter")
+            return self
+        async def __aexit__(self, *args):
+            calls.append("exit")
+        async def authenticate(self):
+            calls.append("authenticate")
+
+    async def fake_run_pilot_once(**kwargs):
+        calls.append("run")
+        return {}
+
+    monkeypatch.setattr(pilot, "AsyncConnection", FakeAsyncConnection)
+    monkeypatch.setattr(pilot, "JobDivaClient", FakeClient)
+    monkeypatch.setattr(pilot, "run_pilot_once", fake_run_pilot_once)
+
+    result = await pilot.main()
+    assert result == 0
+    assert calls.index("authenticate") < calls.index("run")
