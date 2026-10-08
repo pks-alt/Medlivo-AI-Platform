@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from jobdiva_sync import SyncStream, backfill_windows, run_backfill_window, run_delta_sync
+from jobdiva_sync import SyncStream, backfill_windows, run_backfill_window, run_delta_sync, run_historical_backfill
 
 
 class FakeClient:
@@ -34,6 +34,7 @@ class FakeStore:
         self.runs = {}
         self.records = {}
         self.checkpoint_updates = 0
+        self.completed_backfills = set()
 
     async def checkpoint(self, tenant_id, source_system, stream):
         return self.watermark
@@ -59,7 +60,12 @@ class FakeStore:
         self.runs[kwargs["run_id"]].update({"status": "failed", **kwargs})
 
     async def complete_backfill_run(self, **kwargs):
-        self.runs[kwargs["run_id"]].update({"status": "succeeded", **kwargs})
+        run = self.runs[kwargs["run_id"]]
+        run.update({"status": "succeeded", **kwargs})
+        self.completed_backfills.add((run["stream"], run["window_start"], run["window_end"]))
+
+    async def backfill_window_succeeded(self, *, tenant_id, source_system, stream, window_start, window_end):
+        return (stream, window_start, window_end) in self.completed_backfills
 
 
 NOW = datetime(2026, 10, 8, 1, 0, tzinfo=timezone.utc)
@@ -215,3 +221,26 @@ async def test_backfill_window_larger_than_fourteen_days_is_rejected():
             window_start=NOW - timedelta(days=15),
             window_end=NOW,
         )
+
+
+@pytest.mark.asyncio
+async def test_historical_backfill_skips_windows_already_completed():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    end = datetime(2026, 1, 29, tzinfo=timezone.utc)
+    store = FakeStore()
+    first_window = (SyncStream.JOBS, start, start + timedelta(days=14))
+    store.completed_backfills.add(first_window)
+    client = FakeClient({1: []})
+
+    completed = await run_historical_backfill(
+        client,
+        store,
+        tenant_id="tenant-1",
+        stream=SyncStream.JOBS,
+        start=start,
+        end=end,
+    )
+
+    assert len(completed) == 1
+    assert client.calls[0][2] == start + timedelta(days=14)
+    assert client.calls[0][3] == end
