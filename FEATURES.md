@@ -9,7 +9,7 @@ Status values:
 
 > JobDiva remains the ATS and operational system of record. Medlivo AI is the intelligence and recruiter workflow-assist layer.
 >
-> Phase 3 recruiter-productivity acceptance gates are tracked in `PHASE3_ACCEPTANCE.md`.
+> Phase 3 recruiter-productivity acceptance gates are tracked in `PHASE3_ACCEPTANCE.md`. Repository-complete vs external acceptance work is summarized in `PHASE3_COMPLETION_STATUS.md`.
 
 | Area | Feature | Status | Source of truth / notes |
 | --- | --- | --- | --- |
