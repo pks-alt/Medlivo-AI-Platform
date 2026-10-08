@@ -101,3 +101,38 @@ class NormalizedJob(StrictModel):
         if value is not None and minimum is not None and value < minimum:
             raise ValueError("pay_rate_max must be greater than or equal to pay_rate_min")
         return value
+
+
+ContentProvenance = Literal["source_confirmed", "medlivo_standard", "ai_suggested"]
+PublishReadiness = Literal["not_ready", "manager_review", "ready_for_recruiting", "ready_to_publish"]
+
+
+class JobContentSection(StrictModel):
+    key: str = Field(min_length=1, max_length=80)
+    heading: str = Field(min_length=1, max_length=120)
+    content: str = Field(min_length=1, max_length=6000)
+    provenance: ContentProvenance
+    requires_confirmation: bool = False
+
+
+class JobQualityScore(StrictModel):
+    overall: int = Field(ge=0, le=100)
+    core_data: int = Field(ge=0, le=100)
+    matching_readiness: int = Field(ge=0, le=100)
+    publishing_readiness: int = Field(ge=0, le=100)
+    missing_fields: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class PublishableJobDraft(StrictModel):
+    template_id: str = Field(min_length=1, max_length=120)
+    division: Division
+    profession: str | None = None
+    specialty: str | None = None
+    public_title: str = Field(min_length=1, max_length=300)
+    summary: str = Field(min_length=1, max_length=2000)
+    sections: list[JobContentSection]
+    public_fields: dict[str, Any] = Field(default_factory=dict)
+    internal_fields: dict[str, Any] = Field(default_factory=dict)
+    quality: JobQualityScore
+    readiness: PublishReadiness

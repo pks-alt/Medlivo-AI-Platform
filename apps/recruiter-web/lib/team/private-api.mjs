@@ -23,12 +23,12 @@ export function createPrivateApi(apiUrl, {fetcher=fetch, clock=()=>Math.floor(Da
     })();
     try {return await pending;} finally {pending=null;}
   }
-  return async function call(userToken,path,{method='GET',body,key}={}) {
+  return async function call(userToken,path,{method='GET',body,key,contentType}={}) {
     if(!path.startsWith('/') || path.includes('..') || path.includes('%') || path.includes('//') ||
-        !['GET','POST','PATCH'].includes(method)) throw new SafeError(404,'This action is not available.');
+        !['GET','POST','PUT','PATCH'].includes(method)) throw new SafeError(404,'This action is not available.');
     const headers={Accept:'application/json',Authorization:`Bearer ${userToken}`,
       'X-Serverless-Authorization':`Bearer ${await serviceToken()}`};
-    if(body!==undefined) headers['Content-Type']='application/json';
+    if(body!==undefined) headers['Content-Type']=contentType || 'application/json';
     if(key) headers['Idempotency-Key']=key;
     // No automatic mutation retry: preserve the caller's idempotency key for explicit retry.
     return fetcher(apiUrl+'/api/v1/team'+path,{method,headers,body,redirect:'error',cache:'no-store',signal:AbortSignal.timeout(15000)});

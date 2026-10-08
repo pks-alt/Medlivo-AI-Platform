@@ -2,6 +2,8 @@
 
 Standalone AI recruiting platform for Medlivo.
 
+> **Canonical codebase:** see [CODEBASE.md](CODEBASE.md). Until the current consolidation PR is merged, all new platform work belongs on the documented consolidation branch. After merge, all work starts from `main`.
+
 ## Phase 1
 Build the internal recruiter and manager platform for `recruit.medlivo.com`.
 

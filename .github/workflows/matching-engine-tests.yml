@@ -1,0 +1,29 @@
+name: Test Matching Engine
+on:
+  pull_request:
+    paths:
+      - 'services/matching-engine/**'
+      - '.github/workflows/matching-engine-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'services/matching-engine/**'
+      - '.github/workflows/matching-engine-tests.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/matching-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install matching tests
+        run: python -m pip install '.[test]'
+      - name: Run matching tests
+        run: python -m pytest -q

@@ -107,18 +107,33 @@ export function validateConfig(env) {
 }
 function endpoint(path, method, query) {
   const id = '[0-9a-fA-F-]{36}', root = `/cases/${id}`;
-  const read = ['/me', '/cases', '/jobs', `/jobs/${id}`, '/candidates', `/candidates/${id}`, '/manager/overview', '/admin/users', '/admin/teams', '/admin/audit', root, `${root}/(?:notes|tasks|audit|eligible-owners)`];
-  const write = ['/admin/users', `${root}/(?:notes|tasks|reassign)`];
-  const patterns = method === 'GET' ? read : method === 'POST' ? write :
-    method === 'PATCH' ? [`/admin/users/${id}`, `${root}/tasks/${id}`] : [];
+  const read = [
+    '/me', '/cases', '/jobs', `/jobs/${id}`, '/candidates', `/candidates/${id}`,
+    '/manager/overview', '/manager/weekly-review', '/work-queue', '/admin/users', '/admin/teams', '/admin/audit',
+    '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings', `/recruiters/${id}/weekly-goals`, '/job-publications', `/job-publications/${id}`,
+    root, `${root}/(?:notes|tasks|audit|eligible-owners)`
+  ];
+  const post = [
+    '/admin/users', '/job-intake/upload', '/job-intake/batches', `/job-intake/batches/${id}/rows`, '/job-publications', `/job-publications/${id}/decision`,
+    `${root}/(?:notes|tasks|reassign)`
+  ];
+  const put = ['/job-intake/mappings', `/recruiters/${id}/weekly-goals`];
+  const patch = [`/admin/users/${id}`, `${root}/tasks/${id}`];
+  const patterns = method === 'GET' ? read : method === 'POST' ? post :
+    method === 'PUT' ? put : method === 'PATCH' ? patch : [];
   if (!patterns.some(p => new RegExp('^' + p + '$').test(path))) throw new SafeError(404, 'This action is not available.');
   for (const segment of path.split('/')) if (segment.includes('-') && segment.length === 36 && !UUID.test(segment)) throw new SafeError(400, 'Invalid work item.');
+
   const params = new URLSearchParams();
   for (const key of new Set(query.keys())) {
     const value = query.get(key);
-    if (method !== 'GET' || !['after','limit'].includes(key) || query.getAll(key).length !== 1 ||
-        (key === 'after' ? !UUID.test(value) : !/^(?:[1-9][0-9]?|100)$/.test(value))) throw new SafeError(400, 'Invalid request parameters.');
-    params.set(key, value);
+    if (method !== 'GET' || query.getAll(key).length !== 1) throw new SafeError(400, 'Invalid request parameters.');
+    if (key === 'after' && UUID.test(value)) params.set(key, value);
+    else if (key === 'limit' && /^(?:[1-9][0-9]{0,2}|500)$/.test(value) && Number(value) <= 500) params.set(key, value);
+    else if (key === 'team_id' && UUID.test(value)) params.set(key, value);
+    else if (key === 'week_start' && /^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/.test(value)) params.set(key, value);
+    else if (key === 'division' && ['Rehabilitation','Nursing & Allied','Locum Tenens'].includes(value)) params.set(key, value);
+    else throw new SafeError(400, 'Invalid request parameters.');
   }
   return path + (params.size ? '?' + params : '');
 }
@@ -189,18 +204,29 @@ export function createGateway({config, store, verifyIdToken, api, fetcher = fetc
   }
   async function proxy(request, url, data) {
     const method = request.method, resource = endpoint(url.pathname.slice('/api/team'.length), method, url.searchParams);
-    let body, key;
+    let body, key, contentType;
     if (method !== 'GET') {
       csrfCheck(request,data);
       key = request.headers.get('idempotency-key');
       if (!UUID.test(key || '')) throw new SafeError(400, 'A request identifier is required. Reload and try again.');
-      if (request.headers.get('content-type')?.split(';')[0].trim() !== 'application/json') throw new SafeError(415,'A JSON request is required.');
-      try { body = await boundedText(request, 16384); }
-      catch (error) { if (error instanceof SafeError) throw new SafeError(413,'The request body is too large.'); throw error; }
-      try { const value=JSON.parse(body); if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(); }
-      catch { throw new SafeError(400, 'Invalid request body.'); }
+      contentType = request.headers.get('content-type') || '';
+      const isXlsxUpload = resource === '/job-intake/upload' && method === 'POST';
+      if (isXlsxUpload) {
+        if (!contentType.toLowerCase().startsWith('multipart/form-data;')) throw new SafeError(415,'An Excel upload is required.');
+        const declared = Number(request.headers.get('content-length') || '0');
+        if (Number.isFinite(declared) && declared > 5 * 1024 * 1024) throw new SafeError(413,'The spreadsheet is too large.');
+        const bytes = await request.arrayBuffer();
+        if (bytes.byteLength > 5 * 1024 * 1024) throw new SafeError(413,'The spreadsheet is too large.');
+        body = bytes;
+      } else {
+        if (contentType.split(';')[0].trim() !== 'application/json') throw new SafeError(415,'A JSON request is required.');
+        try { body = await boundedText(request, resource.includes('/job-intake/') ? 1048576 : 16384); }
+        catch (error) { if (error instanceof SafeError) throw new SafeError(413,'The request body is too large.'); throw error; }
+        try { const value=JSON.parse(body); if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(); }
+        catch { throw new SafeError(400, 'Invalid request body.'); }
+      }
     }
-    const response = await api(data.idToken, resource, {method,body,key});
+    const response = await api(data.idToken, resource, {method,body,key,contentType});
     if (response.status === 401) { await store.removeSession(data.id); throw new SafeError(401, 'Your session has ended. Please sign in again.'); }
     if (!response.ok) {
       const message = {403:'You do not have permission for this action.',404:'Work item not found.',

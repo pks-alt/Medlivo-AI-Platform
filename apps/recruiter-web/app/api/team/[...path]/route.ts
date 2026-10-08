@@ -4,4 +4,5 @@ export const dynamic = 'force-dynamic';
 export const GET = teamApi;
 export const POST = teamApi;
 export const PATCH = teamApi;
-// No generic DELETE/PUT proxy; only allowlisted operations are exposed.
+export const PUT = teamApi;
+// No generic DELETE proxy; the private API still enforces route-level authorization.
