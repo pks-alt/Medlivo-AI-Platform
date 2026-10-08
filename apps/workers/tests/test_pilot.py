@@ -150,9 +150,63 @@ async def test_main_authenticates_jobdiva_before_running(monkeypatch):
         return {}
 
     monkeypatch.setattr(pilot, "AsyncConnection", FakeAsyncConnection)
+    async def fake_schema(connection):
+        return {"status": "ready", "missing_tables": [], "missing_columns": {}}
+
     monkeypatch.setattr(pilot, "JobDivaClient", FakeClient)
     monkeypatch.setattr(pilot, "run_pilot_once", fake_run_pilot_once)
+    monkeypatch.setattr(pilot, "check_schema_readiness", fake_schema)
 
     result = await pilot.main()
     assert result == 0
     assert calls.index("authenticate") < calls.index("run")
+
+
+class FakeCursor:
+    def __init__(self, rows):
+        self.rows = rows
+    async def __aenter__(self):
+        return self
+    async def __aexit__(self, *args):
+        return None
+    async def execute(self, query):
+        return None
+    async def fetchall(self):
+        return self.rows
+
+
+class FakeSchemaConnection:
+    def __init__(self, rows):
+        self.rows = rows
+    def cursor(self):
+        return FakeCursor(self.rows)
+
+
+@pytest.mark.asyncio
+async def test_schema_preflight_reports_missing_tables_and_columns():
+    rows = [
+        ("integration_sync_checkpoint", "tenant_id"),
+        ("integration_sync_checkpoint", "source_system"),
+        ("integration_sync_checkpoint", "stream"),
+        ("integration_sync_checkpoint", "watermark"),
+        ("job", "tenant_id"),
+        ("job", "title"),
+    ]
+    result = await pilot.check_schema_readiness(FakeSchemaConnection(rows))
+    assert result["status"] == "not_ready"
+    assert "candidate" in result["missing_tables"]
+    assert result["missing_columns"]["job"] == ["owner_user_id", "profession", "status"]
+
+
+@pytest.mark.asyncio
+async def test_connectivity_diagnostic_surfaces_endpoint_401_without_secrets():
+    class Client:
+        async def open_jobs(self):
+            raise pilot.JobDivaHTTPError(401)
+
+    result = await pilot.run_connectivity_diagnostic(Client())
+    assert result == {
+        "authentication": "ok",
+        "data_endpoint": "unauthorized",
+        "http_status": 401,
+    }

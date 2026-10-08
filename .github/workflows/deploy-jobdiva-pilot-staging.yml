@@ -15,6 +15,14 @@ on:
         description: "Type READ_ONLY to confirm this pilot must not write to JobDiva"
         required: true
         type: string
+      diagnostics_only:
+        description: "Run connectivity diagnostics only; do not start sync"
+        required: true
+        type: choice
+        options:
+          - "true"
+          - "false"
+        default: "false"
 
 permissions:
   contents: read
@@ -58,6 +66,7 @@ jobs:
           CLIENT_ID_SECRET: ${{ vars.JOBDIVA_CLIENT_ID_SECRET }}
           USERNAME_SECRET: ${{ vars.JOBDIVA_USERNAME_SECRET }}
           PASSWORD_SECRET: ${{ vars.JOBDIVA_PASSWORD_SECRET }}
+          DIAGNOSTICS_ONLY: ${{ inputs.diagnostics_only }}
         run: |
           set -euo pipefail
           test -n "${PILOT_TENANT_ID}"
@@ -65,6 +74,11 @@ jobs:
           test -n "${CLIENT_ID_SECRET}"
           test -n "${USERNAME_SECRET}"
           test -n "${PASSWORD_SECRET}"
+          test "${DIAGNOSTICS_ONLY}" = "true" || test "${DIAGNOSTICS_ONLY}" = "false"
+          if [ "${DIAGNOSTICS_ONLY}" = "true" ] && [ "${{ inputs.enable_pilot }}" != "true" ]; then
+            echo "diagnostics_only=true requires enable_pilot=true" >&2
+            exit 1
+          fi
 
       - name: Configure Artifact Registry
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
@@ -85,6 +99,7 @@ jobs:
           CLIENT_ID_SECRET: ${{ vars.JOBDIVA_CLIENT_ID_SECRET }}
           USERNAME_SECRET: ${{ vars.JOBDIVA_USERNAME_SECRET }}
           PASSWORD_SECRET: ${{ vars.JOBDIVA_PASSWORD_SECRET }}
+          DIAGNOSTICS_ONLY: ${{ inputs.diagnostics_only }}
         run: |
           set -euo pipefail
 
@@ -101,7 +116,7 @@ jobs:
             --image="${IMAGE}" \
             --service-account="${JOB_SERVICE_ACCOUNT}" \
             --set-cloudsql-instances="${CLOUDSQL_INSTANCE}" \
-            --set-env-vars="PILOT_ENABLED=${PILOT_ENABLED},JOBDIVA_LIVE_ENABLED=${JOBDIVA_LIVE_ENABLED},PILOT_TENANT_ID=${PILOT_TENANT_ID},PILOT_SYNC_PAGE_SIZE=50,PILOT_PROMOTION_LIMIT=100,PILOT_CANDIDATE_ENRICHMENT_LIMIT=10,PILOT_JOB_ENRICHMENT_LIMIT=10,PILOT_MATCHING_LIMIT=200,PILOT_MAX_RESUMES=2" \
+            --set-env-vars="PILOT_ENABLED=${PILOT_ENABLED},JOBDIVA_LIVE_ENABLED=${JOBDIVA_LIVE_ENABLED},PILOT_DIAGNOSTICS_ONLY=${DIAGNOSTICS_ONLY},PILOT_TENANT_ID=${PILOT_TENANT_ID},PILOT_SYNC_PAGE_SIZE=50,PILOT_PROMOTION_LIMIT=100,PILOT_CANDIDATE_ENRICHMENT_LIMIT=10,PILOT_JOB_ENRICHMENT_LIMIT=10,PILOT_MATCHING_LIMIT=200,PILOT_MAX_RESUMES=2" \
             --set-secrets="DATABASE_URL=${DB_SECRET}:latest,JOBDIVA_CLIENT_ID=${CLIENT_ID_SECRET}:latest,JOBDIVA_USERNAME=${USERNAME_SECRET}:latest,JOBDIVA_PASSWORD=${PASSWORD_SECRET}:latest" \
             --max-retries=0 \
             --task-timeout=15m \

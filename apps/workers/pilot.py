@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from dataclasses import dataclass
 
 from psycopg import AsyncConnection
 
-from jobdiva_connector.client import JobDivaClient
+from jobdiva_connector.client import JobDivaClient, JobDivaError, JobDivaHTTPError
 from jobdiva_connector.config import JobDivaSettings
 from jobdiva_sync import (
     CanonicalPromoter,
@@ -60,6 +61,64 @@ def limits_from_env() -> PilotLimits:
 
 def pilot_enabled() -> bool:
     return os.getenv("PILOT_ENABLED", "false").strip().lower() == "true"
+
+
+def diagnostics_only() -> bool:
+    return os.getenv("PILOT_DIAGNOSTICS_ONLY", "false").strip().lower() == "true"
+
+
+REQUIRED_SCHEMA = {
+    "integration_sync_checkpoint": {"tenant_id", "source_system", "stream", "watermark"},
+    "integration_sync_run": {"tenant_id", "source_system", "stream", "mode", "status"},
+    "job_source_record": {"tenant_id", "job_id", "source_system", "source_id", "enriched_at"},
+    "candidate_source_record": {"tenant_id", "candidate_id", "source_system", "source_id", "enriched_at"},
+    "job": {"tenant_id", "title", "profession", "status", "owner_user_id"},
+    "candidate": {"tenant_id", "canonical_name", "profession", "state", "lifecycle_status"},
+    "match": {"tenant_id", "job_id", "candidate_id", "overall_score"},
+}
+
+
+async def check_schema_readiness(connection) -> dict:
+    async with connection.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT table_name, column_name
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+            """
+        )
+        rows = await cur.fetchall()
+
+    present: dict[str, set[str]] = {}
+    for table_name, column_name in rows:
+        present.setdefault(table_name, set()).add(column_name)
+
+    missing_tables = sorted(table for table in REQUIRED_SCHEMA if table not in present)
+    missing_columns = {
+        table: sorted(columns - present.get(table, set()))
+        for table, columns in REQUIRED_SCHEMA.items()
+        if table in present and columns - present.get(table, set())
+    }
+    return {
+        "status": "ready" if not missing_tables and not missing_columns else "not_ready",
+        "missing_tables": missing_tables,
+        "missing_columns": missing_columns,
+    }
+
+
+async def run_connectivity_diagnostic(client) -> dict:
+    result = {"authentication": "ok", "data_endpoint": "unknown", "http_status": None}
+    try:
+        await client.open_jobs()
+    except JobDivaHTTPError as exc:
+        result["data_endpoint"] = "unauthorized" if exc.status_code in {401, 403} else "http_error"
+        result["http_status"] = exc.status_code
+    except JobDivaError:
+        result["data_endpoint"] = "connector_error"
+    else:
+        result["data_endpoint"] = "ok"
+        result["http_status"] = 200
+    return result
 
 
 async def run_pilot_once(
@@ -158,20 +217,35 @@ async def main() -> int:
     limits = limits_from_env()
     connection = await AsyncConnection.connect(_psycopg_database_url(database_url))
     try:
+        schema = await check_schema_readiness(connection)
+        if schema["status"] != "ready":
+            print(json.dumps({"pilot": "preflight_failed", "stage": "database_schema", **schema}, sort_keys=True))
+            return 2
+
         async with JobDivaClient(settings) as client:
             await client.authenticate()
+            if diagnostics_only():
+                diagnostic = await run_connectivity_diagnostic(client)
+                print(json.dumps({
+                    "pilot": "diagnostic",
+                    "tenant_id": tenant_id,
+                    "database_schema": "ready",
+                    "jobdiva": diagnostic,
+                }, sort_keys=True))
+                return 0 if diagnostic["data_endpoint"] == "ok" else 3
+
             result = await run_pilot_once(
                 connection=connection,
                 client=client,
                 tenant_id=tenant_id,
                 limits=limits,
             )
-        print({
+        print(json.dumps({
             "pilot": "completed",
             "tenant_id": tenant_id,
             "limits": limits.__dict__,
             "result": result,
-        })
+        }, default=str, sort_keys=True))
         return 0
     finally:
         await connection.close()
