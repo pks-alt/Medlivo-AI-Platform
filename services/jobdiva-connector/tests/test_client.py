@@ -89,3 +89,30 @@ async def test_updated_jobs_formats_dates_and_pages():
         }
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_candidate_intelligence_reads_use_candidate_and_resume_ids():
+    seen = []
+    async def handler(request):
+        seen.append((request.url.path, dict(request.url.params)))
+        return httpx.Response(200, json=[{"synthetic": True}])
+
+    client = JobDivaClient(settings(), transport=httpx.MockTransport(handler))
+    client._access_token = "synthetic-token-123"
+    try:
+        await client.candidate_profile(123)
+        await client.candidate_licenses(123)
+        await client.candidate_certifications(123)
+        await client.candidate_resumes(123)
+        await client.resume_text(456)
+
+        assert seen == [
+            ("/apiv2/bi/CandidatesProfileDetail", {"candidateId": "123"}),
+            ("/apiv2/bi/CandidatesLicensesDetail", {"candidateId": "123"}),
+            ("/apiv2/bi/CandidatesCertificationsDetails", {"candidateId": "123"}),
+            ("/apiv2/bi/CandidatesResumesDetail", {"candidateId": "123"}),
+            ("/apiv2/bi/ResumesTextDetail", {"resumeId": "456"}),
+        ]
+    finally:
+        await client.close()
