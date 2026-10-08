@@ -1013,3 +1013,169 @@ class WorkspaceStore:
                 "notes": goal["notes"] if goal else None,
                 "actuals_generated_at": actual["generated_at"] if actual else None,
             })
+
+
+    def create_job_publication(self, identity, key, value):
+        payload = {
+            "team_id": str(value.team_id) if value.team_id else None,
+            "job_id": str(value.job_id) if value.job_id else None,
+            "intake_item_id": str(value.intake_item_id) if value.intake_item_id else None,
+            "source_snapshot": value.source_snapshot,
+            "enhanced_snapshot": value.enhanced_snapshot,
+            "quality_score": value.quality_score,
+            "readiness": value.readiness,
+        }
+        def apply(conn, principal):
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+            team_id = str(value.team_id) if value.team_id else None
+
+            if value.intake_item_id:
+                intake = conn.execute(
+                    select(t.job_intake_items.c.id, t.job_intake_batches.c.team_id)
+                    .join(t.job_intake_batches, and_(
+                        t.job_intake_batches.c.id == t.job_intake_items.c.batch_id,
+                        t.job_intake_batches.c.tenant_id == t.job_intake_items.c.tenant_id,
+                    ))
+                    .where(
+                        t.job_intake_items.c.id == str(value.intake_item_id),
+                        t.job_intake_items.c.tenant_id == principal["tenant_id"],
+                    )
+                ).mappings().first()
+                if intake is None:
+                    raise AccessError(404, "Job intake row not found")
+                if team_id is None:
+                    team_id = intake["team_id"]
+            elif value.job_id:
+                exists = conn.execute(select(t.jobs.c.id).where(
+                    t.jobs.c.id == str(value.job_id),
+                    t.jobs.c.tenant_id == principal["tenant_id"],
+                )).first()
+                if exists is None:
+                    raise AccessError(404, "Job not found")
+
+            if principal["role"] == "manager":
+                if team_id is None or not self._team_allowed(conn, principal, team_id):
+                    raise AccessError(403, "Job is outside your team")
+            elif team_id is not None and not self._team_allowed(conn, principal, team_id):
+                raise AccessError(422, "Select a valid team")
+
+            timestamp = now()
+            row = dict(
+                id=uid(), tenant_id=principal["tenant_id"], team_id=team_id,
+                job_id=str(value.job_id) if value.job_id else None,
+                intake_item_id=str(value.intake_item_id) if value.intake_item_id else None,
+                source_snapshot=value.source_snapshot,
+                enhanced_snapshot=value.enhanced_snapshot,
+                quality_score=value.quality_score,
+                readiness=value.readiness,
+                recruiting_status="pending", website_status="pending",
+                recruiting_approved_by=None, recruiting_approved_at=None,
+                website_approved_by=None, website_approved_at=None,
+                version=1, created_by=principal["id"], created_at=timestamp, updated_at=timestamp,
+            )
+            conn.execute(insert(t.job_publications).values(**row))
+            conn.execute(insert(t.job_publication_audit).values(
+                id=uid(), tenant_id=principal["tenant_id"], publication_id=row["id"],
+                actor_user_id=principal["id"], action="draft.created",
+                details={"readiness": value.readiness}, created_at=timestamp,
+            ))
+            return row
+        return self._global_mutate(identity, key, "job_publication.created", payload, apply)
+
+    def list_job_publications(self, identity, *, limit=100):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+            statement = select(t.job_publications).where(
+                t.job_publications.c.tenant_id == principal["tenant_id"]
+            )
+            if principal["role"] == "manager":
+                managed_teams = select(t.teams.c.id).where(
+                    t.teams.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+                statement = statement.where(t.job_publications.c.team_id.in_(managed_teams))
+            rows = conn.execute(statement.order_by(
+                t.job_publications.c.updated_at.desc(), t.job_publications.c.id.desc()
+            ).limit(limit)).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
+    def get_job_publication(self, identity, publication_id):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+            row = conn.execute(select(t.job_publications).where(
+                t.job_publications.c.id == publication_id,
+                t.job_publications.c.tenant_id == principal["tenant_id"],
+            )).mappings().first()
+            if row is None:
+                raise AccessError(404, "Job publication draft not found")
+            if principal["role"] == "manager" and (
+                row["team_id"] is None or not self._team_allowed(conn, principal, row["team_id"])
+            ):
+                raise AccessError(404, "Job publication draft not found")
+            history = conn.execute(select(t.job_publication_audit).where(
+                t.job_publication_audit.c.tenant_id == principal["tenant_id"],
+                t.job_publication_audit.c.publication_id == publication_id,
+            ).order_by(t.job_publication_audit.c.created_at, t.job_publication_audit.c.id)).mappings().all()
+            return {"publication": clean(row), "history": [clean(item) for item in history]}
+
+    def decide_job_publication(self, identity, publication_id, key, value):
+        payload = {
+            "publication_id": publication_id, "target": value.target,
+            "decision": value.decision, "reason": value.reason,
+            "expected_version": value.expected_version,
+        }
+        def apply(conn, principal):
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+            row = conn.execute(select(t.job_publications).where(
+                t.job_publications.c.id == publication_id,
+                t.job_publications.c.tenant_id == principal["tenant_id"],
+            ).with_for_update()).mappings().first()
+            if row is None:
+                raise AccessError(404, "Job publication draft not found")
+            if principal["role"] == "manager" and (
+                row["team_id"] is None or not self._team_allowed(conn, principal, row["team_id"])
+            ):
+                raise AccessError(404, "Job publication draft not found")
+            if row["version"] != value.expected_version:
+                raise AccessError(409, "This job draft changed; reload it before approving")
+
+            if value.target == "website" and value.decision == "approved":
+                if row["recruiting_status"] != "approved":
+                    raise AccessError(422, "Approve the job for recruiting before website publication")
+                if row["readiness"] != "ready_to_publish":
+                    raise AccessError(422, "Resolve all website readiness items before approval")
+
+            timestamp = now()
+            version = value.expected_version + 1
+            updates = {"version": version, "updated_at": timestamp}
+            if value.target == "recruiting":
+                updates["recruiting_status"] = value.decision
+                updates["recruiting_approved_by"] = principal["id"] if value.decision == "approved" else None
+                updates["recruiting_approved_at"] = timestamp if value.decision == "approved" else None
+            else:
+                updates["website_status"] = value.decision
+                updates["website_approved_by"] = principal["id"] if value.decision == "approved" else None
+                updates["website_approved_at"] = timestamp if value.decision == "approved" else None
+
+            result = conn.execute(update(t.job_publications).where(
+                t.job_publications.c.id == publication_id,
+                t.job_publications.c.tenant_id == principal["tenant_id"],
+                t.job_publications.c.version == value.expected_version,
+            ).values(**updates))
+            if result.rowcount != 1:
+                raise AccessError(409, "This job draft changed; reload it before approving")
+
+            action = f"{value.target}.{value.decision}"
+            conn.execute(insert(t.job_publication_audit).values(
+                id=uid(), tenant_id=principal["tenant_id"], publication_id=publication_id,
+                actor_user_id=principal["id"], action=action,
+                details={"reason": value.reason, "version": version}, created_at=timestamp,
+            ))
+            return clean(dict(row, **updates))
+        return self._global_mutate(identity, key, "job_publication.decision", payload, apply)
