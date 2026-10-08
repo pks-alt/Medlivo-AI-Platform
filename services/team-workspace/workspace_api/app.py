@@ -13,7 +13,7 @@ from .config import Settings
 from .schemas import (
     NoteInput, TaskInput, TaskUpdate, Reassignment, AdminUserInput, AdminUserUpdate,
     JobIntakeBatchInput, CustomerJobMappingInput, WeeklyGoalInput, JobIntakeRowsInput,
-    JobPublicationDraftInput, JobPublicationDecision,
+    JobPublicationDraftInput, JobPublicationDecision, CareerApplicationAssignment,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -195,6 +195,17 @@ def build_app(store, verifier):
     @app.get(prefix + "/job-publications")
     def job_publications(limit: int = Query(default=100, ge=1, le=200), who=Depends(identity)):
         return store.list_job_publications(who, limit=limit)
+
+    @app.get(prefix + "/applications")
+    def career_applications(limit: int = Query(default=100, ge=1, le=200), who=Depends(identity)):
+        return store.list_career_applications(who, limit=limit)
+
+    @app.post(prefix + "/applications/{application_id}/assign")
+    def assign_career_application(application_id: UUID, value: CareerApplicationAssignment,
+                                  idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.assign_career_application(
+            who, str(application_id), str(idempotency_key), value
+        )
 
     @app.post(prefix + "/job-publications", status_code=201)
     def create_job_publication(value: JobPublicationDraftInput,
