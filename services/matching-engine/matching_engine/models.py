@@ -28,6 +28,8 @@ class CandidateMatchInput(StrictModel):
     profession: str | None = None
     specialty: str | None = None
     care_settings: list[str] = Field(default_factory=list)
+    resume_specialties: list[str] = Field(default_factory=list)
+    clinical_skills: list[str] = Field(default_factory=list)
     city: str | None = None
     state: str | None = None
     available_from: date | None = None
