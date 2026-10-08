@@ -29,6 +29,7 @@ class CanonicalPromoter:
         entity_type = "job" if stream == SyncStream.JOBS else "candidate"
         source_table = "job_source_record" if stream == SyncStream.JOBS else "candidate_source_record"
         link_column = "job_id" if stream == SyncStream.JOBS else "candidate_id"
+        promotion_version = "jobdiva-explicit-v1"
         run_id = str(uuid4())
 
         async with self.connection.transaction():
@@ -52,7 +53,7 @@ class CanonicalPromoter:
                     ORDER BY created_at, id
                     LIMIT %s
                     """,
-                    (tenant_id, source_system, limit),
+                    (tenant_id, source_system, promotion_version, limit),
                 )
                 rows = await cur.fetchall()
 
@@ -66,6 +67,7 @@ class CanonicalPromoter:
                             source_record_id=str(source_record_id),
                             source_id=source_id,
                             value=value,
+                            promotion_version=promotion_version,
                         )
                     else:
                         value = promote_candidate_payload(payload or {})
@@ -74,6 +76,7 @@ class CanonicalPromoter:
                             source_record_id=str(source_record_id),
                             source_id=source_id,
                             value=value,
+                            promotion_version=promotion_version,
                         )
                     promoted += 1
                 except ValueError:
@@ -112,7 +115,7 @@ class CanonicalPromoter:
                 )
             raise
 
-    async def _promote_job(self, *, tenant_id: str, source_record_id: str, source_id: str, value) -> None:
+    async def _promote_job(self, *, tenant_id: str, source_record_id: str, source_id: str, value, promotion_version: str) -> None:
         async with self.connection.transaction():
             async with self.connection.cursor() as cur:
                 await cur.execute(
@@ -126,40 +129,69 @@ class CanonicalPromoter:
                 row = await cur.fetchone()
                 if row is None:
                     raise RuntimeError("Job source record disappeared during promotion")
-                if row[0] is not None:
-                    return
-
-                await cur.execute(
-                    """
-                    INSERT INTO job
-                      (tenant_id, title, profession, specialty, city, state, start_date,
-                       status, normalized_payload, created_at, updated_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
-                    RETURNING id
-                    """,
-                    (
-                        tenant_id,
-                        value.title,
-                        value.profession,
-                        value.specialty,
-                        value.city,
-                        value.state,
-                        value.start_date,
-                        value.status,
-                        Jsonb(value.normalized_payload),
-                    ),
-                )
-                job_id = (await cur.fetchone())[0]
+                job_id = row[0]
+                if job_id is None:
+                    await cur.execute(
+                        """
+                        INSERT INTO job
+                          (tenant_id, title, profession, specialty, city, state, start_date,
+                           status, normalized_payload, created_at, updated_at)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
+                        RETURNING id
+                        """,
+                        (
+                            tenant_id,
+                            value.title,
+                            value.profession,
+                            value.specialty,
+                            value.city,
+                            value.state,
+                            value.start_date,
+                            value.status,
+                            Jsonb(value.normalized_payload),
+                        ),
+                    )
+                    job_id = (await cur.fetchone())[0]
+                else:
+                    await cur.execute(
+                        """
+                        UPDATE job
+                        SET title=%s,
+                            profession=COALESCE(%s, profession),
+                            specialty=COALESCE(%s, specialty),
+                            city=COALESCE(%s, city),
+                            state=COALESCE(%s, state),
+                            start_date=COALESCE(%s, start_date),
+                            status=CASE WHEN %s <> 'unknown' THEN %s ELSE status END,
+                            normalized_payload=normalized_payload || %s,
+                            updated_at=now()
+                        WHERE id=%s AND tenant_id=%s
+                        """,
+                        (
+                            value.title,
+                            value.profession,
+                            value.specialty,
+                            value.city,
+                            value.state,
+                            value.start_date,
+                            value.status,
+                            value.status,
+                            Jsonb(value.normalized_payload),
+                            job_id,
+                            tenant_id,
+                        ),
+                    )
                 await cur.execute(
                     """
                     UPDATE job_source_record
-                    SET job_id=%s, source_status=%s, updated_at=now()
-                    WHERE id=%s AND tenant_id=%s AND job_id IS NULL
+                    SET job_id=%s, source_status=%s, promoted_at=now(),
+                        promotion_version=%s
+                    WHERE id=%s AND tenant_id=%s
                     """,
-                    (job_id, value.status, source_record_id, tenant_id),
+                    (job_id, value.status, promotion_version, source_record_id, tenant_id),
                 )
 
-    async def _promote_candidate(self, *, tenant_id: str, source_record_id: str, source_id: str, value) -> None:
+    async def _promote_candidate(self, *, tenant_id: str, source_record_id: str, source_id: str, value, promotion_version: str) -> None:
         async with self.connection.transaction():
             async with self.connection.cursor() as cur:
                 await cur.execute(
@@ -173,36 +205,63 @@ class CanonicalPromoter:
                 row = await cur.fetchone()
                 if row is None:
                     raise RuntimeError("Candidate source record disappeared during promotion")
-                if row[0] is not None:
-                    return
-
-                await cur.execute(
-                    """
-                    INSERT INTO candidate
-                      (tenant_id, canonical_name, primary_email, primary_phone,
-                       profession, specialty, city, state, lifecycle_status,
-                       canonical_profile, created_at, updated_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'inactive',%s,now(),now())
-                    RETURNING id
-                    """,
-                    (
-                        tenant_id,
-                        value.canonical_name,
-                        value.primary_email,
-                        value.primary_phone,
-                        value.profession,
-                        value.specialty,
-                        value.city,
-                        value.state,
-                        Jsonb(value.canonical_profile),
-                    ),
-                )
-                candidate_id = (await cur.fetchone())[0]
+                candidate_id = row[0]
+                if candidate_id is None:
+                    await cur.execute(
+                        """
+                        INSERT INTO candidate
+                          (tenant_id, canonical_name, primary_email, primary_phone,
+                           profession, specialty, city, state, lifecycle_status,
+                           canonical_profile, created_at, updated_at)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'inactive',%s,now(),now())
+                        RETURNING id
+                        """,
+                        (
+                            tenant_id,
+                            value.canonical_name,
+                            value.primary_email,
+                            value.primary_phone,
+                            value.profession,
+                            value.specialty,
+                            value.city,
+                            value.state,
+                            Jsonb(value.canonical_profile),
+                        ),
+                    )
+                    candidate_id = (await cur.fetchone())[0]
+                else:
+                    await cur.execute(
+                        """
+                        UPDATE candidate
+                        SET canonical_name=COALESCE(%s, canonical_name),
+                            primary_email=COALESCE(%s, primary_email),
+                            primary_phone=COALESCE(%s, primary_phone),
+                            profession=COALESCE(%s, profession),
+                            specialty=COALESCE(%s, specialty),
+                            city=COALESCE(%s, city),
+                            state=COALESCE(%s, state),
+                            canonical_profile=canonical_profile || %s,
+                            updated_at=now()
+                        WHERE id=%s AND tenant_id=%s
+                        """,
+                        (
+                            value.canonical_name,
+                            value.primary_email,
+                            value.primary_phone,
+                            value.profession,
+                            value.specialty,
+                            value.city,
+                            value.state,
+                            Jsonb(value.canonical_profile),
+                            candidate_id,
+                            tenant_id,
+                        ),
+                    )
                 await cur.execute(
                     """
                     UPDATE candidate_source_record
-                    SET candidate_id=%s, updated_at=now()
-                    WHERE id=%s AND tenant_id=%s AND candidate_id IS NULL
+                    SET candidate_id=%s, promoted_at=now(), promotion_version=%s
+                    WHERE id=%s AND tenant_id=%s
                     """,
-                    (candidate_id, source_record_id, tenant_id),
+                    (candidate_id, promotion_version, source_record_id, tenant_id),
                 )
