@@ -60,3 +60,8 @@ Source-backed resume specialty signals may strengthen the existing specialty com
 ## Explicit clinical-skill alignment
 
 Job-side clinical skills are accepted only from explicit source requirement fields. They are persisted as non-hard-gate skill requirements. Matching compares those explicit job skills with resume-backed clinical-skill evidence as a soft component; missing skill evidence lowers the component but never excludes the candidate.
+
+
+## Explicit experience alignment
+
+Minimum experience is accepted only from explicit source fields containing a numeric year requirement. Candidate experience is a conservative documented span derived from dated resume ranges, with overlapping ranges merged before counting. This evidence is a soft score only; missing or short experience never creates a hard exclusion.

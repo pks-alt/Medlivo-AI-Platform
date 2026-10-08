@@ -204,3 +204,51 @@ def test_missing_soft_skill_evidence_does_not_exclude_candidate():
     assert result.eligible is True
     skills = next(component for component in result.components if component.key == "clinical_skills")
     assert skills.score == 5
+
+
+def test_documented_experience_meeting_explicit_minimum_scores_high():
+    candidate = CandidateMatchInput(
+        candidate_id="candidate-experience",
+        profession="Physical Therapist",
+        specialty="Physical Therapy",
+        documented_experience_years=4,
+        licenses=[CandidateLicense(license_type="PT", state="CA", status="Active")],
+        resume_available=True,
+        profile_readiness=90,
+    )
+    job = JobMatchInput(
+        job_id="job-experience",
+        division="rehabilitation",
+        profession="Physical Therapist",
+        specialty="Physical Therapy",
+        required_license_states=["CA"],
+        minimum_experience_years=3,
+    )
+    result = score_match(job, candidate)
+    experience = next(component for component in result.components if component.key == "experience")
+    assert experience.score == 10
+    assert "at least 3 years" in experience.reason
+
+
+def test_missing_experience_evidence_is_soft_not_exclusion():
+    candidate = CandidateMatchInput(
+        candidate_id="candidate-experience-unknown",
+        profession="Physical Therapist",
+        specialty="Physical Therapy",
+        documented_experience_years=None,
+        licenses=[CandidateLicense(license_type="PT", state="CA", status="Active")],
+        resume_available=True,
+        profile_readiness=90,
+    )
+    job = JobMatchInput(
+        job_id="job-experience-soft",
+        division="rehabilitation",
+        profession="Physical Therapist",
+        specialty="Physical Therapy",
+        required_license_states=["CA"],
+        minimum_experience_years=3,
+    )
+    result = score_match(job, candidate)
+    assert result.eligible is True
+    experience = next(component for component in result.components if component.key == "experience")
+    assert experience.score == 4

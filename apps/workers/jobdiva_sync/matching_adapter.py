@@ -33,6 +33,7 @@ def job_match_input(
     required_certifications: list[str] = []
     care_setting = None
     required_skills: list[str] = []
+    minimum_experience_years = None
 
     for requirement in requirements:
         key = requirement.get("canonical_key")
@@ -53,6 +54,12 @@ def job_match_input(
         elif key == "skill":
             if text not in required_skills:
                 required_skills.append(text)
+        elif key == "experience":
+            digits = "".join(ch for ch in text if ch.isdigit())
+            if digits:
+                years = int(digits)
+                if 0 < years <= 50:
+                    minimum_experience_years = years
 
     payload = job.get("normalized_payload") or {}
     if not care_setting and isinstance(payload, dict):
@@ -70,6 +77,7 @@ def job_match_input(
         required_license_states=required_license_states,
         required_certifications=required_certifications,
         required_skills=required_skills,
+        minimum_experience_years=minimum_experience_years,
     )
 
 
@@ -89,6 +97,7 @@ def candidate_match_input(
         care_settings=care_settings if care_settings is not None else list(candidate.get("resume_care_settings") or []),
         resume_specialties=list(candidate.get("resume_specialties") or []),
         clinical_skills=list(candidate.get("resume_clinical_skills") or []),
+        documented_experience_years=candidate.get("documented_experience_years"),
         city=candidate.get("city"),
         state=candidate.get("state"),
         available_from=availability.get("available_from") if availability else None,

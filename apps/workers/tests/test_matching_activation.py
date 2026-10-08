@@ -213,3 +213,20 @@ def test_explicit_care_settings_argument_overrides_resume_evidence():
         care_settings=["outpatient"],
     )
     assert result.care_settings == ["outpatient"]
+
+
+def test_candidate_match_input_passes_documented_experience_years():
+    candidate = {
+        "id": "candidate-exp",
+        "profession": "Physical Therapist",
+        "profile_freshness": 80,
+        "documented_experience_years": 5,
+    }
+    result = candidate_match_input(
+        candidate,
+        licenses=[],
+        certifications=[],
+        availability=None,
+        resume_available=True,
+    )
+    assert result.documented_experience_years == 5

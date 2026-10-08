@@ -154,3 +154,20 @@ def test_explicit_requirements_extracts_skill_fields_as_soft_requirements():
     skills = [item for item in requirements if item.kind == "skill"]
     assert [item.value for item in skills] == ["Telemetry", "Ventilator"]
     assert all(item.required for item in skills)
+
+
+def test_explicit_requirements_extracts_minimum_experience_years():
+    from jobdiva_sync.job_enrichment import explicit_requirements
+
+    requirements = explicit_requirements({"MINYEARSEXPERIENCE": "3 years"})
+    experience = [item for item in requirements if item.kind == "experience"]
+    assert len(experience) == 1
+    assert experience[0].value == "3 years"
+    assert experience[0].source_field == "minimum_experience"
+
+
+def test_explicit_requirements_ignore_ambiguous_experience_text():
+    from jobdiva_sync.job_enrichment import explicit_requirements
+
+    requirements = explicit_requirements({"REQUIREDEXPERIENCE": "Recent acute care experience"})
+    assert not any(item.kind == "experience" for item in requirements)
