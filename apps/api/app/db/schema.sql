@@ -91,6 +91,8 @@ CREATE TABLE IF NOT EXISTS job_source_record (
   source_status text,
   source_updated_at timestamptz,
   raw_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  promoted_at timestamptz,
+  promotion_version text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, source_system, source_id)
@@ -187,6 +189,8 @@ CREATE TABLE IF NOT EXISTS candidate_source_record (
   source_id text NOT NULL,
   source_updated_at timestamptz,
   raw_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  promoted_at timestamptz,
+  promotion_version text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, source_system, source_id)
