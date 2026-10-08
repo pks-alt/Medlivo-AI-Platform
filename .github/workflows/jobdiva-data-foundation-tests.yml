@@ -4,6 +4,8 @@ on:
     paths:
       - 'apps/workers/**'
       - 'apps/api/app/db/schema.sql'
+      - 'apps/api/app/db/migrations/005_source_promotion_state.sql'
+      - 'apps/api/app/db/migrations/004_canonical_promotion.sql'
       - 'apps/api/app/db/migrations/003_sync_run_mode.sql'
       - 'apps/api/app/routes/integration.py'
       - 'apps/api/app/repositories/integration.py'
