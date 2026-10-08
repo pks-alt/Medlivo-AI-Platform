@@ -53,7 +53,7 @@ Code-complete does not equal production-ready. Phase 3 remains in acceptance unt
 
 ## Staging and real-data pilot
 
-- [ ] Private staging deployment is reachable only through approved authentication and Cloud Run IAM.
+- [ ] Private staging deployment is reachable only through approved authentication and Cloud Run IAM. Run `.github/workflows/phase3-staging-acceptance.yml` after staging URLs/IAM are configured.
 - [ ] Representative Rehab cases validated.
 - [ ] Representative Nursing & Allied cases validated.
 - [ ] Representative Locum Tenens cases validated.
