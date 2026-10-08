@@ -49,3 +49,24 @@ Rules:
 - Missing candidate fields never erase richer canonical values.
 - Unknown JobDiva custom fields remain in the raw source payload until their mapping is verified.
 - Promotion never writes back to JobDiva.
+
+
+## Candidate detail enrichment
+
+Canonical candidates linked to JobDiva are enriched from the authorized JobDiva detail endpoints:
+
+- candidate profile
+- licenses
+- certifications
+- resume metadata
+- bounded resume text reads
+
+The existing `candidate-intelligence` package performs normalization. The worker persists normalized intelligence into canonical candidate, credential, resume-version and evidence tables.
+
+Rules:
+- JobDiva remains the candidate/resume system of record.
+- Medlivo stores normalized intelligence and resume text/reference, not a second authoritative resume file.
+- Candidate detail may fill missing canonical fields but does not erase richer values with nulls.
+- JobDiva-sourced credentials are refreshed transactionally.
+- Resume versions are upserted by JobDiva resume ID.
+- Enrichment is versioned and retryable per candidate source record.

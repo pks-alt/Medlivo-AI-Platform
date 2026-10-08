@@ -93,6 +93,9 @@ CREATE TABLE IF NOT EXISTS job_source_record (
   raw_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   promoted_at timestamptz,
   promotion_version text,
+  enriched_at timestamptz,
+  enrichment_version text,
+  enrichment_error_code text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, source_system, source_id)
@@ -191,10 +194,18 @@ CREATE TABLE IF NOT EXISTS candidate_source_record (
   raw_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   promoted_at timestamptz,
   promotion_version text,
+  enriched_at timestamptz,
+  enrichment_version text,
+  enrichment_error_code text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (tenant_id, source_system, source_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_candidate_source_enrichment_pending
+  ON candidate_source_record (tenant_id, source_system, updated_at)
+  WHERE candidate_id IS NOT NULL
+    AND (enriched_at IS NULL OR enriched_at < updated_at);
 
 CREATE TABLE IF NOT EXISTS resume_version (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -207,8 +218,13 @@ CREATE TABLE IF NOT EXISTS resume_version (
   parsed_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
   is_primary boolean NOT NULL DEFAULT false,
   resume_date timestamptz,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_resume_version_source
+  ON resume_version (tenant_id, candidate_id, source_resume_id)
+  WHERE source_resume_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS candidate_availability (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -247,8 +263,11 @@ CREATE TABLE IF NOT EXISTS candidate_license (
   verification_status text NOT NULL DEFAULT 'unverified',
   verified_at timestamptz,
   verification_source text,
+  source_system text,
+  source_reference text,
   raw_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS candidate_certification (
@@ -262,8 +281,20 @@ CREATE TABLE IF NOT EXISTS candidate_certification (
   verification_status text NOT NULL DEFAULT 'unverified',
   verified_at timestamptz,
   verification_source text,
-  created_at timestamptz NOT NULL DEFAULT now()
+  source_system text,
+  source_reference text,
+  raw_payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_candidate_license_source
+  ON candidate_license (tenant_id, candidate_id, source_system, source_reference)
+  WHERE source_system IS NOT NULL AND source_reference IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_candidate_certification_source
+  ON candidate_certification (tenant_id, candidate_id, source_system, source_reference)
+  WHERE source_system IS NOT NULL AND source_reference IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS candidate_evidence (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -275,7 +306,8 @@ CREATE TABLE IF NOT EXISTS candidate_evidence (
   source_reference text,
   confidence numeric(5,2),
   is_verified boolean NOT NULL DEFAULT false,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS match (
