@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import asdict
-from typing import Any
 from uuid import uuid4
 
 from psycopg import AsyncConnection
