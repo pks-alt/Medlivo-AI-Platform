@@ -14,7 +14,7 @@ Status values:
 | Access | Google sign-in | BUILT | Private workspace foundation; staging acceptance still required |
 | Access | Recruiter / manager / admin RBAC | BUILT | Team and tenant scoping implemented |
 | Access | Production OAuth / Cloud Run acceptance | IN DEVELOPMENT | Must be validated in private staging |
-| JobDiva | Read-only jobs sync | IN DEVELOPMENT | Delta landing, resumable backfill and conservative canonical job promotion implemented; production scheduling/real-data acceptance pending |
+| JobDiva | Read-only jobs sync | IN DEVELOPMENT | Delta landing, backfill, canonical promotion and JobsDetail enrichment implemented; production scheduling/real-data acceptance pending |
 | JobDiva | Candidate profile read | BUILT | Read-only connector method feeding Candidate Intelligence enrichment |
 | JobDiva | License read | BUILT | Read-only connector method with normalized canonical persistence |
 | JobDiva | Certification read | BUILT | Read-only connector method with normalized canonical persistence |
@@ -23,7 +23,7 @@ Status values:
 | JobDiva | Historical backfill | IN DEVELOPMENT | Resumable 14-day backfill orchestration implemented; production scheduling and real-data acceptance pending |
 | JobDiva | Delta / near-real-time sync | IN DEVELOPMENT | Replay-safe jobs/candidates delta landing worker implemented; deployment/webhook reconciliation still pending |
 | JobDiva | Candidate / resume / job write-back | DISABLED | Enable only after vendor API authorization and acceptance testing |
-| Intelligence | Job normalization | BUILT | Division-aware model plus conservative JobDiva source-to-canonical promotion |
+| Intelligence | Job normalization | IN DEVELOPMENT | Division-aware model plus JobDiva JobsDetail enrichment and source-backed requirements; real-data field acceptance pending |
 | Intelligence | Rehabilitation job template | BUILT | PT/PTA/OT/COTA/SLP oriented |
 | Intelligence | Nursing & Allied job template | BUILT | Profession / specialty / shift / credential oriented |
 | Intelligence | Locum Tenens job template | BUILT | Schedule / call / license / credentialing oriented |
