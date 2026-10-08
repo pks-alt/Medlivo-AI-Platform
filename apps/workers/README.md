@@ -18,3 +18,18 @@ The JobDiva delta worker provides a replay-safe landing layer for the canonical 
 The landing layer intentionally stores raw JobDiva source records first. Promotion into normalized canonical `job` and `candidate` records happens only after the real payload mapping is verified.
 
 JobDiva remains read-only in Phase 1.
+
+
+## Historical backfill
+
+Historical jobs/candidates are processed in chronological windows of at most 14 days. Completed windows are recorded in `integration_sync_run` with `mode='backfill'` and are skipped on a restart.
+
+Backfill never updates the live delta watermark.
+
+## Sync health
+
+The private platform API exposes:
+
+`GET /api/v1/integrations/jobdiva/health`
+
+It returns only operational metadata such as watermark freshness, last success, last error, and latest record counts. It does not return JobDiva job/candidate payloads.
