@@ -64,7 +64,7 @@ matches = Table(
 match_feedback = Table(
     "match_feedback", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), U("match_id", nullable=False),
-    U("recruiter_user_id", nullable=False), S("feedback_code", nullable=False), S("notes"),
+    U("recruiter_user_id", nullable=False), S("feedback_code", nullable=False), S("reason_code"), S("notes"),
     D("created_at", nullable=False),
 )
 conversations = Table(
