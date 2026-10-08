@@ -10,8 +10,11 @@ from .models import (
     JobDivaCandidateBundle,
     LicenseIntelligence,
     MatchingReadiness,
+    ResumeCareSettingEvidence,
+    ResumeExperienceEvidence,
     ResumeIntelligence,
 )
+from .resume_extract import extract_resume_experience
 
 
 def _first(payload: dict[str, Any], names: Iterable[str]):
@@ -162,11 +165,26 @@ def normalize_candidate(bundle: JobDivaCandidateBundle) -> CandidateIntelligence
         if not resume_id:
             continue
         texts = bundle.resume_text_records.get(resume_id, [])
+        resume_text = _resume_text(texts)
+        extracted = extract_resume_experience(resume_text)
         item = ResumeIntelligence(
             source_resume_id=resume_id,
             resume_date=_datetime(_first(row, ("resumeDate", "RESUMEDATE", "date", "DATE", "createdAt", "CREATEDAT"))),
-            text=_resume_text(texts),
+            text=resume_text,
             source_reference=f"resume:{resume_id}",
+            experience_entries=[
+                ResumeExperienceEvidence(
+                    source_line=entry.source_line,
+                    start_year=entry.start_year,
+                    end_year=entry.end_year,
+                    is_current=entry.is_current,
+                )
+                for entry in extracted.experience_entries
+            ],
+            care_settings=[
+                ResumeCareSettingEvidence(key=signal.key, source_line=signal.source_line)
+                for signal in extracted.care_settings
+            ],
         )
         resumes.append(item)
         evidence.append(CandidateEvidence(

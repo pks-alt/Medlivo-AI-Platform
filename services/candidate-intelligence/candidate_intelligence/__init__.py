@@ -5,9 +5,12 @@ from .models import (
     JobDivaCandidateBundle,
     LicenseIntelligence,
     MatchingReadiness,
+    ResumeCareSettingEvidence,
+    ResumeExperienceEvidence,
     ResumeIntelligence,
 )
 from .normalize import normalize_candidate
+from .resume_extract import EvidenceSignal, ExperienceEntry, ResumeExtraction, extract_resume_experience
 
 __all__ = [
     "CandidateEvidence",
@@ -16,6 +19,12 @@ __all__ = [
     "JobDivaCandidateBundle",
     "LicenseIntelligence",
     "MatchingReadiness",
+    "ResumeCareSettingEvidence",
+    "ResumeExperienceEvidence",
     "ResumeIntelligence",
+    "EvidenceSignal",
+    "ExperienceEntry",
+    "ResumeExtraction",
+    "extract_resume_experience",
     "normalize_candidate",
 ]
