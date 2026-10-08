@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from app.repositories.career import CareerRepository
+from app.db.database import database_configured
 from app.schemas.career import PublicJobDetail, PublicJobPage
 
 
@@ -19,6 +20,8 @@ async def get_public_jobs(
     after: UUID | None = None,
     limit: int = 24,
 ) -> PublicJobPage:
+    if not database_configured():
+        raise RuntimeError("Career database is not configured")
     return await _repository.list_jobs(
         division=division,
         profession=profession,
@@ -31,4 +34,6 @@ async def get_public_jobs(
 
 
 async def get_public_job(job_id: UUID) -> PublicJobDetail:
+    if not database_configured():
+        raise RuntimeError("Career database is not configured")
     return await _repository.get_job(job_id)
