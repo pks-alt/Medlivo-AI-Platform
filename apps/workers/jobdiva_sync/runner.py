@@ -19,6 +19,7 @@ class SyncStore(Protocol):
     async def succeed_run(self, *, run_id: str, tenant_id: str, source_system: str, stream: SyncStream, window_end: datetime, pages_processed: int, records_seen: int, records_upserted: int) -> None: ...
     async def fail_run(self, *, run_id: str, tenant_id: str, source_system: str, stream: SyncStream, error_code: str, pages_processed: int, records_seen: int, records_upserted: int) -> None: ...
     async def complete_backfill_run(self, *, run_id: str, tenant_id: str, stream: SyncStream, pages_processed: int, records_seen: int, records_upserted: int) -> None: ...
+    async def backfill_window_succeeded(self, *, tenant_id: str, source_system: str, stream: SyncStream, window_start: datetime, window_end: datetime) -> bool: ...
 
 
 _ID_KEYS = {
@@ -283,3 +284,41 @@ def backfill_windows(start: datetime, end: datetime, *, max_window: timedelta = 
         window_end = min(cursor + max_window, end)
         yield cursor, window_end
         cursor = window_end
+
+
+
+async def run_historical_backfill(
+    client: DeltaClient,
+    store: SyncStore,
+    *,
+    tenant_id: str,
+    stream: SyncStream,
+    start: datetime,
+    end: datetime,
+    max_window: timedelta = timedelta(days=14),
+    page_size: int = 100,
+    max_pages: int = 1000,
+) -> list[SyncRunSummary]:
+    """Run only incomplete historical windows in chronological order."""
+    completed: list[SyncRunSummary] = []
+    for window_start, window_end in backfill_windows(start, end, max_window=max_window):
+        already_done = await store.backfill_window_succeeded(
+            tenant_id=tenant_id,
+            source_system="jobdiva",
+            stream=stream,
+            window_start=window_start,
+            window_end=window_end,
+        )
+        if already_done:
+            continue
+        completed.append(await run_backfill_window(
+            client,
+            store,
+            tenant_id=tenant_id,
+            stream=stream,
+            window_start=window_start,
+            window_end=window_end,
+            page_size=page_size,
+            max_pages=max_pages,
+        ))
+    return completed
