@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 from dataclasses import dataclass
 
 from psycopg import AsyncConnection
@@ -65,6 +66,12 @@ def pilot_enabled() -> bool:
 
 def diagnostics_only() -> bool:
     return os.getenv("PILOT_DIAGNOSTICS_ONLY", "false").strip().lower() == "true"
+
+
+def emit_event(payload: dict) -> None:
+    """Emit one sanitized structured event and force it to Cloud Run logs."""
+    sys.stderr.write(json.dumps(payload, default=str, sort_keys=True) + "\n")
+    sys.stderr.flush()
 
 
 REQUIRED_SCHEMA = {
@@ -219,19 +226,19 @@ async def main() -> int:
     try:
         schema = await check_schema_readiness(connection)
         if schema["status"] != "ready":
-            print(json.dumps({"pilot": "preflight_failed", "stage": "database_schema", **schema}, sort_keys=True))
+            emit_event({"pilot": "preflight_failed", "stage": "database_schema", **schema})
             return 2
 
         async with JobDivaClient(settings) as client:
             await client.authenticate()
             if diagnostics_only():
                 diagnostic = await run_connectivity_diagnostic(client)
-                print(json.dumps({
+                emit_event({
                     "pilot": "diagnostic",
                     "tenant_id": tenant_id,
                     "database_schema": "ready",
                     "jobdiva": diagnostic,
-                }, sort_keys=True))
+                })
                 return 0 if diagnostic["data_endpoint"] == "ok" else 3
 
             result = await run_pilot_once(
@@ -240,12 +247,12 @@ async def main() -> int:
                 tenant_id=tenant_id,
                 limits=limits,
             )
-        print(json.dumps({
+        emit_event({
             "pilot": "completed",
             "tenant_id": tenant_id,
             "limits": limits.__dict__,
             "result": result,
-        }, default=str, sort_keys=True))
+        })
         return 0
     finally:
         await connection.close()
