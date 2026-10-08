@@ -33,3 +33,15 @@ Only the small shortlist reaches LLM reasoning for nuance, explanations, and sum
 
 ## Evidence
 Every material match factor must link to its source.
+
+
+## Hybrid retrieval implementation
+
+The current retrieval layer:
+- applies deterministic hard gates before any semantic ranking
+- combines lexical clinical-term overlap with optional cosine similarity
+- falls back to lexical-only ranking when embeddings are unavailable
+- emits retrieval evidence for auditability
+- does not change the authoritative deterministic match score
+
+A production vector store/embedding provider remains a deployment decision. Retrieval can be connected to that infrastructure without changing hard-gate behavior.
