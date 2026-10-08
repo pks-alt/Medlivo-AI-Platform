@@ -4,7 +4,7 @@ from io import BytesIO
 from openpyxl import Workbook
 
 from workspace_api import tables as t
-from sqlalchemy import insert, update
+from sqlalchemy import insert, update, select
 from workspace_api.store import now
 
 
