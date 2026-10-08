@@ -21,6 +21,17 @@ The JobDiva delta endpoints use `MM/dd/yyyy HH:mm:ss` timestamps and support pag
 
 ## Safety rules
 
+The active connector incorporates the reviewed pilot safeguards:
+- live reads are disabled by default with `JOBDIVA_LIVE_ENABLED=false`
+- only allowlisted read endpoints are callable
+- per-process request budgets are bounded
+- 429 / selected 5xx retries are bounded and honor short Retry-After values
+- response size and request timeouts are bounded
+- redirects are disabled
+- connector errors do not include response bodies, credentials, or tokens
+- latest-resume selection refuses ambiguous or missing creation timestamps
+
+
 - Never commit JobDiva credentials or tokens.
 - Keep credentials in Google Secret Manager for deployed workloads.
 - Phase 1 performs GET requests only.
@@ -33,11 +44,12 @@ For a one-time Cloud Shell test, export credentials only into the current shell 
 
 ```bash
 cd ~/Medlivo-AI-Platform/services/jobdiva-connector
+export JOBDIVA_LIVE_ENABLED=true
 export JOBDIVA_CLIENT_ID='<client id>'
 export JOBDIVA_USERNAME='<api username>'
 read -s -p 'JobDiva API password: ' JOBDIVA_PASSWORD && export JOBDIVA_PASSWORD && echo
 python probe.py
-unset JOBDIVA_PASSWORD JOBDIVA_USERNAME JOBDIVA_CLIENT_ID
+unset JOBDIVA_PASSWORD JOBDIVA_USERNAME JOBDIVA_CLIENT_ID JOBDIVA_LIVE_ENABLED
 ```
 
 The probe prints only:
