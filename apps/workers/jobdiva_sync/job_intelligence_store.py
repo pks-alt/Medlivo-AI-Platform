@@ -121,12 +121,13 @@ class JobIntelligenceStore:
                     else "certification" if requirement.kind == "certification"
                     else requirement.kind
                 )
+                is_hard_gate = requirement.kind in {"license", "certification"}
                 await self.connection.execute(
                     """
                     INSERT INTO job_requirement
                       (id, tenant_id, job_id, requirement_type, canonical_key,
                        value, is_hard_gate, source_evidence, rules_version, created_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,true,%s,'jobdiva-detail-v1',now())
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'jobdiva-detail-v1',now())
                     """,
                     (
                         str(uuid4()),
@@ -135,6 +136,7 @@ class JobIntelligenceStore:
                         requirement.kind,
                         canonical_key,
                         Jsonb({"value": requirement.value}),
+                        is_hard_gate,
                         Jsonb({
                             "source_system": "jobdiva",
                             "source_job_id": intelligence.source.source_id,
