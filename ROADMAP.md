@@ -75,6 +75,8 @@ Exit criteria:
 - managers can review team progress without manual spreadsheets
 - no ATS duplication
 
+Acceptance checklist: `PHASE3_ACCEPTANCE.md`
+
 ## Phase 4 — Engagement
 Goal: recruiter-approved scalable candidate engagement.
 
