@@ -467,3 +467,87 @@ def test_recruiter_cannot_access_job_publication_approval(client, headers):
         headers=headers("recruiter-a"),
     )
     assert response.status_code == 403
+
+
+def seed_match_queue(seeded):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            profession="Physical Therapist", specialty="Physical Therapy",
+            division="Rehabilitation", city="Fresno", state="CA",
+            start_date=date(2026, 11, 29), status="open", priority=9,
+            owner_user_id=idn(10), normalized_payload={"setting": "SNF"},
+        ))
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(202)).values(
+            profession="Registered Nurse", specialty="ICU",
+            division="Nursing & Allied", city="Seattle", state="WA",
+            start_date=date(2026, 12, 1), status="open", priority=10,
+            owner_user_id=idn(15), normalized_payload={"shift": "Nights"},
+        ))
+        conn.execute(update(t.candidates).where(t.candidates.c.id == idn(300)).values(
+            primary_email="candidate@example.test", profession="Physical Therapist",
+            specialty="Physical Therapy", city="Fresno", state="CA",
+            lifecycle_status="active", profile_freshness=95,
+            canonical_profile={"matching_readiness": 95},
+        ))
+        conn.execute(insert(t.job_source_records).values(
+            id=idn(960), tenant_id=idn(1), job_id=idn(200),
+            source_system="jobdiva", source_id="JD-PT-200", source_status="open",
+            source_updated_at=now(), raw_payload={},
+        ))
+        conn.execute(insert(t.candidate_source_records).values(
+            id=idn(961), tenant_id=idn(1), candidate_id=idn(300),
+            source_system="jobdiva", source_id="JD-CAND-300",
+            source_updated_at=now(), raw_payload={},
+        ))
+        conn.execute(insert(t.matches).values(
+            id=idn(962), tenant_id=idn(1), job_id=idn(200), candidate_id=idn(300),
+            overall_score=9.4, status="shortlisted", rules_version="phase1-v1",
+            explanation={
+                "strengths": ["Exact profession match", "Active required-state license found"],
+                "gaps": ["Availability has not been confirmed"],
+            },
+            created_at=now(), updated_at=now(),
+        ))
+
+
+def test_recruiter_match_queue_shows_owned_jobs_and_explainable_matches(client, headers, seeded):
+    seed_match_queue(seeded)
+    response = client.get(
+        "/api/v1/team/work-queue?limit=25&matches_per_job=5",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source_of_record"] == "jobdiva"
+    assert body["read_only"] is True
+    assert len(body["items"]) == 1
+    job = body["items"][0]
+    assert job["jobdiva_job_id"] == "JD-PT-200"
+    assert job["title"] == "Synthetic Physical Therapist"
+    assert job["priority"] == 9
+    assert job["matches"][0]["score"] == 9.4
+    assert job["matches"][0]["jobdiva_candidate_id"] == "JD-CAND-300"
+    assert "Exact profession match" in job["matches"][0]["strengths"]
+
+
+def test_manager_match_queue_is_limited_to_managed_team(client, headers, seeded):
+    seed_match_queue(seeded)
+    response = client.get(
+        "/api/v1/team/work-queue",
+        headers=headers("manager-a"),
+    )
+    assert response.status_code == 200
+    titles = [item["title"] for item in response.json()["items"]]
+    assert "Synthetic Physical Therapist" in titles
+    assert "Synthetic Registered Nurse" not in titles
+
+
+def test_recruiter_does_not_see_other_recruiters_jobs_in_match_queue(client, headers, seeded):
+    seed_match_queue(seeded)
+    response = client.get(
+        "/api/v1/team/work-queue",
+        headers=headers("recruiter-other"),
+    )
+    assert response.status_code == 200
+    titles = [item["title"] for item in response.json()["items"]]
+    assert titles == ["Synthetic Registered Nurse"]
