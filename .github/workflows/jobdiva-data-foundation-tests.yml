@@ -4,6 +4,7 @@ on:
     paths:
       - 'apps/workers/**'
       - 'apps/api/app/db/schema.sql'
+      - 'apps/api/app/db/migrations/007_job_enrichment.sql'
       - 'apps/api/app/db/migrations/006_candidate_enrichment.sql'
       - 'apps/api/app/db/migrations/005_source_promotion_state.sql'
       - 'apps/api/app/db/migrations/004_canonical_promotion.sql'
@@ -40,9 +41,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - name: Install shared Candidate Intelligence and worker tests
+      - name: Install shared intelligence packages and worker tests
         run: |
           python -m pip install ../../services/candidate-intelligence
+          python -m pip install ../../services/job-intelligence
           python -m pip install '.[test]'
       - name: Test JobDiva delta and backfill foundation
         run: python -m pytest -q

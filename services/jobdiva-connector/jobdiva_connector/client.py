@@ -51,6 +51,7 @@ class JobDivaClient:
 
     AUTH_PATH = "/apiv2/v2/authenticate"
     OPEN_JOBS_PATH = "/apiv2/bi/OpenJobsList"
+    JOB_DETAIL_PATH = "/apiv2/bi/JobsDetail"
     UPDATED_JOBS_PATH = "/apiv2/bi/NewUpdatedJobRecords"
     UPDATED_CANDIDATES_PATH = "/apiv2/bi/NewUpdatedCandidateRecords"
     CANDIDATE_PROFILE_PATH = "/apiv2/bi/CandidatesProfileDetail"
@@ -62,6 +63,7 @@ class JobDivaClient:
 
     READ_PATHS = {
         OPEN_JOBS_PATH,
+        JOB_DETAIL_PATH,
         UPDATED_JOBS_PATH,
         UPDATED_CANDIDATES_PATH,
         CANDIDATE_PROFILE_PATH,
@@ -236,6 +238,11 @@ class JobDivaClient:
 
     async def open_jobs(self) -> list[dict[str, Any]]:
         return self._json_records(await self.request("GET", self.OPEN_JOBS_PATH))
+
+    async def job_detail(self, job_id: str | int) -> list[dict[str, Any]]:
+        return self._json_records(await self.request(
+            "GET", self.JOB_DETAIL_PATH, params={"jobId": job_id}
+        ))
 
     async def updated_jobs(self, *, from_date: datetime, to_date: datetime, page_number: int = 1, page_size: int = 25) -> list[dict[str, Any]]:
         return self._json_records(await self.request("GET", self.UPDATED_JOBS_PATH, params={

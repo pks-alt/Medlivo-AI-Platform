@@ -70,3 +70,19 @@ Rules:
 - JobDiva-sourced credentials are refreshed transactionally.
 - Resume versions are upserted by JobDiva resume ID.
 - Enrichment is versioned and retryable per candidate source record.
+
+
+## Job detail enrichment
+
+Canonical jobs linked to JobDiva are enriched from the authorized `JobsDetail` read.
+
+The existing `job-intelligence` package performs normalization. The worker persists verified job detail into the canonical `job` table and source-backed requirements into `job_requirement`.
+
+Rules:
+- JobDiva remains the job/requisition system of record.
+- Free-text job descriptions never create hard gates automatically.
+- Explicit license states and explicitly required certifications may become hard gates.
+- Care setting is matching evidence, not an automatic exclusion gate.
+- Unknown/custom JobDiva fields remain in the raw source payload until their mapping is verified.
+- Enrichment is versioned and retryable per source record.
+- No JobDiva write-back is performed.

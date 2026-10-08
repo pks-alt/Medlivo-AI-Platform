@@ -208,3 +208,22 @@ def test_latest_resume_selection_requires_unambiguous_timestamp():
             {"RESUMEID": 7, "DATECREATED": "2026-02-01T00:00:00Z"},
             {"RESUMEID": 8, "DATECREATED": "2026-02-01T00:00:00Z"},
         ])
+
+
+@pytest.mark.asyncio
+async def test_job_detail_uses_read_only_job_id_query():
+    seen = {}
+    async def handler(request):
+        seen["path"] = request.url.path
+        seen["params"] = dict(request.url.params)
+        return httpx.Response(200, json=[{"JOBID": 123, "JOBTITLE": "Synthetic PT"}])
+
+    client = JobDivaClient(settings(), transport=httpx.MockTransport(handler))
+    client._access_token = "synthetic-token-123"
+    try:
+        rows = await client.job_detail(123)
+        assert rows[0]["JOBID"] == 123
+        assert seen["path"] == "/apiv2/bi/JobsDetail"
+        assert seen["params"] == {"jobId": "123"}
+    finally:
+        await client.close()

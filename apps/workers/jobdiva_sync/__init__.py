@@ -6,12 +6,20 @@ from .promotion import CandidatePromotion, JobPromotion, promote_candidate_paylo
 from .enrichment import EnrichmentBundleResult, build_candidate_intelligence, fetch_candidate_bundle
 from .enrichment_runner import enrich_pending_candidates
 from .intelligence_store import CandidateIntelligenceStore
+from .job_enrichment import JobEnrichmentResult, build_job_intelligence, explicit_requirements
+from .job_enrichment_runner import enrich_pending_jobs
+from .job_intelligence_store import JobIntelligenceStore
 
 __all__ = [
     "PostgresSyncStore",
     "CanonicalPromoter",
     "CandidatePromotion",
     "CandidateIntelligenceStore",
+    "JobEnrichmentResult",
+    "JobIntelligenceStore",
+    "build_job_intelligence",
+    "explicit_requirements",
+    "enrich_pending_jobs",
     "EnrichmentBundleResult",
     "build_candidate_intelligence",
     "fetch_candidate_bundle",
