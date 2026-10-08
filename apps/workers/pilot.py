@@ -6,7 +6,8 @@ from dataclasses import dataclass
 
 from psycopg import AsyncConnection
 
-from jobdiva_connector import JobDivaClient, JobDivaSettings
+from jobdiva_connector.client import JobDivaClient
+from jobdiva_connector.config import JobDivaSettings
 from jobdiva_sync import (
     CanonicalPromoter,
     CandidateIntelligenceStore,
