@@ -39,6 +39,7 @@ Status values:
 | Matching | Semantic/vector retrieval | IN DEVELOPMENT | Hybrid retrieval is integrated into worker processing priority behind hard gates; production embedding/vector-store integration and real-data acceptance pending |
 | Matching | AI reranking | PLANNED | Deferred until the real-data acceptance pilot identifies where deterministic ranking needs help |
 | Recruiter | Private recruiter workspace | BUILT | Notes, follow-ups, activity, ownership |
+| Recruiter | Follow-ups queue | BUILT | Recruiter-wide open/completed task view with overdue surfacing, direct work opening, and audited completion/reopen |
 | Recruiter | Daily priorities | IN DEVELOPMENT | My Work now prioritizes overdue/due-soon follow-ups and strong unreviewed matches; staging recruiter acceptance pending |
 | Recruiter | Recruiter dashboard | IN DEVELOPMENT | Weekly goal-vs-actual plus owned workload, follow-ups, priority jobs, and unreviewed matches; staging recruiter acceptance pending |
 | Recruiter | Match Queue | IN DEVELOPMENT | Persisted matching now includes score-band triage, hide-reviewed workflow, explainable evidence, and recruiter feedback; real-data UX acceptance pending |
