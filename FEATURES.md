@@ -68,4 +68,4 @@ Status values:
 | Platform | Background workers | IN DEVELOPMENT | JobDiva pipeline has a Cloud Run Job staging runtime and manual-only deployment path; scheduled production operation remains pending |
 | Platform | Auditability | BUILT | Workspace and approval audit foundations |
 | Platform | Monitoring / alerting | IN DEVELOPMENT | Read-only JobDiva sync health API implemented; alert delivery still pending |
-| Platform | Rollback / runbooks | PLANNED | Required before production readiness |
+| Platform | Rollback / runbooks | IN DEVELOPMENT | Phase 3 rollback/recovery runbook documented; staging exercise still required |

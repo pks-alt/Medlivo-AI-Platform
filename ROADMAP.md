@@ -76,6 +76,7 @@ Exit criteria:
 - no ATS duplication
 
 Acceptance checklist: `PHASE3_ACCEPTANCE.md`
+Rollback/recovery runbook: `docs/PHASE3_ROLLBACK_RUNBOOK.md`
 
 ## Phase 4 — Engagement
 Goal: recruiter-approved scalable candidate engagement.

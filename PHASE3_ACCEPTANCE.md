@@ -70,7 +70,7 @@ Code-complete does not equal production-ready. Phase 3 remains in acceptance unt
 - [ ] No staging test uses production credentials or production mutation.
 - [ ] Authentication, authorization denial, and workspace-service failures are observable.
 - [ ] JobDiva sync health and failed runs are observable.
-- [ ] Pilot rollback procedure is documented and tested.
+- [ ] Pilot rollback procedure is documented and tested. See `docs/PHASE3_ROLLBACK_RUNBOOK.md`.
 - [ ] Staging configuration/secrets are reviewed and reproducible.
 - [ ] Known limitations are documented for recruiters and managers.
 
