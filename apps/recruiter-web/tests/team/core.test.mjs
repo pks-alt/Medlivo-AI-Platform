@@ -88,3 +88,13 @@ test('recruiter dashboard is an allowlisted authenticated read endpoint',async()
  assert.equal(r.status,200);
  assert.equal(h.apiCalls.at(-1).path,'/recruiter/dashboard?week_start=2026-10-05');
 });
+
+
+test('match queue allows bounded matches_per_job query',async()=>{
+ const h=harness(),{sessionCookie}=await h.login();
+ let r=await h.request('/api/team/work-queue?limit=25&matches_per_job=5',{headers:{Cookie:sessionCookie}});
+ assert.equal(r.status,200);
+ assert.equal(h.apiCalls.at(-1).path,'/work-queue?limit=25&matches_per_job=5');
+ r=await h.request('/api/team/work-queue?matches_per_job=11',{headers:{Cookie:sessionCookie}});
+ assert.equal(r.status,400);
+});
