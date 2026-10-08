@@ -177,8 +177,22 @@ class MatchingStore:
         result: MatchResult,
         rules_version: str = RULES_VERSION,
     ) -> None:
+        if result.eligible:
+            summary = (
+                "; ".join(result.strengths[:3])
+                if result.strengths
+                else "Eligible match; recruiter review recommended."
+            )
+        else:
+            summary = (
+                "Excluded: " + "; ".join(result.gaps[:3])
+                if result.gaps
+                else "Excluded by a required hard gate."
+            )
+
         explanation = {
             "eligible": result.eligible,
+            "summary": summary,
             "gates": [gate.model_dump(mode="json") for gate in result.gates],
             "strengths": result.strengths,
             "gaps": result.gaps,
