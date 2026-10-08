@@ -21,7 +21,7 @@ Status values:
 | JobDiva | Resume metadata read | BUILT | Read-only connector method with versioned canonical resume references |
 | JobDiva | Resume text read | BUILT | Bounded resume-text enrichment; JobDiva remains authoritative resume store |
 | JobDiva | Historical backfill | IN DEVELOPMENT | Resumable 14-day backfill orchestration implemented; production scheduling and real-data acceptance pending |
-| JobDiva | Delta / near-real-time sync | IN DEVELOPMENT | Replay-safe jobs/candidates delta landing worker implemented; deployment/webhook reconciliation still pending |
+| JobDiva | Delta / near-real-time sync | IN DEVELOPMENT | Replay-safe jobs/candidates delta landing plus disabled-by-default Cloud Run pilot runtime; real staging execution still requires operator approval |
 | JobDiva | Candidate / resume / job write-back | DISABLED | Enable only after vendor API authorization and acceptance testing |
 | Intelligence | Job normalization | IN DEVELOPMENT | Division-aware model plus JobDiva JobsDetail enrichment and source-backed requirements; real-data field acceptance pending |
 | Intelligence | Rehabilitation job template | BUILT | PT/PTA/OT/COTA/SLP oriented |
@@ -60,7 +60,7 @@ Status values:
 | External | Candidate portal | PLANNED | Later phase |
 | External | Ask Medlivo integration | PLANNED | Later phase |
 | External | Clinician recruiter feedback | PLANNED | Anonymous clinician feedback; management first |
-| Platform | Background workers | IN DEVELOPMENT | JobDiva checkpointed delta worker is now implemented; production scheduling/deployment pending |
+| Platform | Background workers | IN DEVELOPMENT | JobDiva pipeline has a Cloud Run Job staging runtime and manual-only deployment path; scheduled production operation remains pending |
 | Platform | Auditability | BUILT | Workspace and approval audit foundations |
 | Platform | Monitoring / alerting | IN DEVELOPMENT | Read-only JobDiva sync health API implemented; alert delivery still pending |
 | Platform | Rollback / runbooks | PLANNED | Required before production readiness |
