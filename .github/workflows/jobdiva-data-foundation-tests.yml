@@ -4,7 +4,7 @@ on:
     paths:
       - 'apps/workers/**'
       - 'apps/api/app/db/schema.sql'
-      - 'apps/api/app/db/migrations/002_integration_sync_foundation.sql'
+      - 'apps/api/app/db/migrations/003_sync_run_mode.sql'
       - 'apps/api/app/routes/integration.py'
       - 'apps/api/app/repositories/integration.py'
       - 'apps/api/app/services/integration.py'
@@ -16,7 +16,7 @@ on:
     paths:
       - 'apps/workers/**'
       - 'apps/api/app/db/schema.sql'
-      - 'apps/api/app/db/migrations/002_integration_sync_foundation.sql'
+      - 'apps/api/app/db/migrations/003_sync_run_mode.sql'
       - 'apps/api/app/routes/integration.py'
       - 'apps/api/app/repositories/integration.py'
       - 'apps/api/app/services/integration.py'
