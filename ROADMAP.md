@@ -77,6 +77,8 @@ Exit criteria:
 
 Acceptance checklist: `PHASE3_ACCEPTANCE.md`
 Rollback/recovery runbook: `docs/PHASE3_ROLLBACK_RUNBOOK.md`
+Completion status: `PHASE3_COMPLETION_STATUS.md`
+Known limitations: `docs/PHASE3_KNOWN_LIMITATIONS.md`
 
 ## Phase 4 — Engagement
 Goal: recruiter-approved scalable candidate engagement.
