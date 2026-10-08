@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from jobdiva_sync import SyncStream, run_delta_sync
+from jobdiva_sync import SyncStream, backfill_windows, run_backfill_window, run_delta_sync
 
 
 class FakeClient:
@@ -57,6 +57,9 @@ class FakeStore:
 
     async def fail_run(self, **kwargs):
         self.runs[kwargs["run_id"]].update({"status": "failed", **kwargs})
+
+    async def complete_backfill_run(self, **kwargs):
+        self.runs[kwargs["run_id"]].update({"status": "succeeded", **kwargs})
 
 
 NOW = datetime(2026, 10, 8, 1, 0, tzinfo=timezone.utc)
@@ -162,3 +165,53 @@ async def test_missing_source_id_fails_window_and_preserves_checkpoint():
 
     assert store.watermark == old
     assert next(iter(store.runs.values()))["status"] == "failed"
+
+
+def test_backfill_windows_are_bounded_and_non_overlapping():
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    end = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    windows = list(backfill_windows(start, end))
+    assert len(windows) == 3
+    assert windows[0] == (start, datetime(2026, 1, 15, tzinfo=timezone.utc))
+    assert windows[1][0] == windows[0][1]
+    assert windows[2][1] == end
+    assert all((b - a) <= timedelta(days=14) for a, b in windows)
+
+
+@pytest.mark.asyncio
+async def test_backfill_does_not_move_live_delta_checkpoint():
+    old = NOW - timedelta(hours=1)
+    store = FakeStore(watermark=old)
+    client = FakeClient({1: [{"JOBID": 301}]})
+
+    result = await run_backfill_window(
+        client,
+        store,
+        tenant_id="tenant-1",
+        stream=SyncStream.JOBS,
+        window_start=NOW - timedelta(days=14),
+        window_end=NOW - timedelta(days=7),
+        page_size=100,
+    )
+
+    assert result.records_seen == 1
+    assert store.watermark == old
+    assert store.checkpoint_updates == 0
+    run = next(iter(store.runs.values()))
+    assert run["mode"] == "backfill"
+    assert run["status"] == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_backfill_window_larger_than_fourteen_days_is_rejected():
+    store = FakeStore()
+    client = FakeClient({})
+    with pytest.raises(ValueError, match="14 days"):
+        await run_backfill_window(
+            client,
+            store,
+            tenant_id="tenant-1",
+            stream=SyncStream.CANDIDATES,
+            window_start=NOW - timedelta(days=15),
+            window_end=NOW,
+        )
