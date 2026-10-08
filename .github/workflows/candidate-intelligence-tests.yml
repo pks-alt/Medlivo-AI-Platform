@@ -1,0 +1,29 @@
+name: Test Candidate Intelligence
+on:
+  pull_request:
+    paths:
+      - 'services/candidate-intelligence/**'
+      - '.github/workflows/candidate-intelligence-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'services/candidate-intelligence/**'
+      - '.github/workflows/candidate-intelligence-tests.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: services/candidate-intelligence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Candidate Intelligence tests
+        run: python -m pip install '.[test]'
+      - name: Run Candidate Intelligence tests
+        run: python -m pytest -q
