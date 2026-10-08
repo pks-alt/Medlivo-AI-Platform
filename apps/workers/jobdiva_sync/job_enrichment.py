@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Iterable, Protocol
 
 from job_intelligence import JobRequirement, normalize_job
@@ -41,6 +42,19 @@ def _values(value) -> list[str]:
         if text and text not in result:
             result.append(text)
     return result
+
+
+def _experience_years(value) -> int | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)):
+        years = int(value)
+        return years if 0 < years <= 50 else None
+    match = re.search(r"\b(\d{1,2})\s*\+?\s*(?:years?|yrs?)\b", str(value), re.IGNORECASE)
+    if not match:
+        return None
+    years = int(match.group(1))
+    return years if 0 < years <= 50 else None
 
 
 def explicit_requirements(payload: dict[str, Any]) -> list[JobRequirement]:
@@ -86,6 +100,21 @@ def explicit_requirements(payload: dict[str, Any]) -> list[JobRequirement]:
             value=str(setting).strip(),
             required=True,
             source_field="care_setting",
+        ))
+
+    experience_value = _first(payload, (
+        "MINEXPERIENCE", "minExperience",
+        "MINYEARSEXPERIENCE", "minYearsExperience",
+        "YEARSOFEXPERIENCE", "yearsOfExperience",
+        "REQUIREDEXPERIENCE", "requiredExperience",
+    ))
+    years = _experience_years(experience_value)
+    if years is not None:
+        result.append(JobRequirement(
+            kind="experience",
+            value=f"{years} years",
+            required=True,
+            source_field="minimum_experience",
         ))
 
     skill_value = _first(payload, (
