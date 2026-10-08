@@ -143,6 +143,23 @@ def score_match(job: JobMatchInput, candidate: CandidateMatchInput) -> MatchResu
     elif candidate.certifications:
         components.append(_component("certifications", 8, 0.75, "Candidate has certification data"))
 
+    if job.required_skills:
+        matched_skills = [
+            skill for skill in job.required_skills
+            if any(_contains(skill, candidate_skill) for candidate_skill in candidate.clinical_skills)
+        ]
+        ratio = len(matched_skills) / len(job.required_skills)
+        components.append(_component(
+            "clinical_skills",
+            10 * ratio,
+            1.0,
+            (
+                "Resume evidence supports all explicit job clinical skills"
+                if ratio == 1
+                else f"Resume evidence supports {len(matched_skills)} of {len(job.required_skills)} explicit job clinical skills"
+            ),
+        ))
+
     if job.state and candidate.state:
         same_state = job.state.upper() == candidate.state.upper()
         components.append(_component("location", 10 if same_state else 6, 0.5,
