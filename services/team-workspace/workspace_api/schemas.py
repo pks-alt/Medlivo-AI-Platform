@@ -123,8 +123,3 @@ class JobPublicationDecision(StrictInput):
         if info.data.get("decision") == "rejected" and not value:
             raise ValueError("A rejection reason is required")
         return value
-
-
-class CareerApplicationAssignment(StrictInput):
-    recruiter_user_id: UUID
-    reason: str = Field(min_length=3, max_length=500)
