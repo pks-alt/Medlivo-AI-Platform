@@ -8,6 +8,16 @@ from app.db.database import connection
 from app.schemas.integration import JobDivaSyncHealth, SyncStreamHealth
 
 
+def classify_sync_status(*, watermark, last_error_code, last_run_status, freshness_minutes, stale_after_minutes):
+    if last_error_code or last_run_status == "failed":
+        return "error"
+    if watermark is None:
+        return "never_synced"
+    if freshness_minutes is not None and freshness_minutes > stale_after_minutes:
+        return "stale"
+    return "healthy"
+
+
 class IntegrationRepository:
     async def jobdiva_sync_health(self, *, stale_after_minutes: int = 30) -> JobDivaSyncHealth:
         async with connection() as conn:
@@ -60,14 +70,13 @@ class IntegrationRepository:
             if watermark is not None:
                 freshness = max(0, int((now - watermark).total_seconds() // 60))
 
-            if row["last_error_code"] or row["last_run_status"] == "failed":
-                status = "error"
-            elif watermark is None:
-                status = "never_synced"
-            elif freshness is not None and freshness > stale_after_minutes:
-                status = "stale"
-            else:
-                status = "healthy"
+            status = classify_sync_status(
+                watermark=watermark,
+                last_error_code=row["last_error_code"],
+                last_run_status=row["last_run_status"],
+                freshness_minutes=freshness,
+                stale_after_minutes=stale_after_minutes,
+            )
 
             items.append(SyncStreamHealth(
                 tenant_slug=row["tenant_slug"],
