@@ -1359,3 +1359,137 @@ class WorkspaceStore:
                 "read_only": True,
                 "source_of_record": "jobdiva",
             }
+
+
+    def candidate_best_jobs(self, identity, candidate_id, *, limit=20):
+        """Read-only ranked jobs for one canonical candidate from persisted matches."""
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+
+            candidate = conn.execute(
+                select(t.candidates).where(
+                    t.candidates.c.id == candidate_id,
+                    t.candidates.c.tenant_id == principal["tenant_id"],
+                )
+            ).mappings().first()
+            if candidate is None:
+                raise AccessError(404, "Candidate not found")
+
+            # Recruiters may inspect candidates they own through an active case;
+            # managers may inspect candidates owned by their managed teams;
+            # admins may inspect all tenant candidates.
+            owner_case = conn.execute(
+                select(t.cases.c.owner_user_id, t.cases.c.team_id)
+                .where(
+                    t.cases.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.candidate_id == candidate_id,
+                )
+                .order_by(t.cases.c.updated_at.desc())
+                .limit(1)
+            ).mappings().first()
+            if principal["role"] == "recruiter":
+                if owner_case is not None and owner_case["owner_user_id"] != principal["id"]:
+                    raise AccessError(403, "Candidate is owned by another recruiter")
+            elif principal["role"] == "manager":
+                if owner_case is not None and not self._team_allowed(conn, principal, owner_case["team_id"]):
+                    raise AccessError(403, "Candidate is outside your managed team")
+            elif principal["role"] != "admin":
+                raise AccessError(403, "Workspace access required")
+
+            excluded_count = conn.execute(
+                select(func.count()).select_from(t.matches).where(
+                    t.matches.c.tenant_id == principal["tenant_id"],
+                    t.matches.c.candidate_id == candidate_id,
+                    t.matches.c.status == "excluded",
+                )
+            ).scalar_one()
+
+            rows = conn.execute(
+                select(t.matches, t.jobs)
+                .join(t.jobs, and_(
+                    t.jobs.c.id == t.matches.c.job_id,
+                    t.jobs.c.tenant_id == t.matches.c.tenant_id,
+                ))
+                .where(
+                    t.matches.c.tenant_id == principal["tenant_id"],
+                    t.matches.c.candidate_id == candidate_id,
+                    t.matches.c.status != "excluded",
+                    t.jobs.c.status.not_in(["closed", "cancelled", "canceled"]),
+                )
+                .order_by(
+                    t.matches.c.overall_score.desc(),
+                    t.jobs.c.priority.desc(),
+                    t.jobs.c.start_date.asc().nulls_last(),
+                    t.matches.c.updated_at.desc(),
+                )
+                .limit(limit)
+            ).mappings().all()
+
+            items = []
+            for row in rows:
+                explanation = row["explanation"] or {}
+                jobdiva_id = conn.execute(
+                    select(t.job_source_records.c.source_id)
+                    .where(
+                        t.job_source_records.c.tenant_id == principal["tenant_id"],
+                        t.job_source_records.c.job_id == row["job_id"],
+                        t.job_source_records.c.source_system == "jobdiva",
+                    )
+                    .order_by(t.job_source_records.c.source_updated_at.desc().nulls_last())
+                    .limit(1)
+                ).scalar_one_or_none()
+
+                submission = conn.execute(
+                    select(t.submissions.c.status, t.submissions.c.readiness_status)
+                    .where(
+                        t.submissions.c.tenant_id == principal["tenant_id"],
+                        t.submissions.c.candidate_id == candidate_id,
+                        t.submissions.c.job_id == row["job_id"],
+                    )
+                    .order_by(t.submissions.c.updated_at.desc())
+                    .limit(1)
+                ).mappings().first()
+
+                next_action = "Review job match"
+                if submission:
+                    next_action = "Review submission status"
+                elif row["overall_score"] >= 9:
+                    next_action = "Prioritize for recruiter review"
+
+                items.append({
+                    "match_id": row["id"],
+                    "job_id": row["job_id"],
+                    "jobdiva_job_id": jobdiva_id,
+                    "title": row["title"],
+                    "division": row["division"],
+                    "profession": row["profession"],
+                    "specialty": row["specialty"],
+                    "city": row["city"],
+                    "state": row["state"],
+                    "start_date": row["start_date"],
+                    "priority": row["priority"],
+                    "score": row["overall_score"],
+                    "rules_version": row["rules_version"],
+                    "gates": explanation.get("gates", []) if isinstance(explanation, dict) else [],
+                    "strengths": explanation.get("strengths", []) if isinstance(explanation, dict) else [],
+                    "gaps": explanation.get("gaps", []) if isinstance(explanation, dict) else [],
+                    "submission_status": submission["status"] if submission else None,
+                    "submission_readiness": submission["readiness_status"] if submission else None,
+                    "recommended_next_action": next_action,
+                })
+
+            return clean({
+                "candidate": {
+                    "id": candidate["id"],
+                    "canonical_name": candidate["canonical_name"],
+                    "profession": candidate["profession"],
+                    "specialty": candidate["specialty"],
+                    "city": candidate["city"],
+                    "state": candidate["state"],
+                    "profile_freshness": candidate["profile_freshness"],
+                },
+                "items": items,
+                "excluded_count": excluded_count,
+                "read_only": True,
+                "source_of_record": "jobdiva",
+            })
