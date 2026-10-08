@@ -183,3 +183,8 @@ For recruiters, the top of **My work** now provides a read-only start-of-day pri
 ## Recruiter dashboard
 
 The recruiter dashboard combines the selected week's goals and synchronized actual activity with current workload pressure: owned work items, open and overdue follow-ups, active priority jobs, and unreviewed strong/good matches. It is read-only and uses existing canonical/workspace data; it does not create a second ATS record, send outreach, or mutate JobDiva.
+
+
+## Candidate Best Jobs review UX
+
+The candidate detail surface now summarizes ranked persisted matches by score band and lets recruiters review the same evidence, next action, and match-quality feedback used in Match Queue. A recruiter can open the matched canonical job directly from the candidate view. The surface remains review-only for recruiting operations: it does not send outreach, submit candidates, change ownership, or mutate JobDiva.
