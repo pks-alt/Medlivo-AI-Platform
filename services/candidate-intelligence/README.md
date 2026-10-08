@@ -16,3 +16,8 @@ Every extracted signal retains the original source line. Missing or ambiguous fa
 - explicit clinical skills such as ventilator management, telemetry, wound care, gait training, manual therapy, central-line care, and dialysis
 
 These signals are vocabulary matches only. They are evidence for matching and recruiter review, not automatic proof of competency.
+
+
+## Matching handoff
+
+Primary-resume parsed evidence is persisted with the resume version. Matching currently consumes source-backed care-setting signals as soft evidence for retrieval and scoring. Resume specialty and clinical-skill signals remain available for future calibrated scoring and are not promoted into hard gates automatically.
