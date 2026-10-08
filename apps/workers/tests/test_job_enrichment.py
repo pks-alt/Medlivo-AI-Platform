@@ -143,3 +143,14 @@ async def test_job_enrichment_runner_records_error_without_throwing_batch():
     assert result == {"pending": 1, "enriched": 0, "failed": 1}
     assert store.persisted == []
     assert store.errors[0]["error_code"] == "ValueError"
+
+
+def test_explicit_requirements_extracts_skill_fields_as_soft_requirements():
+    from jobdiva_sync.job_enrichment import explicit_requirements
+
+    requirements = explicit_requirements({
+        "REQUIREDSKILLS": "Telemetry; Ventilator",
+    })
+    skills = [item for item in requirements if item.kind == "skill"]
+    assert [item.value for item in skills] == ["Telemetry", "Ventilator"]
+    assert all(item.required for item in skills)
