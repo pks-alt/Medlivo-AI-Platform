@@ -210,3 +210,22 @@ async def test_connectivity_diagnostic_surfaces_endpoint_401_without_secrets():
         "data_endpoint": "unauthorized",
         "http_status": 401,
     }
+
+
+def test_emit_event_writes_structured_json_to_stderr(capsys):
+    pilot.emit_event({
+        "pilot": "diagnostic",
+        "database_schema": "ready",
+        "jobdiva": {
+            "authentication": "ok",
+            "data_endpoint": "unauthorized",
+            "http_status": 401,
+        },
+    })
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert '"pilot": "diagnostic"' in captured.err
+    assert '"authentication": "ok"' in captured.err
+    assert '"data_endpoint": "unauthorized"' in captured.err
+    assert '"http_status": 401' in captured.err
+    assert "secret" not in captured.err.lower()
