@@ -1,21 +1,17 @@
 [project]
-name = "medlivo-jobdiva-connector"
+name = "medlivo-job-intelligence"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
-  "httpx>=0.28,<1.0",
-  "pydantic>=2.11,<3.0",
-  "pydantic-settings>=2.8,<3.0"
+  "pydantic>=2.11,<3.0"
 ]
 
 [project.optional-dependencies]
 test = [
-  "pytest>=8.3,<9.0",
-  "pytest-asyncio>=0.25,<1.0"
+  "pytest>=8.3,<9.0"
 ]
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
 pythonpath = ["."]
 
 [tool.uv]

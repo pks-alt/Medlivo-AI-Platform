@@ -1,0 +1,16 @@
+-- TEMPLATE ONLY: run as a migration administrator after choosing a dedicated
+-- non-owner runtime role. Example psql option: -v workspace_runtime_role=reviewed_role
+-- This file makes no role or password and grants no project/cloud privileges.
+-- It assumes the intended schema is already in the reviewed search_path.
+\if :{?workspace_runtime_role}
+REVOKE ALL ON ws_identity, ws_case, ws_note, ws_task, ws_audit, ws_operation FROM :"workspace_runtime_role";
+GRANT SELECT ON app_user, team, recruiter_profile, ws_identity, ws_case, ws_note, ws_task, ws_audit, ws_operation TO :"workspace_runtime_role";
+GRANT INSERT ON ws_note, ws_task, ws_audit, ws_operation TO :"workspace_runtime_role";
+GRANT UPDATE (owner_user_id, version, updated_at) ON ws_case TO :"workspace_runtime_role";
+GRANT UPDATE (status, version, updated_at) ON ws_task TO :"workspace_runtime_role";
+-- SELECT ... FOR UPDATE on ws_case also requires UPDATE rights, supplied above.
+-- No writes to canonical tables, identity bindings, or audit history are granted.
+\else
+\echo 'Set workspace_runtime_role to the reviewed, non-owner database role first.'
+\quit
+\endif

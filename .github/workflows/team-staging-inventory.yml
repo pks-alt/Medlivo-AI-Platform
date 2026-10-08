@@ -1,0 +1,41 @@
+name: Read-only team staging inventory
+# This job cannot deploy, change permissions, access secret values or read records.
+# On this development branch only. Never runs on fork pull requests.
+on:
+  push:
+    branches: ['feat/private-team-workspace-20261005']
+    paths:
+      - 'infrastructure/team-staging/staging.py'
+      - '.github/workflows/team-staging-inventory.yml'
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    if: github.repository == 'pks-alt/Medlivo-AI-Platform'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: auth
+        continue-on-error: true
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - if: steps.auth.outcome == 'success'
+        uses: google-github-actions/setup-gcloud@v3
+      - name: Inspect metadata only
+        if: steps.auth.outcome == 'success'
+        run: python3 infrastructure/team-staging/staging.py inventory --output staging-inventory.json
+      - name: Record unavailable access without broadening permissions
+        if: steps.auth.outcome != 'success'
+        run: |
+          printf '%s\n' '{"mode":"read_only_metadata","cloud_modified":false,"secret_values_read":false,"ready_to_enable":false,"checks":[{"name":"cloud_authentication","status":"unknown","detail":"Existing identity cannot be used from this branch; no permissions were changed."}]}' > staging-inventory.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: team-staging-metadata-only
+          path: staging-inventory.json
+          retention-days: 7

@@ -1,0 +1,56 @@
+name: Verify isolated team staging package
+on:
+  pull_request:
+    paths:
+      - 'infrastructure/team-staging/**'
+      - 'apps/recruiter-web/lib/team/**'
+      - 'apps/recruiter-web/app/team/**'
+      - 'apps/recruiter-web/app/api/team/**'
+      - 'apps/recruiter-web/package.json'
+      - '.github/workflows/team-staging-tests.yml'
+permissions:
+  contents: read
+jobs:
+  staging-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate staging configuration safeguards
+        run: python3 -m unittest discover -s infrastructure/team-staging/tests -v
+      - name: Build isolated Next.js image without credentials
+        run: docker build -f infrastructure/team-staging/Dockerfile.web -t medlivo-team-staging-ci .
+      - name: Start actual standalone image on loopback
+        run: docker run --detach --name team-staging-ci --publish 127.0.0.1:18080:8080 medlivo-team-staging-ci
+      - name: Verify actual Next.js runtime routes and disabled access
+        run: node infrastructure/team-staging/container-smoke.mjs
+      - name: Install isolated browser checker
+        run: |
+          npm install --prefix "${RUNNER_TEMP}/staging-browser" --no-audit --no-fund agent-browser@0.38.1
+          "${RUNNER_TEMP}/staging-browser/node_modules/.bin/agent-browser" install --with-deps
+      - name: Verify rendered sign-in setup in browser
+        run: |
+          set -euo pipefail
+          AB="${RUNNER_TEMP}/staging-browser/node_modules/.bin/agent-browser"
+          mkdir -p staging-browser-evidence
+          "$AB" --session staging-check open http://127.0.0.1:18080/team
+          "$AB" --session staging-check wait --load networkidle
+          "$AB" --session staging-check snapshot -i > staging-browser-evidence/snapshot.txt
+          "$AB" --session staging-check eval '(() => { if (!document.querySelector(".login-layout") || document.body.innerText.trim().length < 100) throw new Error("Sign-in setup not rendered"); return "PASS: rendered team setup"; })()'
+          "$AB" --session staging-check screenshot staging-browser-evidence/setup.png
+          "$AB" --session staging-check close
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: isolated-staging-runtime-evidence
+          path: staging-browser-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Stop isolated test container
+        if: always()
+        run: docker rm --force team-staging-ci || true

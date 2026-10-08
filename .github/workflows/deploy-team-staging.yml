@@ -1,0 +1,72 @@
+name: Deploy private team staging
+
+on:
+  push:
+    branches:
+      - feat/private-team-workspace-20261005
+    paths:
+      - ".github/workflows/deploy-team-staging.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-private-team-staging
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: medlivo-ai-platform
+  REGION: us-west1
+  GAR_REPOSITORY: medlivo-ai-containers
+  API_SERVICE: medlivo-team-api-staging
+  WEB_SERVICE: medlivo-team-web-staging
+
+jobs:
+  deploy:
+    if: github.repository == 'pks-alt/Medlivo-AI-Platform'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push private API
+        run: |
+          API_IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${GAR_REPOSITORY}/${API_SERVICE}:${GITHUB_SHA}"
+          docker build -t "${API_IMAGE}" services/team-workspace
+          docker push "${API_IMAGE}"
+          echo "API_IMAGE=${API_IMAGE}" >> "${GITHUB_ENV}"
+
+      - name: Deploy private API image only
+        run: |
+          gcloud run services update "${API_SERVICE}"             --project="${PROJECT_ID}"             --region="${REGION}"             --image="${API_IMAGE}"             --no-log-http             --quiet
+
+      - name: Build and push private team web
+        run: |
+          WEB_IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${GAR_REPOSITORY}/${WEB_SERVICE}:${GITHUB_SHA}"
+          docker build -f infrastructure/team-staging/Dockerfile.web -t "${WEB_IMAGE}" .
+          docker push "${WEB_IMAGE}"
+          echo "WEB_IMAGE=${WEB_IMAGE}" >> "${GITHUB_ENV}"
+
+      - name: Deploy private web image only
+        run: |
+          gcloud run services update "${WEB_SERVICE}"             --project="${PROJECT_ID}"             --region="${REGION}"             --image="${WEB_IMAGE}"             --no-log-http             --quiet
+
+      - name: Show deployed revisions
+        run: |
+          gcloud run services describe "${API_SERVICE}"             --project="${PROJECT_ID}" --region="${REGION}"             --format='value(status.latestReadyRevisionName,status.url)'
+          gcloud run services describe "${WEB_SERVICE}"             --project="${PROJECT_ID}" --region="${REGION}"             --format='value(status.latestReadyRevisionName,status.url)'

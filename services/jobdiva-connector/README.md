@@ -2,49 +2,74 @@
 
 JobDiva is the first ATS connector for Medlivo AI Platform.
 
-## Current verified facts
+## Confirmed Phase 1 contract
 
-The JobDiva API portal exposes V2 methods/models and webhook configuration. JobDiva documents webhook support for most data entities, with Insert/Create, Update, and Delete operations. Webhook setup requires an endpoint URL and a signature key.
+Medlivo Phase 1 is read-only. JobDiva has enabled the dedicated integration user for the requested read functions and additional functions remain disabled until requested.
 
-## What we are intentionally not guessing
+Confirmed V2 paths now implemented:
+- `GET /apiv2/v2/authenticate`
+- `GET /apiv2/bi/OpenJobsList`
+- `GET /apiv2/bi/NewUpdatedJobRecords`
+- `GET /apiv2/bi/NewUpdatedCandidateRecords`
 
-The public portal does not currently expose enough detail to safely hard-code:
-- authentication/token request
-- production API base URL
-- candidate endpoint paths
-- resume endpoint paths
-- job endpoint paths
-- pagination/rate limits
-- write-back endpoints
-- webhook signature algorithm/header contract
+Authentication requires:
+- Client ID
+- API username
+- API password
 
-Those remain explicit integration-contract TODOs until JobDiva provides the technical documentation requested by Medlivo.
+The JobDiva delta endpoints use `MM/dd/yyyy HH:mm:ss` timestamps and support page number/page size parameters.
 
-## Connector responsibilities
+## Safety rules
 
-1. authenticate using JobDiva's documented mechanism
-2. ingest controlled job/candidate/resume samples
-3. preserve JobDiva source IDs and timestamps
-4. support incremental sync
-5. validate webhook events
-6. publish normalized source events to the platform
-7. retry safely and idempotently
-8. write back only through documented supported operations
+- Never commit JobDiva credentials or tokens.
+- Keep credentials in Google Secret Manager for deployed workloads.
+- Phase 1 performs GET requests only.
+- No candidate/job write-back, outreach, submissions, or destructive operations are enabled.
+- Do not print access tokens, credentials, full authentication URLs, or candidate payloads in logs.
 
-## Security
+## Safe connectivity probe
 
-Never place JobDiva credentials in source code, GitHub Actions variables committed to the repo, test fixtures, or frontend code.
+For a one-time Cloud Shell test, export credentials only into the current shell session, run the probe, and then unset them. Prefer reading the password silently so it does not enter shell history.
 
-Production credentials belong in Google Secret Manager.
+```bash
+cd ~/Medlivo-AI-Platform/services/jobdiva-connector
+export JOBDIVA_CLIENT_ID='<client id>'
+export JOBDIVA_USERNAME='<api username>'
+read -s -p 'JobDiva API password: ' JOBDIVA_PASSWORD && export JOBDIVA_PASSWORD && echo
+python probe.py
+unset JOBDIVA_PASSWORD JOBDIVA_USERNAME JOBDIVA_CLIENT_ID
+```
 
-## Proof sequence
+The probe prints only:
+- authentication success/failure
+- OpenJobsList count
+- up to five job IDs/titles/statuses
 
-1. Confirm auth contract
-2. Fetch 5-10 active jobs
-3. Fetch 20-50 candidates
-4. Fetch representative resumes
-5. Inspect actual fields and custom fields
-6. Map source IDs into canonical records
-7. Test incremental sync
-8. Test one webhook entity in a non-destructive way
-9. Only then design the large-scale backfill
+It intentionally does not print candidate data, credentials, tokens, or raw auth responses.
+
+## Sync sequence
+
+1. Authenticate.
+2. Fetch a small OpenJobsList sample.
+3. Fetch a narrow NewUpdatedJobRecords window.
+4. Inspect actual response shape and normalize job IDs/status/location/rates/specialty.
+5. Fetch a narrow NewUpdatedCandidateRecords window.
+6. Add candidate detail, resume, license, and certification calls after the source shape is verified.
+7. Add 14-day checkpointed historical backfill.
+8. Add webhook receiver for near-real-time change notification.
+9. Reconcile webhooks with scheduled API delta sync because JobDiva drops webhook events after its retry limit.
+
+## Historical and merge behavior
+
+JobDiva has confirmed:
+- NewUpdatedCandidateRecords is the primary candidate delta feed.
+- NewUpdatedJobRecords is the primary job delta feed.
+- MergedCandidates V2 accepts a maximum two-week date range per call.
+- CANDIDATEID is the merged-away record.
+- MERGEDTOCANDIDATEID is the surviving record.
+
+A complete inventory of very old candidate IDs is still an open integration question; do not assume the delta feed alone represents all historical candidates.
+
+## Webhooks
+
+Webhook configuration is managed on the Medlivo side. The Client URL will point to a dedicated Medlivo receiver. Webhook events are treated as change notifications; the JobDiva API remains the authoritative read path.

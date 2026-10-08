@@ -1,0 +1,70 @@
+name: Test team sign-in and shared browser workflows
+on:
+  pull_request:
+    paths:
+      - 'apps/recruiter-web/**'
+      - 'services/team-workspace/**'
+      - '.github/workflows/team-web-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/recruiter-web/**'
+      - 'services/team-workspace/**'
+      - '.github/workflows/team-web-tests.yml'
+permissions:
+  contents: read
+jobs:
+  team-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: workspace_browser_ci
+          POSTGRES_USER: workspace_browser_ci
+          POSTGRES_PASSWORD: ephemeral-browser-ci-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: apps/recruiter-web
+    env:
+      TEAM_TEST_POSTGRES_URL: postgresql://workspace_browser_ci:ephemeral-browser-ci-only@localhost:5432/workspace_browser_ci
+      TEAM_WORKSPACE_ENABLED: 'false'
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install browser application dependencies
+        run: npm install --no-audit --no-fund
+      - name: Test OAuth session controls and real PostgreSQL sessions
+        run: npm run test:team
+      - name: Compile the existing Next.js application including team routes
+        run: npm run build
+      - name: Install private API and isolated browser test tools
+        working-directory: .
+        run: |
+          python -m pip install './services/team-workspace[test]' playwright
+          python -m playwright install --with-deps chromium
+      - name: Verify browser to private API with separate team identities
+        env:
+          TEAM_E2E_REAL_API: '1'
+          TEAM_EVIDENCE_DIR: ${{ runner.temp }}/team-browser-evidence
+        run: python tests/team/browser_check.py
+      - name: Save browser verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: team-signin-browser-evidence
+          path: ${{ runner.temp }}/team-browser-evidence/
+          retention-days: 7
+          if-no-files-found: ignore
