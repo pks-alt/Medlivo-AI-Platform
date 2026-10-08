@@ -33,3 +33,19 @@ The private platform API exposes:
 `GET /api/v1/integrations/jobdiva/health`
 
 It returns only operational metadata such as watermark freshness, last success, last error, and latest record counts. It does not return JobDiva job/candidate payloads.
+
+
+## Canonical promotion
+
+Landed JobDiva source records are promoted into the canonical `job` and `candidate` tables through a separate promotion step.
+
+Rules:
+- JobDiva source IDs remain the stable external identity.
+- A source record links to exactly one canonical job/candidate.
+- New and changed source records are eligible for promotion.
+- Promotion is versioned and audited.
+- Jobs require an explicit source ID and title.
+- Candidate delta records only seed explicit identity/contact/profession/location fields.
+- Missing candidate fields never erase richer canonical values.
+- Unknown JobDiva custom fields remain in the raw source payload until their mapping is verified.
+- Promotion never writes back to JobDiva.
