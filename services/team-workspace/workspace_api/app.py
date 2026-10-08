@@ -196,6 +196,14 @@ def build_app(store, verifier):
     def job_publications(limit: int = Query(default=100, ge=1, le=200), who=Depends(identity)):
         return store.list_job_publications(who, limit=limit)
 
+    @app.get(prefix + "/work-queue")
+    def work_queue(limit: int = Query(default=25, ge=1, le=50),
+                   matches_per_job: int = Query(default=5, ge=1, le=10),
+                   who=Depends(identity)):
+        return store.match_work_queue(
+            who, limit=limit, matches_per_job=matches_per_job
+        )
+
     @app.post(prefix + "/job-publications", status_code=201)
     def create_job_publication(value: JobPublicationDraftInput,
                                idempotency_key: UUID = Header(), who=Depends(identity)):
