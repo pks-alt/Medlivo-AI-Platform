@@ -467,3 +467,65 @@ def test_recruiter_cannot_access_job_publication_approval(client, headers):
         headers=headers("recruiter-a"),
     )
     assert response.status_code == 403
+
+
+def seed_application(seeded, *, app_id=950, recruiter_id=10, team_id=30):
+    with seeded.begin() as conn:
+        publication_id = idn(940)
+        conn.execute(insert(t.job_publications).values(
+            id=publication_id, tenant_id=idn(1), team_id=idn(team_id),
+            job_id=idn(200), intake_item_id=None,
+            source_snapshot={"title": "Synthetic PT"},
+            enhanced_snapshot={"public_title": "Synthetic PT - Seattle, WA"},
+            quality_score={"overall": 90}, readiness="ready_to_publish",
+            recruiting_status="approved", website_status="approved",
+            recruiting_approved_by=idn(12), recruiting_approved_at=now(),
+            website_approved_by=idn(12), website_approved_at=now(),
+            version=1, created_by=idn(12), created_at=now(), updated_at=now(),
+        ))
+        conn.execute(insert(t.career_applications).values(
+            id=idn(app_id), tenant_id=idn(1), publication_id=publication_id,
+            candidate_id=idn(300), applicant_name="Synthetic Applicant",
+            email="applicant@example.test", phone="555-0100",
+            profession="Physical Therapist", specialty="Physical Therapy",
+            preferred_location="WA", availability="Soon", resume_url=None,
+            consent_to_contact=True, source="medlivo_website",
+            status="assigned" if recruiter_id else "new",
+            ownership_status="assigned" if recruiter_id else "unowned",
+            assigned_recruiter_user_id=idn(recruiter_id) if recruiter_id else None,
+            created_at=now(), updated_at=now(),
+        ))
+    return idn(app_id)
+
+
+def test_recruiter_sees_only_own_applications(client, headers, seeded):
+    seed_application(seeded, recruiter_id=10)
+    response = client.get("/api/v1/team/applications", headers=headers("recruiter-a"))
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 1
+
+    other = client.get("/api/v1/team/applications", headers=headers("recruiter-b"))
+    assert other.status_code == 200
+    assert other.json()["items"] == []
+
+
+def test_manager_can_assign_unowned_application_to_same_team_recruiter(client, headers, seeded):
+    app_id = seed_application(seeded, recruiter_id=None)
+    response = client.post(
+        f"/api/v1/team/applications/{app_id}/assign",
+        headers=headers("manager-a"),
+        json={"recruiter_user_id": idn(11), "reason": "Primary rehab recruiter for this opening"},
+    )
+    assert response.status_code == 200
+    assert response.json()["assigned_recruiter_user_id"] == idn(11)
+    assert response.json()["ownership_status"] == "assigned"
+
+
+def test_manager_cannot_assign_application_to_other_team_recruiter(client, headers, seeded):
+    app_id = seed_application(seeded, recruiter_id=None)
+    response = client.post(
+        f"/api/v1/team/applications/{app_id}/assign",
+        headers=headers("manager-a"),
+        json={"recruiter_user_id": idn(15), "reason": "Cross-team assignment attempt"},
+    )
+    assert response.status_code == 422
