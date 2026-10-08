@@ -101,6 +101,11 @@ CREATE TABLE IF NOT EXISTS job_source_record (
   UNIQUE (tenant_id, source_system, source_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_job_source_enrichment_pending
+  ON job_source_record (tenant_id, source_system, updated_at)
+  WHERE job_id IS NOT NULL
+    AND (enriched_at IS NULL OR enriched_at < updated_at);
+
 CREATE TABLE IF NOT EXISTS integration_sync_checkpoint (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id uuid NOT NULL REFERENCES tenant(id),
