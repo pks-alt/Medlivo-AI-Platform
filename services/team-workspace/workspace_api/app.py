@@ -196,6 +196,10 @@ def build_app(store, verifier):
     def job_publications(limit: int = Query(default=100, ge=1, le=200), who=Depends(identity)):
         return store.list_job_publications(who, limit=limit)
 
+    @app.get(prefix + "/daily-priorities")
+    def daily_priorities(limit: int = Query(default=20, ge=1, le=50), who=Depends(identity)):
+        return store.daily_priorities(who, limit=limit)
+
     @app.get(prefix + "/work-queue")
     def work_queue(limit: int = Query(default=25, ge=1, le=50),
                    matches_per_job: int = Query(default=5, ge=1, le=10),
