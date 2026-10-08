@@ -114,17 +114,30 @@ async def check_schema_readiness(connection) -> dict:
 
 
 async def run_connectivity_diagnostic(client) -> dict:
-    result = {"authentication": "ok", "data_endpoint": "unknown", "http_status": None}
+    result = {
+        "authentication": "ok",
+        "data_endpoint": "unknown",
+        "http_status": None,
+        "response_parse": "not_attempted",
+    }
     try:
-        await client.open_jobs()
+        response = await client.request("GET", client.OPEN_JOBS_PATH)
     except JobDivaHTTPError as exc:
         result["data_endpoint"] = "unauthorized" if exc.status_code in {401, 403} else "http_error"
         result["http_status"] = exc.status_code
+        return result
     except JobDivaError:
         result["data_endpoint"] = "connector_error"
+        return result
+
+    result["data_endpoint"] = "ok"
+    result["http_status"] = response.status_code
+    try:
+        client._json_records(response)
+    except JobDivaError:
+        result["response_parse"] = "unexpected_payload"
     else:
-        result["data_endpoint"] = "ok"
-        result["http_status"] = 200
+        result["response_parse"] = "ok"
     return result
 
 
