@@ -45,3 +45,8 @@ The current retrieval layer:
 - does not change the authoritative deterministic match score
 
 A production vector store/embedding provider remains a deployment decision. Retrieval can be connected to that infrastructure without changing hard-gate behavior.
+
+
+## Worker pipeline integration
+
+The matching worker now groups pending pairs by job, persists hard-gate exclusions first, and uses hybrid retrieval to prioritize the remaining eligible candidates before deterministic scoring. If retrieval fails, the worker falls back to stable deterministic processing so retrieval cannot block matching.
