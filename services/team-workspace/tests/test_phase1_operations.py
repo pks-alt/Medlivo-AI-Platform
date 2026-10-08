@@ -892,3 +892,21 @@ def test_recruiter_dashboard_requires_monday(client, headers):
         headers=headers("recruiter-a"),
     )
     assert response.status_code == 422
+
+
+def test_match_queue_returns_current_recruiter_feedback_state(client, headers, seeded):
+    seed_match_queue(seeded)
+    with seeded.begin() as conn:
+        conn.execute(insert(t.match_feedback).values(
+            id=idn(991), tenant_id=idn(1), match_id=idn(962),
+            recruiter_user_id=idn(10), feedback_code="good_match",
+            reason_code=None, notes=None, created_at=now(),
+        ))
+    response = client.get(
+        "/api/v1/team/work-queue?limit=25&matches_per_job=5",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    match = response.json()["items"][0]["matches"][0]
+    assert match["my_feedback_code"] == "good_match"
+    assert match["my_feedback_reason"] is None
