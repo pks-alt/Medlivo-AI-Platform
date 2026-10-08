@@ -196,6 +196,12 @@ def build_app(store, verifier):
     def job_publications(limit: int = Query(default=100, ge=1, le=200), who=Depends(identity)):
         return store.list_job_publications(who, limit=limit)
 
+    @app.get(prefix + "/recruiter/dashboard")
+    def recruiter_dashboard(week_start: date, who=Depends(identity)):
+        if week_start.weekday() != 0:
+            raise HTTPException(422, "week_start must be a Monday")
+        return store.recruiter_dashboard(who, week_start)
+
     @app.get(prefix + "/daily-priorities")
     def daily_priorities(limit: int = Query(default=20, ge=1, le=50), who=Depends(identity)):
         return store.daily_priorities(who, limit=limit)
