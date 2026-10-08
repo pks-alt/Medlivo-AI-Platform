@@ -45,6 +45,7 @@ jobs:
         run: |
           python -m pip install ../../services/candidate-intelligence
           python -m pip install ../../services/job-intelligence
+          python -m pip install ../../services/matching-engine
           python -m pip install '.[test]'
       - name: Test JobDiva delta and backfill foundation
         run: python -m pytest -q
