@@ -13,6 +13,7 @@ from .config import Settings
 from .schemas import (
     NoteInput, TaskInput, TaskUpdate, Reassignment, AdminUserInput, AdminUserUpdate,
     JobIntakeBatchInput, CustomerJobMappingInput, WeeklyGoalInput, JobIntakeRowsInput,
+    JobPublicationDraftInput, JobPublicationDecision,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -189,6 +190,26 @@ def build_app(store, verifier):
             raise HTTPException(422, "week_start must be a Monday")
         return store.weekly_review(
             who, week_start, team_id=str(team_id) if team_id is not None else None
+        )
+
+    @app.get(prefix + "/job-publications")
+    def job_publications(limit: int = Query(default=100, ge=1, le=200), who=Depends(identity)):
+        return store.list_job_publications(who, limit=limit)
+
+    @app.post(prefix + "/job-publications", status_code=201)
+    def create_job_publication(value: JobPublicationDraftInput,
+                               idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.create_job_publication(who, str(idempotency_key), value)
+
+    @app.get(prefix + "/job-publications/{publication_id}")
+    def job_publication(publication_id: UUID, who=Depends(identity)):
+        return store.get_job_publication(who, str(publication_id))
+
+    @app.post(prefix + "/job-publications/{publication_id}/decision")
+    def decide_job_publication(publication_id: UUID, value: JobPublicationDecision,
+                               idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.decide_job_publication(
+            who, str(publication_id), str(idempotency_key), value
         )
 
     @app.get(prefix + "/candidates")
