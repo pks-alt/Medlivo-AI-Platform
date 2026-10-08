@@ -115,6 +115,9 @@ with tempfile.TemporaryDirectory() as folder:
             page.get_by_text('Follow-up updated.',exact=True).wait_for()
             check(page.get_by_text('Queue verification follow-up',exact=True).count()==0,'Completing a queue item removes it from the default open view')
             page.get_by_role('button',name='My work',exact=True).click()
+            page.get_by_role('tab',name='Follow-ups',exact=True).wait_for()
+            check(page.get_by_role('tab',name='Follow-ups',exact=True).get_attribute('aria-selected')=='true','My Work preserves the previously selected work-item tab')
+            page.get_by_role('tab',name='Notes',exact=True).click()
             page.locator('#noteForm').wait_for()
             cookies=recruiter.cookies()
             session=[c for c in cookies if c['name']=='__Host-medlivo-team'][0]
