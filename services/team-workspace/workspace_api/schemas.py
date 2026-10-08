@@ -91,3 +91,35 @@ class WeeklyGoalInput(StrictInput):
 class JobIntakeRowsInput(StrictInput):
     rows: list[dict[str, str | int | float | bool | None]] = Field(min_length=1, max_length=500)
     mapping: dict[str, str] | None = None
+
+
+class JobPublicationDraftInput(StrictInput):
+    team_id: UUID | None = None
+    job_id: UUID | None = None
+    intake_item_id: UUID | None = None
+    source_snapshot: dict
+    enhanced_snapshot: dict
+    quality_score: dict
+    readiness: Literal["not_ready", "manager_review", "ready_for_recruiting", "ready_to_publish"]
+
+    @field_validator("intake_item_id")
+    @classmethod
+    def require_one_source(cls, value, info):
+        job_id = info.data.get("job_id")
+        if (job_id is None) == (value is None):
+            raise ValueError("Provide exactly one of job_id or intake_item_id")
+        return value
+
+
+class JobPublicationDecision(StrictInput):
+    target: Literal["recruiting", "website"]
+    decision: Literal["approved", "rejected"]
+    reason: str | None = Field(default=None, max_length=1000)
+    expected_version: int = Field(ge=1)
+
+    @field_validator("reason")
+    @classmethod
+    def rejection_needs_reason(cls, value, info):
+        if info.data.get("decision") == "rejected" and not value:
+            raise ValueError("A rejection reason is required")
+        return value
