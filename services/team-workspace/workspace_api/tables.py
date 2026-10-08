@@ -173,20 +173,3 @@ job_publication_audit = Table(
 
 Index("idx_ws_job_publication_team_status", job_publications.c.tenant_id, job_publications.c.team_id, job_publications.c.recruiting_status, job_publications.c.website_status, job_publications.c.updated_at)
 Index("idx_ws_job_publication_audit_pub_created", job_publication_audit.c.tenant_id, job_publication_audit.c.publication_id, job_publication_audit.c.created_at)
-
-
-career_applications = Table(
-    "career_application", metadata,
-    U("id", primary_key=True), U("tenant_id", nullable=False), U("publication_id", nullable=False),
-    U("candidate_id"), S("applicant_name", nullable=False), S("email", nullable=False), S("phone"),
-    S("profession"), S("specialty"), S("preferred_location"), S("availability"), S("resume_url"),
-    Column("consent_to_contact", Boolean, nullable=False), S("source", nullable=False),
-    S("status", nullable=False), S("ownership_status", nullable=False), U("assigned_recruiter_user_id"),
-    D("created_at", nullable=False), D("updated_at", nullable=False),
-    UniqueConstraint("tenant_id", "id"),
-    ForeignKeyConstraint(["tenant_id", "publication_id"], ["ws_job_publication.tenant_id", "ws_job_publication.id"]),
-    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
-    ForeignKeyConstraint(["tenant_id", "assigned_recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
-)
-Index("idx_career_application_publication_created", career_applications.c.tenant_id, career_applications.c.publication_id, career_applications.c.created_at)
-Index("idx_career_application_assignee", career_applications.c.tenant_id, career_applications.c.assigned_recruiter_user_id, career_applications.c.created_at)
