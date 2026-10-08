@@ -1499,6 +1499,7 @@ class WorkspaceStore:
         payload = {
             "match_id": match_id,
             "feedback_code": value.feedback_code,
+            "reason_code": value.reason_code,
             "notes": value.notes,
         }
         def apply(conn, principal):
@@ -1552,11 +1553,12 @@ class WorkspaceStore:
                     )
                     .values(
                         feedback_code=value.feedback_code,
+                        reason_code=value.reason_code,
                         notes=value.notes,
                         created_at=timestamp,
                     )
                 )
-                return clean(dict(existing, feedback_code=value.feedback_code, notes=value.notes, created_at=timestamp))
+                return clean(dict(existing, feedback_code=value.feedback_code, reason_code=value.reason_code, notes=value.notes, created_at=timestamp))
 
             row = {
                 "id": uid(),
@@ -1564,6 +1566,7 @@ class WorkspaceStore:
                 "match_id": match_id,
                 "recruiter_user_id": principal["id"],
                 "feedback_code": value.feedback_code,
+                "reason_code": value.reason_code,
                 "notes": value.notes,
                 "created_at": timestamp,
             }
@@ -1582,6 +1585,7 @@ class WorkspaceStore:
             statement = (
                 select(
                     t.match_feedback.c.feedback_code,
+                    t.match_feedback.c.reason_code,
                     t.matches.c.overall_score,
                     t.jobs.c.division,
                 )
@@ -1627,6 +1631,7 @@ class WorkspaceStore:
 
             summary = {}
             divisions = {}
+            negative_reasons = {}
             positive = {"strong_match", "good_match"}
             for row in rows:
                 b = band(row["overall_score"])
@@ -1643,6 +1648,10 @@ class WorkspaceStore:
                     bucket["weak"] += 1
                 elif code == "not_a_match":
                     bucket["not_a_match"] += 1
+
+                if code in {"weak_match", "not_a_match"}:
+                    reason = row["reason_code"] or "other"
+                    negative_reasons[reason] = negative_reasons.get(reason, 0) + 1
 
                 division = row["division"] or "Unclassified"
                 d = divisions.setdefault(division, {"total": 0, "positive": 0})
@@ -1665,6 +1674,10 @@ class WorkspaceStore:
                 "feedback_count": len(rows),
                 "score_bands": add_rates(summary),
                 "divisions": add_rates(divisions),
+                "negative_reasons": [
+                    {"key": key, "count": count}
+                    for key, count in sorted(negative_reasons.items(), key=lambda item: (-item[1], item[0]))
+                ],
                 "pilot_target": {
                     "minimum_feedback": 100,
                     "recommended_division_minimum": 25,

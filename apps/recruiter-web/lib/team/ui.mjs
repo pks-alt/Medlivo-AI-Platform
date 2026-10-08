@@ -110,7 +110,7 @@ function matchCandidateRow(match){
  '<button class="button compact" data-match-feedback="good_match" data-match-id="'+esc(match.match_id)+'">Good</button>'+
  '<button class="button compact" data-match-feedback="weak_match" data-match-id="'+esc(match.match_id)+'">Weak</button>'+
  '<button class="button compact" data-match-feedback="not_a_match" data-match-id="'+esc(match.match_id)+'">Not a match</button>'+
- '</div></div></article>';
+ '</div><label class="small">Reason for Weak / Not a match</label><select data-match-reason="'+esc(match.match_id)+'"><option value="">Select reason</option><option value="license">License</option><option value="certification">Certification</option><option value="specialty">Specialty</option><option value="care_setting">Care setting</option><option value="experience">Experience</option><option value="availability">Availability</option><option value="location">Location</option><option value="compensation">Compensation</option><option value="other">Other</option></select></div></article>';
 }
 function drawMatchJob(id){
  activeMatchJob=matchQueue.find(j=>j.job_id===id)||null;
@@ -226,6 +226,8 @@ async function drawManager(){
  '</section>'+ '<div class="section-title"><h2>Match-quality pilot</h2><span class="pill">'+esc(matchQuality.feedback_count||0)+' REVIEWS</span></div>'+
  '<section class="panel"><p class="admin-note">Recruiter feedback is measurement-only during the pilot. It does not change match scores automatically.</p>'+
  ((matchQuality.score_bands||[]).length?'<div class="manager-metrics">'+(matchQuality.score_bands||[]).map(b=>'<article class="metric-card"><b>'+esc(b.agreement_rate??'–')+'%</b><span>'+esc(b.key)+' agreement · '+esc(b.total)+' reviews</span></article>').join('')+'</div>':'<div class="empty">No recruiter match feedback has been collected yet.</div>')+
+ ((matchQuality.divisions||[]).length?'<div class="manager-metrics">'+(matchQuality.divisions||[]).map(d=>'<article class="metric-card"><b>'+esc(d.agreement_rate??'–')+'%</b><span>'+esc(d.key)+' · '+esc(d.total)+' reviews</span></article>').join('')+'</div>':'')+
+ ((matchQuality.negative_reasons||[]).length?'<div class="details"><b>Top negative reasons</b><p class="admin-note">'+(matchQuality.negative_reasons||[]).slice(0,5).map(r=>esc(r.key.replaceAll('_',' '))+' ('+esc(r.count)+')').join(' · ')+'</p></div>':'')+
  '<p class="admin-note">Pilot target: '+esc(matchQuality.pilot_target?.minimum_feedback||100)+' total reviews, at least '+esc(matchQuality.pilot_target?.recommended_division_minimum||25)+' per division, and '+esc(matchQuality.pilot_target?.nine_plus_agreement_goal||80)+'% positive agreement for 9.0+ matches.</p></section>'+
  '<div class="section-title"><h2>Recruiter workload</h2><button class="button" id="refreshManager">Refresh overview</button></div>'+
  '<section class="panel admin-table-wrap">'+
@@ -393,7 +395,14 @@ root.addEventListener('click',event=>{
  if(b.hasAttribute('data-candidates'))return act(b,()=>drawCandidates());
  if(b.dataset.job)return act(b,()=>loadJob(b.dataset.job));
  if(b.dataset.candidate)return act(b,()=>loadCandidate(b.dataset.candidate));
- if(b.dataset.matchFeedback&&b.dataset.matchId)return act(b,async()=>{await write('matchfeedback:'+b.dataset.matchId,'/matches/'+b.dataset.matchId+'/feedback',{feedback_code:b.dataset.matchFeedback,notes:null});msg('Match-quality feedback saved. Thank you.','success');});
+ if(b.dataset.matchFeedback&&b.dataset.matchId)return act(b,async()=>{
+   const negative=['weak_match','not_a_match'].includes(b.dataset.matchFeedback);
+   const reasonEl=document.querySelector('[data-match-reason="'+CSS.escape(b.dataset.matchId)+'"]');
+   const reason=reasonEl?.value||null;
+   if(negative&&!reason)throw new Error('Select a reason before saving Weak or Not a match feedback.');
+   await write('matchfeedback:'+b.dataset.matchId,'/matches/'+b.dataset.matchId+'/feedback',{feedback_code:b.dataset.matchFeedback,reason_code:negative?reason:null,notes:null});
+   msg('Match-quality feedback saved. Thank you.','success');
+ });
  if(b.id==='refreshMatchQueue')return act(b,()=>drawMatchQueue());
  if(b.id==='refreshJobs')return act(b,()=>drawJobs());
  if(b.id==='refreshCandidates')return act(b,()=>drawCandidates());

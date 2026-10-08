@@ -1,7 +1,7 @@
 from datetime import datetime, date
 from typing import Literal
 from uuid import UUID
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class StrictInput(BaseModel):
@@ -127,4 +127,14 @@ class JobPublicationDecision(StrictInput):
 
 class MatchFeedbackInput(StrictInput):
     feedback_code: Literal["strong_match", "good_match", "weak_match", "not_a_match"]
+    reason_code: Literal[
+        "license", "certification", "specialty", "care_setting", "experience",
+        "availability", "location", "compensation", "other"
+    ] | None = None
     notes: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def negative_feedback_needs_reason(self):
+        if self.feedback_code in {"weak_match", "not_a_match"} and self.reason_code is None:
+            raise ValueError("A reason is required for weak or not-a-match feedback")
+        return self
