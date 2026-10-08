@@ -14,7 +14,7 @@ Status values:
 | Access | Google sign-in | BUILT | Private workspace foundation; staging acceptance still required |
 | Access | Recruiter / manager / admin RBAC | BUILT | Team and tenant scoping implemented |
 | Access | Production OAuth / Cloud Run acceptance | IN DEVELOPMENT | Must be validated in private staging |
-| JobDiva | Read-only jobs sync | IN DEVELOPMENT | Connector exists; production sync/backfill not complete |
+| JobDiva | Read-only jobs sync | IN DEVELOPMENT | Delta landing, resumable backfill and conservative canonical job promotion implemented; production scheduling/real-data acceptance pending |
 | JobDiva | Candidate profile read | BUILT | Read-only connector method |
 | JobDiva | License read | BUILT | Read-only connector method |
 | JobDiva | Certification read | BUILT | Read-only connector method |
@@ -23,13 +23,13 @@ Status values:
 | JobDiva | Historical backfill | IN DEVELOPMENT | Resumable 14-day backfill orchestration implemented; production scheduling and real-data acceptance pending |
 | JobDiva | Delta / near-real-time sync | IN DEVELOPMENT | Replay-safe jobs/candidates delta landing worker implemented; deployment/webhook reconciliation still pending |
 | JobDiva | Candidate / resume / job write-back | DISABLED | Enable only after vendor API authorization and acceptance testing |
-| Intelligence | Job normalization | BUILT | Division-aware canonical job model |
+| Intelligence | Job normalization | BUILT | Division-aware model plus conservative JobDiva source-to-canonical promotion |
 | Intelligence | Rehabilitation job template | BUILT | PT/PTA/OT/COTA/SLP oriented |
 | Intelligence | Nursing & Allied job template | BUILT | Profession / specialty / shift / credential oriented |
 | Intelligence | Locum Tenens job template | BUILT | Schedule / call / license / credentialing oriented |
 | Intelligence | Source provenance | BUILT | source_confirmed / medlivo_standard / ai_suggested |
 | Intelligence | Job quality/readiness scoring | BUILT | Core / matching / publishing readiness |
-| Intelligence | Candidate Intelligence | BUILT | Canonical candidate facts + evidence |
+| Intelligence | Candidate Intelligence | BUILT | Canonical candidate facts + evidence; JobDiva delta identity fields can now seed canonical candidates conservatively |
 | Intelligence | Resume parsing / deep experience extraction | IN DEVELOPMENT | Basic resume text available; richer structured extraction still needed |
 | Matching | Profession hard gate | BUILT | Deterministic |
 | Matching | State license hard gate | BUILT | Deterministic |
