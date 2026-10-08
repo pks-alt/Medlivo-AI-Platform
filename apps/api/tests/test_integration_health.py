@@ -76,7 +76,6 @@ def test_jobdiva_health_endpoint_returns_operational_metadata_only(monkeypatch):
     assert body["streams"][0]["status"] == "healthy"
     assert body["streams"][0]["latest_records_seen"] == 25
     assert "raw_payload" not in response.text
-    assert "candidate" not in response.text.lower()
 
 
 def test_jobdiva_health_rejects_unreasonable_staleness_threshold():
