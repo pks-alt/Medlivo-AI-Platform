@@ -185,6 +185,14 @@ def normalize_candidate(bundle: JobDivaCandidateBundle) -> CandidateIntelligence
                 ResumeCareSettingEvidence(key=signal.key, source_line=signal.source_line)
                 for signal in extracted.care_settings
             ],
+            specialties=[
+                ResumeCareSettingEvidence(key=signal.key, source_line=signal.source_line)
+                for signal in extracted.specialties
+            ],
+            clinical_skills=[
+                ResumeCareSettingEvidence(key=signal.key, source_line=signal.source_line)
+                for signal in extracted.clinical_skills
+            ],
         )
         resumes.append(item)
         evidence.append(CandidateEvidence(

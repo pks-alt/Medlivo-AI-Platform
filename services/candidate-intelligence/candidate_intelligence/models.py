@@ -59,6 +59,8 @@ class ResumeIntelligence(StrictModel):
     source_reference: str | None = None
     experience_entries: list[ResumeExperienceEvidence] = Field(default_factory=list)
     care_settings: list[ResumeCareSettingEvidence] = Field(default_factory=list)
+    specialties: list[ResumeCareSettingEvidence] = Field(default_factory=list)
+    clinical_skills: list[ResumeCareSettingEvidence] = Field(default_factory=list)
 
 
 class MatchingReadiness(StrictModel):

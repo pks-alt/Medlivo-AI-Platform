@@ -43,3 +43,16 @@ def test_normalized_resume_keeps_source_lines_for_auditability():
     assert resume.experience_entries[0].source_line.startswith("Axiom Rehab")
     assert resume.care_settings[0].key == "skilled_nursing"
     assert "Skilled Nursing Facility" in resume.care_settings[0].source_line
+
+
+def test_extracts_explicit_specialty_and_clinical_skill_signals():
+    result = extract_resume_experience(
+        "ICU Registered Nurse with telemetry, ventilator management, and central line care."
+    )
+    assert [signal.key for signal in result.specialties] == ["icu"]
+    assert [signal.key for signal in result.clinical_skills] == ["ventilator", "telemetry", "central_line"]
+
+
+def test_operating_room_detector_does_not_match_plain_word_or():
+    result = extract_resume_experience("Worked in inpatient rehab or outpatient therapy.")
+    assert all(signal.key != "operating_room" for signal in result.care_settings)
