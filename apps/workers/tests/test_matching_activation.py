@@ -134,3 +134,58 @@ async def test_matching_activation_counts_pair_failure_without_stopping_batch():
     result = await activate_matching(store, tenant_id="tenant-1", limit=10)
     assert result == {"pending": 1, "evaluated": 0, "eligible": 0, "excluded": 0, "failed": 1}
     assert store.persisted == []
+
+
+class RetrievalOrderingStore(FakeMatchingStore):
+    async def pending_pairs(self, *, tenant_id, limit):
+        return [
+            {"job_id": "job-1", "candidate_id": "candidate-med-surg"},
+            {"job_id": "job-1", "candidate_id": "candidate-icu"},
+        ]
+
+    async def load_candidate(self, *, tenant_id, candidate_id):
+        specialty = "ICU" if candidate_id == "candidate-icu" else "Medical Surgical"
+        return ({
+            "id": candidate_id,
+            "profession": "Registered Nurse",
+            "specialty": specialty,
+            "city": "Seattle",
+            "state": "WA",
+            "profile_freshness": 100,
+        }, [
+            {"license_type": "RN", "state": "WA", "status": "Active", "expires_at": None},
+        ], [
+            {"certification_name": "BLS", "status": "Active", "expires_at": None},
+        ], {"available_from": date(2026, 11, 1)}, True)
+
+
+@pytest.mark.asyncio
+async def test_matching_activation_uses_retrieval_to_prioritize_eligible_candidates():
+    store = RetrievalOrderingStore()
+    result = await activate_matching(store, tenant_id="tenant-1", limit=10)
+
+    assert result == {"pending": 2, "evaluated": 2, "eligible": 2, "excluded": 0, "failed": 0}
+    assert [item.candidate_id for item in store.persisted] == [
+        "candidate-icu",
+        "candidate-med-surg",
+    ]
+
+
+class MixedGateStore(RetrievalOrderingStore):
+    async def load_candidate(self, *, tenant_id, candidate_id):
+        payload = await super().load_candidate(tenant_id=tenant_id, candidate_id=candidate_id)
+        if candidate_id == "candidate-med-surg":
+            candidate, licenses, certs, availability, resume = payload
+            return candidate, licenses, [], availability, resume
+        return payload
+
+
+@pytest.mark.asyncio
+async def test_retrieval_integration_still_persists_hard_gate_exclusions():
+    store = MixedGateStore()
+    result = await activate_matching(store, tenant_id="tenant-1", limit=10)
+
+    assert result == {"pending": 2, "evaluated": 2, "eligible": 1, "excluded": 1, "failed": 0}
+    excluded = next(item for item in store.persisted if item.candidate_id == "candidate-med-surg")
+    assert excluded.eligible is False
+    assert any("BLS" in gap for gap in excluded.gaps)
