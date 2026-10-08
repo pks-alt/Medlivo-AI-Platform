@@ -8,7 +8,7 @@ resource "google_logging_metric" "phase3_workspace_database_failures" {
   name        = "medlivo-phase3-workspace-database-failures"
   description = "Event-only private workspace database/readiness failures in staging."
 
-  filter = <<-EOT
+  filter      = <<-EOT
     resource.type="cloud_run_revision"
     resource.labels.service_name="${var.phase3_workspace_service_name}"
     (
@@ -32,7 +32,7 @@ resource "google_logging_metric" "phase3_workspace_access_denials" {
   name        = "medlivo-phase3-workspace-access-denials"
   description = "Authentication/authorization denial events for the private staging workspace."
 
-  filter = <<-EOT
+  filter      = <<-EOT
     resource.type="cloud_run_revision"
     resource.labels.service_name="${var.phase3_workspace_service_name}"
     (
@@ -127,7 +127,7 @@ resource "google_monitoring_alert_policy" "phase3_workspace_http_5xx" {
     display_name = "3+ Cloud Run 5xx responses in five minutes"
 
     condition_threshold {
-      filter = <<-EOT
+      filter      = <<-EOT
         resource.type="cloud_run_revision"
         resource.label."service_name"="${var.phase3_workspace_service_name}"
         metric.type="run.googleapis.com/request_count"
