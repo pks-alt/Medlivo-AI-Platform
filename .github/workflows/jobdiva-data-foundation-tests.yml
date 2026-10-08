@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'apps/workers/**'
+      - '.github/workflows/deploy-jobdiva-pilot-staging.yml'
       - 'apps/api/app/db/schema.sql'
       - 'apps/api/app/db/migrations/007_job_enrichment.sql'
       - 'apps/api/app/db/migrations/006_candidate_enrichment.sql'
@@ -43,6 +44,7 @@ jobs:
           python-version: '3.13'
       - name: Install shared intelligence packages and worker tests
         run: |
+          python -m pip install ../../services/jobdiva-connector
           python -m pip install ../../services/candidate-intelligence
           python -m pip install ../../services/job-intelligence
           python -m pip install ../../services/matching-engine
