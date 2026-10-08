@@ -30,15 +30,15 @@ class PostgresSyncStore:
             row = await cur.fetchone()
             return row[0] if row else None
 
-    async def start_run(self, *, run_id: str, tenant_id: str, source_system: str, stream: SyncStream, window_start: datetime, window_end: datetime) -> None:
+    async def start_run(self, *, run_id: str, tenant_id: str, source_system: str, stream: SyncStream, mode: str, window_start: datetime, window_end: datetime) -> None:
         async with self.connection.transaction():
             await self.connection.execute(
                 """
                 INSERT INTO integration_sync_run
-                  (id, tenant_id, source_system, stream, status, window_start, window_end)
-                VALUES (%s, %s, %s, %s, 'running', %s, %s)
+                  (id, tenant_id, source_system, stream, mode, status, window_start, window_end)
+                VALUES (%s, %s, %s, %s, %s, 'running', %s, %s)
                 """,
-                (run_id, tenant_id, source_system, stream.value, window_start, window_end),
+                (run_id, tenant_id, source_system, stream.value, mode, window_start, window_end),
             )
 
     async def upsert_page(self, *, tenant_id: str, source_system: str, stream: SyncStream, records: list[dict[str, Any]]) -> int:
@@ -112,3 +112,34 @@ class PostgresSyncStore:
                 """,
                 (tenant_id, source_system, stream.value, run_id, error_code),
             )
+
+
+    async def complete_backfill_run(self, *, run_id: str, tenant_id: str, stream: SyncStream,
+                                    pages_processed: int, records_seen: int, records_upserted: int) -> None:
+        async with self.connection.transaction():
+            await self.connection.execute(
+                """
+                UPDATE integration_sync_run
+                SET status='succeeded', pages_processed=%s, records_seen=%s,
+                    records_upserted=%s, finished_at=now()
+                WHERE id=%s AND tenant_id=%s AND mode='backfill'
+                """,
+                (pages_processed, records_seen, records_upserted, run_id, tenant_id),
+            )
+
+    async def backfill_window_succeeded(self, *, tenant_id: str, source_system: str,
+                                        stream: SyncStream, window_start: datetime,
+                                        window_end: datetime) -> bool:
+        async with self.connection.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT 1
+                FROM integration_sync_run
+                WHERE tenant_id=%s AND source_system=%s AND stream=%s
+                  AND mode='backfill' AND status='succeeded'
+                  AND window_start=%s AND window_end=%s
+                LIMIT 1
+                """,
+                (tenant_id, source_system, stream.value, window_start, window_end),
+            )
+            return await cur.fetchone() is not None
