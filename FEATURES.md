@@ -40,6 +40,7 @@ Status values:
 | Matching | AI reranking | PLANNED | Deferred until the real-data acceptance pilot identifies where deterministic ranking needs help |
 | Recruiter | Private recruiter workspace | BUILT | Notes, follow-ups, activity, ownership |
 | Recruiter | Daily priorities | IN DEVELOPMENT | My Work now prioritizes overdue/due-soon follow-ups and strong unreviewed matches; staging recruiter acceptance pending |
+| Recruiter | Recruiter dashboard | IN DEVELOPMENT | Weekly goal-vs-actual plus owned workload, follow-ups, priority jobs, and unreviewed matches; staging recruiter acceptance pending |
 | Recruiter | Match Queue | IN DEVELOPMENT | Two-way persisted matching is active; recruiter match-quality pilot feedback is now being collected |
 | Recruiter | Candidate → best jobs | IN DEVELOPMENT | Candidate detail now reads ranked persisted matches; real-data UX acceptance pending |
 | Recruiter | Recommended next action | BUILT | Read-only recommendation in Match Queue |
