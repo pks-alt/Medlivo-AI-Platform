@@ -67,5 +67,5 @@ Status values:
 | External | Clinician recruiter feedback | PLANNED | Anonymous clinician feedback; management first |
 | Platform | Background workers | IN DEVELOPMENT | JobDiva pipeline has a Cloud Run Job staging runtime and manual-only deployment path; scheduled production operation remains pending |
 | Platform | Auditability | BUILT | Workspace and approval audit foundations |
-| Platform | Monitoring / alerting | IN DEVELOPMENT | Read-only JobDiva sync health API implemented; alert delivery still pending |
+| Platform | Monitoring / alerting | IN DEVELOPMENT | JobDiva sync health plus workspace readiness and event-only auth/authorization/validation/database failure logs implemented; alert delivery still pending |
 | Platform | Rollback / runbooks | IN DEVELOPMENT | Phase 3 rollback/recovery runbook documented; staging exercise still required |
