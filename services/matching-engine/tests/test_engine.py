@@ -109,3 +109,50 @@ def test_unknown_availability_reduces_score_but_does_not_exclude():
     assert result.score < 10
     availability = next(c for c in result.components if c.key == "availability")
     assert availability.reason == "Availability has not been confirmed"
+
+
+def test_resume_specialty_evidence_can_support_soft_specialty_score():
+    candidate = CandidateMatchInput(
+        candidate_id="candidate-resume-specialty",
+        profession="Registered Nurse",
+        specialty=None,
+        resume_specialties=["icu"],
+        state="WA",
+        licenses=[CandidateLicense(license_type="RN", state="WA", status="Active")],
+        resume_available=True,
+        profile_readiness=90,
+    )
+    job = JobMatchInput(
+        job_id="job-icu",
+        division="nursing_allied",
+        profession="Registered Nurse",
+        specialty="ICU",
+        state="WA",
+        required_license_states=["WA"],
+    )
+    result = score_match(job, candidate)
+    specialty = next(component for component in result.components if component.key == "specialty")
+    assert specialty.score == 10
+    assert specialty.reason == "Resume evidence supports the job specialty"
+
+
+def test_resume_specialty_evidence_does_not_create_hard_gate():
+    candidate = CandidateMatchInput(
+        candidate_id="candidate-soft-only",
+        profession="Registered Nurse",
+        specialty=None,
+        resume_specialties=["icu"],
+        licenses=[],
+        resume_available=True,
+        profile_readiness=80,
+    )
+    job = JobMatchInput(
+        job_id="job-wa-icu",
+        division="nursing_allied",
+        profession="Registered Nurse",
+        specialty="ICU",
+        required_license_states=["WA"],
+    )
+    result = score_match(job, candidate)
+    assert result.eligible is False
+    assert any(gate.key == "license_state" and not gate.passed for gate in result.gates)
