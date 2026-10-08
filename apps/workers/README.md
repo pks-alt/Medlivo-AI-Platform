@@ -86,3 +86,18 @@ Rules:
 - Unknown/custom JobDiva fields remain in the raw source payload until their mapping is verified.
 - Enrichment is versioned and retryable per source record.
 - No JobDiva write-back is performed.
+
+
+## Matching activation
+
+Enriched canonical jobs and candidates are evaluated through the shared `matching-engine` package.
+
+Rules:
+- Only enriched JobDiva-linked jobs and candidates are eligible for this activation slice.
+- Candidate pools are prefiltered by confirmed profession before full scoring.
+- A pair is recomputed only when it is new, either canonical record changed, or the rules version changed.
+- Hard-gate failures are persisted as excluded matches plus explicit exclusion reasons.
+- Eligible matches persist score components, strengths and gaps for the Match Queue.
+- The Match Queue remains read-only and consumes persisted match records.
+- Matching never writes to JobDiva.
+- Division is not invented when the source has not yet established it.

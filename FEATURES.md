@@ -31,14 +31,14 @@ Status values:
 | Intelligence | Job quality/readiness scoring | BUILT | Core / matching / publishing readiness |
 | Intelligence | Candidate Intelligence | IN DEVELOPMENT | Canonical candidate facts + evidence plus JobDiva profile/license/cert/resume enrichment; production scheduling and real-data acceptance pending |
 | Intelligence | Resume parsing / deep experience extraction | IN DEVELOPMENT | JobDiva resume text now lands in Candidate Intelligence; deeper structured experience extraction still needed |
-| Matching | Profession hard gate | BUILT | Deterministic |
-| Matching | State license hard gate | BUILT | Deterministic |
-| Matching | Required certification hard gate | BUILT | Deterministic |
-| Matching | Explainable 0–10 score | BUILT | Deterministic base layer |
+| Matching | Profession hard gate | BUILT | Deterministic and now active in persisted canonical matching |
+| Matching | State license hard gate | BUILT | Deterministic and persisted as match exclusions when failed |
+| Matching | Required certification hard gate | BUILT | Deterministic and persisted as match exclusions when failed |
+| Matching | Explainable 0–10 score | IN DEVELOPMENT | Deterministic scoring is now activated against enriched canonical data; real-data quality acceptance pending |
 | Matching | Semantic/vector retrieval | PLANNED | Phase after sync foundation |
 | Matching | AI reranking | PLANNED | Must sit on top of deterministic gates/scoring |
 | Recruiter | Private recruiter workspace | BUILT | Notes, follow-ups, activity, ownership |
-| Recruiter | Match Queue | BUILT | Read-only priority jobs + top candidates |
+| Recruiter | Match Queue | IN DEVELOPMENT | Reads persisted canonical match records; real-data activation/quality acceptance pending |
 | Recruiter | Candidate → best jobs | PLANNED | Next vertical slice after consolidation |
 | Recruiter | Recommended next action | BUILT | Read-only recommendation in Match Queue |
 | Recruiter | Automated outreach | DISABLED | Human approval, consent and policy required |

@@ -39,7 +39,7 @@ class CandidateMatchInput(StrictModel):
 
 class JobMatchInput(StrictModel):
     job_id: str
-    division: Literal["nursing_allied", "rehabilitation", "locum_tenens", "non_clinical"]
+    division: Literal["nursing_allied", "rehabilitation", "locum_tenens", "non_clinical"] | None = None
     profession: str | None = None
     specialty: str | None = None
     care_setting: str | None = None
