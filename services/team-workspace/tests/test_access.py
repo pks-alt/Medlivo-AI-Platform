@@ -487,3 +487,50 @@ def test_postgres_concurrent_task_edits_prevent_lost_update(client, headers, see
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(lambda _: client.patch(url,json={"status":"done","expected_version":1},headers=headers()),range(2)))
     assert sorted(r.status_code for r in results) == [200,409]
+
+
+def test_workspace_readiness_checks_database(client):
+    response = client.get("/ready")
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": True,
+        "workspace_enabled": True,
+        "database_checked": True,
+        "database_reachable": True,
+    }
+
+
+def test_disabled_workspace_readiness_fails_closed(monkeypatch):
+    monkeypatch.setenv("WORKSPACE_ENABLED", "false")
+    app = TestClient(create_app())
+    response = app.get("/ready")
+    assert response.status_code == 503
+    assert response.json()["workspace_enabled"] is False
+    assert response.json()["database_reachable"] is False
+
+
+def test_authentication_denial_emits_event_only_log(client, caplog):
+    with caplog.at_level("WARNING", logger="medlivo.workspace"):
+        response = client.get(ROOT + "/me")
+    assert response.status_code == 401
+    assert "workspace_authentication_denied" in caplog.text
+
+
+def test_authorization_denial_emits_event_only_log(client, headers, caplog):
+    with caplog.at_level("WARNING", logger="medlivo.workspace"):
+        response = client.get(ROOT + "/manager/overview", headers=headers())
+    assert response.status_code == 403
+    assert "workspace_authorization_denied" in caplog.text
+
+
+def test_database_failure_log_does_not_include_exception_text(client, headers, monkeypatch, caplog):
+    from sqlalchemy.exc import OperationalError
+    def fail(*args):
+        raise OperationalError("SELECT private_value", {}, Exception("postgresql://secret@host"))
+    monkeypatch.setattr(WorkspaceStore, "me", fail)
+    with caplog.at_level("ERROR", logger="medlivo.workspace"):
+        response = client.get(ROOT + "/me", headers=headers())
+    assert response.status_code == 503
+    assert "workspace_database_unavailable" in caplog.text
+    assert "private_value" not in caplog.text
+    assert "postgresql://secret@host" not in caplog.text
