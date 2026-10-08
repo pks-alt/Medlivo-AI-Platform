@@ -228,6 +228,12 @@ def build_app(store, verifier):
     def candidate(candidate_id: UUID, who=Depends(identity)):
         return store.get_candidate(who, str(candidate_id))
 
+    @app.get(prefix + "/candidates/{candidate_id}/best-jobs")
+    def candidate_best_jobs(candidate_id: UUID,
+                            limit: int = Query(default=20, ge=1, le=50),
+                            who=Depends(identity)):
+        return store.candidate_best_jobs(who, str(candidate_id), limit=limit)
+
     @app.get(prefix + "/jobs")
     def jobs(after: UUID | None = None, limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
         return store.list_jobs(who, after=str(after) if after else None, limit=limit)
