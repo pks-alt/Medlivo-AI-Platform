@@ -681,7 +681,7 @@ def test_recruiter_cannot_rate_another_recruiters_match(client, headers, seeded)
     response = client.post(
         f"/api/v1/team/matches/{idn(962)}/feedback",
         headers=headers("recruiter-other"),
-        json={"feedback_code": "not_a_match"},
+        json={"feedback_code": "not_a_match", "reason_code": "license"},
     )
     assert response.status_code == 403
 
