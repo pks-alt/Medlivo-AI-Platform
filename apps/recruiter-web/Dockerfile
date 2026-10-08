@@ -7,7 +7,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN corepack enable && pnpm build
+RUN corepack enable && node --test tests/api-auth.test.cjs && pnpm build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
