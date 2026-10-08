@@ -148,8 +148,26 @@ async function loadCandidates(append=false){
  const count=$('#candidateCount');if(count)count.textContent=candidates.length;
 }
 async function loadCandidate(id){
- activeCandidate=await call('/candidates/'+encodeURIComponent(id));drawCandidateList();
- const detail=$('#candidateDetail');if(detail)detail.innerHTML='<div class="detail-heading"><div><p class="eyebrow">CANONICAL CANDIDATE</p><h2>'+esc(activeCandidate.canonical_name||'Unnamed candidate')+'</h2><p class="job-detail-id">'+esc(activeCandidate.id)+'</p></div><span class="pill">READ ONLY</span></div><hr class="section-rule"><h3>Recruit AI candidate record</h3><p class="muted small">This is the trusted Medlivo candidate identity record. Resume intelligence, licenses, certifications, specialties, location, availability, compliance readiness, and contact preferences will appear here after JobDiva candidate synchronization is enabled.</p><div class="notice">No outreach, candidate update, submission, or JobDiva write-back is performed from this screen.</div>';
+ const [candidate,bestJobs]=await Promise.all([
+   call('/candidates/'+encodeURIComponent(id)),
+   call('/candidates/'+encodeURIComponent(id)+'/best-jobs?limit=20')
+ ]);
+ activeCandidate=candidate;drawCandidateList();
+ const detail=$('#candidateDetail');if(!detail)return;
+ const jobs=bestJobs.items||[],profile=bestJobs.candidate||{};
+ const jobCards=jobs.length?jobs.map(job=>{
+   const gates=(job.gates||[]),passed=gates.filter(g=>g.passed).length;
+   const strengths=(job.strengths||[]).slice(0,3),gaps=(job.gaps||[]).slice(0,2);
+   return '<article class="match-candidate"><div class="match-candidate-head"><div><strong>'+esc(job.title||'Medlivo job')+'</strong><small>'+esc([job.division,job.specialty,[job.city,job.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '))+'</small></div>'+matchScore(job.score)+'</div>'+
+   '<div class="match-meta"><span>'+esc(passed)+' / '+esc(gates.length)+' hard gates passed</span>'+(job.start_date?'<span>Starts '+esc(job.start_date)+'</span>':'')+(job.jobdiva_job_id?'<span>JobDiva ID '+esc(job.jobdiva_job_id)+'</span>':'')+'</div>'+
+   (strengths.length?'<div class="match-reasons"><b>Why it matches</b>'+strengths.map(x=>'<span>✓ '+esc(x)+'</span>').join('')+'</div>':'')+
+   (gaps.length?'<div class="match-gaps"><b>Needs review</b>'+gaps.map(x=>'<span>• '+esc(x)+'</span>').join('')+'</div>':'')+
+   '<div class="match-next"><span class="eyebrow">RECOMMENDED NEXT STEP</span><strong>'+esc(job.recommended_next_action||'Review job match')+'</strong>'+(job.submission_status?'<small>Submission: '+esc(job.submission_status)+(job.submission_readiness?' · '+esc(job.submission_readiness):'')+'</small>':'')+'</div></article>';
+ }).join(''):'<div class="empty">No eligible persisted job matches are available for this candidate yet.</div>';
+ detail.innerHTML='<div class="detail-heading"><div><p class="eyebrow">CANONICAL CANDIDATE</p><h2>'+esc(activeCandidate.canonical_name||'Unnamed candidate')+'</h2><p class="muted small">'+esc([profile.profession,profile.specialty,[profile.city,profile.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '))+'</p></div><span class="pill">READ ONLY</span></div>'+
+ '<div class="manager-metrics"><article class="metric-card"><b>'+esc(profile.profile_freshness??'–')+'</b><span>Profile readiness</span></article><article class="metric-card"><b>'+esc(jobs.length)+'</b><span>Eligible jobs</span></article><article class="metric-card attention"><b>'+esc(bestJobs.excluded_count||0)+'</b><span>Hard-gate exclusions</span></article></div>'+
+ '<div class="section-title" style="margin-top:18px"><h2>Best current jobs</h2><span class="pill">PERSISTED MATCHES</span></div><div class="match-candidate-list">'+jobCards+'</div>'+
+ '<p class="admin-note">These recommendations come from stored Medlivo match results built from synchronized JobDiva data. No outreach, submission, ownership change, or JobDiva write-back is performed from this screen.</p>';
 }
 async function drawCandidates(){
  $('#pageTitle').textContent='Candidates';
