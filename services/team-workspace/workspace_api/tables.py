@@ -27,9 +27,9 @@ jobs = Table(
     "job", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), U("customer_id"),
     S("title", nullable=False), S("profession"), S("specialty"), S("division"),
-    S("city"), S("state"), Column("start_date", Date), S("status", nullable=False),
-    Column("priority", Integer, nullable=False), U("owner_user_id"),
-    Column("normalized_payload", JSON, nullable=False), D("created_at"), D("updated_at"),
+    S("city"), S("state"), Column("start_date", Date), S("status", nullable=False, default="new"),
+    Column("priority", Integer, nullable=False, default=0), U("owner_user_id"),
+    Column("normalized_payload", JSON, nullable=False, default=dict), D("created_at"), D("updated_at"),
     UniqueConstraint("tenant_id", "id"),
 )
 candidates = Table(
@@ -37,7 +37,7 @@ candidates = Table(
     U("id", primary_key=True), U("tenant_id", nullable=False), S("canonical_name"),
     S("primary_email"), S("primary_phone"), S("profession"), S("specialty"),
     S("city"), S("state"), S("lifecycle_status"),
-    Column("profile_freshness", Numeric(5, 2)), Column("canonical_profile", JSON, nullable=False),
+    Column("profile_freshness", Numeric(5, 2)), Column("canonical_profile", JSON, nullable=False, default=dict),
     D("created_at"), D("updated_at"),
     UniqueConstraint("tenant_id", "id"),
 )
