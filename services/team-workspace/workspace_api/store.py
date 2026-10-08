@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import datetime, date, timezone
+from decimal import Decimal
 import hashlib
 import json
 from uuid import UUID, uuid4
@@ -32,6 +33,8 @@ def json_value(value):
         return value.isoformat()
     if isinstance(value, UUID):
         return str(value)
+    if isinstance(value, Decimal):
+        return float(value)
     raise TypeError("Unsupported response value")
 
 
@@ -1179,3 +1182,180 @@ class WorkspaceStore:
             ))
             return clean(dict(row, **updates))
         return self._global_mutate(identity, key, "job_publication.decision", payload, apply)
+
+
+    def match_work_queue(self, identity, *, limit=25, matches_per_job=5):
+        """Read-only recruiter priority queue from canonical jobs + stored match results.
+
+        JobDiva remains the ATS. This endpoint only presents synchronized
+        canonical data and Medlivo intelligence; it performs no outreach,
+        submission, ownership change, or ATS mutation.
+        """
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+
+            job_stmt = select(t.jobs).where(
+                t.jobs.c.tenant_id == principal["tenant_id"],
+                t.jobs.c.status.not_in(["closed", "cancelled", "canceled"]),
+            )
+            if principal["role"] == "recruiter":
+                job_stmt = job_stmt.where(t.jobs.c.owner_user_id == principal["id"])
+            elif principal["role"] == "manager":
+                managed_recruiters = (
+                    select(t.profiles.c.user_id)
+                    .join(t.teams, and_(
+                        t.teams.c.id == t.profiles.c.team_id,
+                        t.teams.c.tenant_id == t.profiles.c.tenant_id,
+                    ))
+                    .where(
+                        t.profiles.c.tenant_id == principal["tenant_id"],
+                        t.teams.c.manager_user_id == principal["id"],
+                    )
+                )
+                job_stmt = job_stmt.where(t.jobs.c.owner_user_id.in_(managed_recruiters))
+            elif principal["role"] != "admin":
+                raise AccessError(403, "Workspace access required")
+
+            job_rows = conn.execute(
+                job_stmt.order_by(
+                    t.jobs.c.priority.desc(),
+                    t.jobs.c.start_date.asc().nulls_last(),
+                    t.jobs.c.updated_at.desc(),
+                    t.jobs.c.id,
+                ).limit(limit)
+            ).mappings().all()
+
+            items = []
+            for job in job_rows:
+                jobdiva_id = conn.execute(
+                    select(t.job_source_records.c.source_id)
+                    .where(
+                        t.job_source_records.c.tenant_id == principal["tenant_id"],
+                        t.job_source_records.c.job_id == job["id"],
+                        t.job_source_records.c.source_system == "jobdiva",
+                    )
+                    .order_by(t.job_source_records.c.source_updated_at.desc().nulls_last())
+                    .limit(1)
+                ).scalar_one_or_none()
+
+                match_rows = conn.execute(
+                    select(t.matches, t.candidates)
+                    .join(t.candidates, and_(
+                        t.candidates.c.id == t.matches.c.candidate_id,
+                        t.candidates.c.tenant_id == t.matches.c.tenant_id,
+                    ))
+                    .where(
+                        t.matches.c.tenant_id == principal["tenant_id"],
+                        t.matches.c.job_id == job["id"],
+                        t.matches.c.status != "excluded",
+                    )
+                    .order_by(t.matches.c.overall_score.desc(), t.matches.c.updated_at.desc())
+                    .limit(matches_per_job)
+                ).mappings().all()
+
+                match_items = []
+                for row in match_rows:
+                    candidate_id = row["candidate_id"]
+                    jobdiva_candidate_id = conn.execute(
+                        select(t.candidate_source_records.c.source_id)
+                        .where(
+                            t.candidate_source_records.c.tenant_id == principal["tenant_id"],
+                            t.candidate_source_records.c.candidate_id == candidate_id,
+                            t.candidate_source_records.c.source_system == "jobdiva",
+                        )
+                        .order_by(t.candidate_source_records.c.source_updated_at.desc().nulls_last())
+                        .limit(1)
+                    ).scalar_one_or_none()
+
+                    owner = conn.execute(
+                        select(t.cases.c.owner_user_id, t.users.c.display_name)
+                        .join(t.users, and_(
+                            t.users.c.id == t.cases.c.owner_user_id,
+                            t.users.c.tenant_id == t.cases.c.tenant_id,
+                        ))
+                        .where(
+                            t.cases.c.tenant_id == principal["tenant_id"],
+                            t.cases.c.candidate_id == candidate_id,
+                        )
+                        .order_by(t.cases.c.updated_at.desc())
+                        .limit(1)
+                    ).mappings().first()
+
+                    last_contact = conn.execute(
+                        select(t.conversations.c.updated_at)
+                        .where(
+                            t.conversations.c.tenant_id == principal["tenant_id"],
+                            t.conversations.c.candidate_id == candidate_id,
+                            t.conversations.c.job_id == job["id"],
+                        )
+                        .order_by(t.conversations.c.updated_at.desc())
+                        .limit(1)
+                    ).scalar_one_or_none()
+
+                    submission = conn.execute(
+                        select(t.submissions.c.status, t.submissions.c.readiness_status)
+                        .where(
+                            t.submissions.c.tenant_id == principal["tenant_id"],
+                            t.submissions.c.candidate_id == candidate_id,
+                            t.submissions.c.job_id == job["id"],
+                        )
+                        .order_by(t.submissions.c.updated_at.desc())
+                        .limit(1)
+                    ).mappings().first()
+
+                    explanation = row["explanation"] or {}
+                    strengths = explanation.get("strengths") if isinstance(explanation, dict) else []
+                    gaps = explanation.get("gaps") if isinstance(explanation, dict) else []
+                    next_action = "Review match"
+                    if submission:
+                        next_action = "Review submission status"
+                    elif owner and owner["owner_user_id"] != principal["id"]:
+                        next_action = "Coordinate with candidate owner"
+                    elif not last_contact:
+                        next_action = "Review before first outreach"
+                    else:
+                        next_action = "Review latest candidate activity"
+
+                    match_items.append({
+                        "match_id": row["id"],
+                        "candidate_id": candidate_id,
+                        "jobdiva_candidate_id": jobdiva_candidate_id,
+                        "candidate_name": row["canonical_name"] or "Unnamed candidate",
+                        "profession": row["profession"],
+                        "specialty": row["specialty"],
+                        "city": row["city"],
+                        "state": row["state"],
+                        "profile_freshness": row["profile_freshness"],
+                        "score": row["overall_score"],
+                        "rules_version": row["rules_version"],
+                        "strengths": strengths or [],
+                        "gaps": gaps or [],
+                        "owner_user_id": owner["owner_user_id"] if owner else None,
+                        "owner_name": owner["display_name"] if owner else None,
+                        "last_contact_at": last_contact,
+                        "submission_status": submission["status"] if submission else None,
+                        "submission_readiness": submission["readiness_status"] if submission else None,
+                        "recommended_next_action": next_action,
+                    })
+
+                items.append({
+                    "job_id": job["id"],
+                    "jobdiva_job_id": jobdiva_id,
+                    "title": job["title"],
+                    "profession": job["profession"],
+                    "specialty": job["specialty"],
+                    "division": job["division"],
+                    "city": job["city"],
+                    "state": job["state"],
+                    "start_date": job["start_date"],
+                    "status": job["status"],
+                    "priority": job["priority"],
+                    "owner_user_id": job["owner_user_id"],
+                    "matches": match_items,
+                })
+
+            return {
+                "items": clean(items),
+                "read_only": True,
+                "source_of_record": "jobdiva",
+            }
