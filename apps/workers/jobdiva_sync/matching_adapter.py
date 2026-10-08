@@ -28,8 +28,6 @@ def job_match_input(
     requirements: list[dict[str, Any]],
 ) -> JobMatchInput:
     division = _DIVISIONS.get(job.get("division"))
-    if not division:
-        raise ValueError("Job division must be mapped before matching")
 
     required_license_states: list[str] = []
     required_certifications: list[str] = []
