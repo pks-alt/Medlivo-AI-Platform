@@ -88,6 +88,20 @@ def explicit_requirements(payload: dict[str, Any]) -> list[JobRequirement]:
             source_field="care_setting",
         ))
 
+    skill_value = _first(payload, (
+        "REQUIREDSKILL", "requiredSkill",
+        "REQUIREDSKILLS", "requiredSkills",
+        "SKILLSREQUIRED", "skillsRequired",
+        "SKILLS", "skills",
+    ))
+    for skill in _values(skill_value):
+        result.append(JobRequirement(
+            kind="skill",
+            value=skill,
+            required=True,
+            source_field="required_skill",
+        ))
+
     return result
 
 
