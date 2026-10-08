@@ -199,3 +199,21 @@ Recruiters can filter the Match Queue by Strong (9+), Good (8–8.9), or Needs R
 ## Recruiter follow-ups queue
 
 Recruiters have one Follow-ups view across all work items assigned to them. Open items are ordered by due date so overdue tasks surface first, with filters for Open, Completed, or All. Recruiters can open the underlying work item or mark the task done/reopen it using the existing version-checked, idempotent, audited task mutation. The queue does not send reminders, messages, submissions, or JobDiva updates.
+
+
+## Staging observability
+
+The private workspace exposes two operational endpoints:
+
+- `GET /health` is configuration liveness only. It intentionally does not query the database.
+- `GET /ready` performs a bounded `SELECT 1` database reachability check and returns only booleans. It never returns a connection string, SQL, tenant, user, candidate, or job data.
+
+The workspace emits event-only application log messages for:
+
+- `workspace_authentication_denied`
+- `workspace_authorization_denied`
+- `workspace_validation_rejected`
+- `workspace_database_unavailable`
+- `workspace_readiness_database_unavailable`
+
+These messages deliberately omit token values, request/response bodies, SQL text, database parameters, candidate/job identifiers, and exception strings. Staging should convert these event names and Cloud Run 5xx/revision health signals into log-based metrics and alerts. Alert delivery configuration remains an operational staging task, not an application-code permission to log more data.
