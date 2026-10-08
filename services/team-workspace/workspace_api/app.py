@@ -196,6 +196,10 @@ def build_app(store, verifier):
     def job_publications(limit: int = Query(default=100, ge=1, le=200), who=Depends(identity)):
         return store.list_job_publications(who, limit=limit)
 
+    @app.get(prefix + "/recruiter/follow-ups")
+    def recruiter_followups(status: str = Query(default="open"), limit: int = Query(default=100, ge=1, le=200), who=Depends(identity)):
+        return store.recruiter_followups(who, status=status, limit=limit)
+
     @app.get(prefix + "/recruiter/dashboard")
     def recruiter_dashboard(week_start: date, who=Depends(identity)):
         if week_start.weekday() != 0:

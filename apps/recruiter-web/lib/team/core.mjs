@@ -109,7 +109,7 @@ function endpoint(path, method, query) {
   const id = '[0-9a-fA-F-]{36}', root = `/cases/${id}`;
   const read = [
     '/me', '/cases', '/jobs', `/jobs/${id}`, '/candidates', `/candidates/${id}`, `/candidates/${id}/best-jobs`,
-    '/manager/overview', '/manager/weekly-review', '/manager/match-quality', '/recruiter/dashboard', '/daily-priorities', '/work-queue', '/admin/users', '/admin/teams', '/admin/audit',
+    '/manager/overview', '/manager/weekly-review', '/manager/match-quality', '/recruiter/dashboard', '/recruiter/follow-ups', '/daily-priorities', '/work-queue', '/admin/users', '/admin/teams', '/admin/audit',
     '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings', `/recruiters/${id}/weekly-goals`, '/job-publications', `/job-publications/${id}`,
     root, `${root}/(?:notes|tasks|audit|eligible-owners)`
   ];
@@ -133,6 +133,7 @@ function endpoint(path, method, query) {
     else if (key === 'matches_per_job' && /^(?:[1-9]|10)$/.test(value)) params.set(key, value);
     else if (key === 'team_id' && UUID.test(value)) params.set(key, value);
     else if (key === 'week_start' && /^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/.test(value)) params.set(key, value);
+    else if (key === 'status' && ['open','done','all'].includes(value)) params.set(key, value);
     else if (key === 'division' && ['Rehabilitation','Nursing & Allied','Locum Tenens'].includes(value)) params.set(key, value);
     else throw new SafeError(400, 'Invalid request parameters.');
   }

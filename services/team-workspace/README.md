@@ -82,6 +82,7 @@ provisioned database account. The service itself must also require Cloud Run IAM
 | GET | `/api/v1/team/me` | Database-backed member name and role |
 | GET | `/api/v1/team/cases` | Assigned/managed cases, `limit` and `after` cursor |
 | GET | `/api/v1/team/daily-priorities` | Recruiter-only read-only priorities: overdue/due-soon follow-ups and strong unreviewed matches |
+| GET | `/api/v1/team/recruiter/follow-ups` | Recruiter-wide follow-up queue across assigned work items |
 | GET | `/api/v1/team/recruiter/dashboard` | Recruiter-only read-only scorecard for weekly goals, actuals, and workload |
 | GET | `/api/v1/team/cases/{id}` | Authorized workflow case |
 | GET | `/api/v1/team/cases/{id}/notes` | Shared note history |
@@ -193,3 +194,8 @@ The candidate detail surface now summarizes ranked persisted matches by score ba
 ## Match Queue triage
 
 Recruiters can filter the Match Queue by Strong (9+), Good (8–8.9), or Needs Review (<8) without changing the underlying persisted score. Recruiter-specific review state is returned with the queue, allowing an optional “hide my reviewed matches” workflow. Saving match-quality feedback updates the visible queue state immediately; it remains measurement-only and never retrains or overrides the authoritative score.
+
+
+## Recruiter follow-ups queue
+
+Recruiters have one Follow-ups view across all work items assigned to them. Open items are ordered by due date so overdue tasks surface first, with filters for Open, Completed, or All. Recruiters can open the underlying work item or mark the task done/reopen it using the existing version-checked, idempotent, audited task mutation. The queue does not send reminders, messages, submissions, or JobDiva updates.

@@ -910,3 +910,62 @@ def test_match_queue_returns_current_recruiter_feedback_state(client, headers, s
     match = response.json()["items"][0]["matches"][0]
     assert match["my_feedback_code"] == "good_match"
     assert match["my_feedback_reason"] is None
+
+
+def test_recruiter_followups_lists_only_owned_tasks_and_overdue_first(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(insert(t.tasks), [
+            {
+                "id": idn(992), "tenant_id": idn(1), "case_id": idn(100),
+                "created_by": idn(10), "title": "Overdue owned follow-up",
+                "status": "open", "due_at": now() - timedelta(hours=2), "version": 1,
+                "created_at": now(), "updated_at": now(),
+            },
+            {
+                "id": idn(993), "tenant_id": idn(1), "case_id": idn(100),
+                "created_by": idn(10), "title": "Future owned follow-up",
+                "status": "open", "due_at": now() + timedelta(days=2), "version": 1,
+                "created_at": now(), "updated_at": now(),
+            },
+            {
+                "id": idn(994), "tenant_id": idn(1), "case_id": idn(102),
+                "created_by": idn(15), "title": "Other recruiter follow-up",
+                "status": "open", "due_at": now() - timedelta(days=1), "version": 1,
+                "created_at": now(), "updated_at": now(),
+            },
+        ])
+    response = client.get(
+        "/api/v1/team/recruiter/follow-ups?status=open&limit=100",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [item["title"] for item in items] == [
+        "Overdue owned follow-up", "Future owned follow-up",
+    ]
+    assert items[0]["is_overdue"] is True
+    assert items[1]["is_overdue"] is False
+
+
+def test_recruiter_followups_can_filter_completed(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(insert(t.tasks).values(
+            id=idn(995), tenant_id=idn(1), case_id=idn(100),
+            created_by=idn(10), title="Completed owned follow-up",
+            status="done", due_at=now() - timedelta(days=1), version=2,
+            created_at=now(), updated_at=now(),
+        ))
+    response = client.get(
+        "/api/v1/team/recruiter/follow-ups?status=done",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    assert [item["title"] for item in response.json()["items"]] == ["Completed owned follow-up"]
+
+
+def test_manager_cannot_use_recruiter_followups(client, headers):
+    response = client.get(
+        "/api/v1/team/recruiter/follow-ups",
+        headers=headers("manager-a"),
+    )
+    assert response.status_code == 403

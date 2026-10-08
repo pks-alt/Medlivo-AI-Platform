@@ -98,3 +98,13 @@ test('match queue allows bounded matches_per_job query',async()=>{
  r=await h.request('/api/team/work-queue?matches_per_job=11',{headers:{Cookie:sessionCookie}});
  assert.equal(r.status,400);
 });
+
+
+test('recruiter follow-ups is an allowlisted bounded read endpoint',async()=>{
+ const h=harness(),{sessionCookie}=await h.login();
+ let r=await h.request('/api/team/recruiter/follow-ups?status=open&limit=100',{headers:{Cookie:sessionCookie}});
+ assert.equal(r.status,200);
+ assert.equal(h.apiCalls.at(-1).path,'/recruiter/follow-ups?status=open&limit=100');
+ r=await h.request('/api/team/recruiter/follow-ups?status=bad',{headers:{Cookie:sessionCookie}});
+ assert.equal(r.status,400);
+});

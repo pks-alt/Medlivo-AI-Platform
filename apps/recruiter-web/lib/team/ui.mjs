@@ -58,7 +58,7 @@ async function uploadXlsx(form){
  return value;
 }
 function shell(){const user=session.member;
- root.innerHTML='<div class="workspace"><aside class="sidebar"><div class="brand">medlivo<small>RECRUIT AI</small></div><nav aria-label="Team navigation"><p class="nav-label">TEAM WORKSPACE</p><button class="nav-item active" data-home>My work</button>'+(user.role==='recruiter'?'<button class="nav-item" data-recruiter-dashboard>Dashboard</button>':'')+'<button class="nav-item" data-match-queue>Match Queue</button><button class="nav-item" data-jobs>Jobs</button><button class="nav-item" data-candidates>Candidates</button>'+'<button class="nav-item" data-weekly>'+(managed()?'Weekly review':'Weekly goals')+'</button>'+(managed()?'<button class="nav-item" data-intake>Job intake</button><button class="nav-item" data-publications>Job approval</button><button class="nav-item" data-manager>Team overview</button>':'')+(user.role==='admin'?'<button class="nav-item" data-admin>Admin</button>':'')+'</nav><div class="sidebar-footer"><div class="status-line"><span class="status-dot"></span>Shared team workspace</div><p>JobDiva disconnected.<br>No outreach or submissions.</p></div></aside><div class="main-shell"><header class="topbar"><div><p class="eyebrow">RECRUITER COMMAND CENTER</p><h1 id="pageTitle">My work</h1></div><div class="account"><div><span class="account-name">'+esc(user.display_name||'Team member')+'</span><span class="account-role">'+esc(user.role)+'</span></div><button class="signout" id="signout">Sign out</button></div></header><main class="content" id="main" tabindex="-1"><div id="message" class="status-message" role="status" aria-live="polite" hidden></div><section class="hero"><div><p class="eyebrow">FOCUS ON THE NEXT ACTION</p><h2>Keep the work moving.</h2><p>Notes, follow-ups, and ownership are shared with your authorized team. Every change keeps its author and history.</p></div><div class="hero-number"><b id="caseCount">0</b><small>WORK ITEMS LOADED</small></div></section>'+(user.role==='recruiter'?'<section id="dailyPriorities" class="panel"><div class="loading">Loading today\'s priorities…</div></section>':'')+'<div class="section-title"><h2>'+ (managed()?'Your team’s work':'Assigned to you') +'</h2><button class="button" id="refresh">Refresh workspace</button></div><div class="work-layout"><section aria-label="Assigned work items"><div id="workList" class="work-list"></div><button class="button pager" id="moreCases" hidden>Load more work</button></section><section class="panel" id="detail" aria-label="Work item details"><div class="empty">Select a work item to review its notes and follow-ups.</div></section></div><footer class="footer"><span>Medlivo Recruit AI · Private team workflow</span><span>Session ends '+esc(new Date(session.expires*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))+'</span></footer></main></div>';
+ root.innerHTML='<div class="workspace"><aside class="sidebar"><div class="brand">medlivo<small>RECRUIT AI</small></div><nav aria-label="Team navigation"><p class="nav-label">TEAM WORKSPACE</p><button class="nav-item active" data-home>My work</button>'+(user.role==='recruiter'?'<button class="nav-item" data-recruiter-dashboard>Dashboard</button><button class="nav-item" data-followups>Follow-ups</button>':'')+'<button class="nav-item" data-match-queue>Match Queue</button><button class="nav-item" data-jobs>Jobs</button><button class="nav-item" data-candidates>Candidates</button>'+'<button class="nav-item" data-weekly>'+(managed()?'Weekly review':'Weekly goals')+'</button>'+(managed()?'<button class="nav-item" data-intake>Job intake</button><button class="nav-item" data-publications>Job approval</button><button class="nav-item" data-manager>Team overview</button>':'')+(user.role==='admin'?'<button class="nav-item" data-admin>Admin</button>':'')+'</nav><div class="sidebar-footer"><div class="status-line"><span class="status-dot"></span>Shared team workspace</div><p>JobDiva disconnected.<br>No outreach or submissions.</p></div></aside><div class="main-shell"><header class="topbar"><div><p class="eyebrow">RECRUITER COMMAND CENTER</p><h1 id="pageTitle">My work</h1></div><div class="account"><div><span class="account-name">'+esc(user.display_name||'Team member')+'</span><span class="account-role">'+esc(user.role)+'</span></div><button class="signout" id="signout">Sign out</button></div></header><main class="content" id="main" tabindex="-1"><div id="message" class="status-message" role="status" aria-live="polite" hidden></div><section class="hero"><div><p class="eyebrow">FOCUS ON THE NEXT ACTION</p><h2>Keep the work moving.</h2><p>Notes, follow-ups, and ownership are shared with your authorized team. Every change keeps its author and history.</p></div><div class="hero-number"><b id="caseCount">0</b><small>WORK ITEMS LOADED</small></div></section>'+(user.role==='recruiter'?'<section id="dailyPriorities" class="panel"><div class="loading">Loading today\'s priorities…</div></section>':'')+'<div class="section-title"><h2>'+ (managed()?'Your team’s work':'Assigned to you') +'</h2><button class="button" id="refresh">Refresh workspace</button></div><div class="work-layout"><section aria-label="Assigned work items"><div id="workList" class="work-list"></div><button class="button pager" id="moreCases" hidden>Load more work</button></section><section class="panel" id="detail" aria-label="Work item details"><div class="empty">Select a work item to review its notes and follow-ups.</div></section></div><footer class="footer"><span>Medlivo Recruit AI · Private team workflow</span><span>Session ends '+esc(new Date(session.expires*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))+'</span></footer></main></div>';
  expiryTimer=setTimeout(()=>login('Your session has ended. Please sign in again.'),Math.max(0,session.expires*1000-Date.now()));
 }
 function drawCases(){
@@ -349,6 +349,19 @@ function exportWeeklyCsv(){
  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');
  a.href=url;a.download='medlivo-recruiter-review-'+weeklyReview.week_start+'.csv';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
 }
+async function drawFollowups(){
+ if(session?.member?.role!=='recruiter')throw new Error('Recruiter access required.');
+ $('#pageTitle').textContent='Follow-ups';
+ document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.hasAttribute('data-followups')));
+ const status=$('#followupStatus')?.value||'open';
+ const result=await call('/recruiter/follow-ups?status='+encodeURIComponent(status)+'&limit=100');
+ const rows=result.items||[],overdue=rows.filter(r=>r.is_overdue).length;
+ $('#main').innerHTML='<div id="message" class="status-message" role="status" aria-live="polite" hidden></div>'+
+ '<section class="hero"><div><p class="eyebrow">FOLLOW-UP QUEUE</p><h2>Work every follow-up from one place.</h2><p>See tasks across all work assigned to you, with overdue items surfaced first. Updates use the existing audited shared-task workflow.</p></div><div class="hero-number"><b>'+esc(overdue)+'</b><small>OVERDUE</small></div></section>'+
+ '<div class="section-title"><h2>'+esc(status==='open'?'Open follow-ups':status==='done'?'Completed follow-ups':'All follow-ups')+'</h2><div class="admin-actions"><select id="followupStatus" style="width:180px"><option value="open"'+(status==='open'?' selected':'')+'>Open</option><option value="done"'+(status==='done'?' selected':'')+'>Completed</option><option value="all"'+(status==='all'?' selected':'')+'>All</option></select><button class="button" id="refreshFollowups">Refresh</button></div></div>'+
+ '<section class="panel"><div class="match-candidate-list">'+(rows.length?rows.map(r=>'<article class="entry task-row '+(r.status==='done'?'done':'')+'"><div><strong>'+esc(r.title)+'</strong><p>'+esc(r.case_title||'Work item')+' · Due '+esc(fmt(r.due_at))+(r.is_overdue?' · OVERDUE':'')+'</p></div><div class="admin-actions"><button class="button compact" data-followup-case="'+esc(r.case_id)+'">Open work</button><button class="button" data-followup-task="'+esc(r.id)+'" data-case-id="'+esc(r.case_id)+'" data-version="'+esc(r.version)+'" data-status="'+esc(r.status==='done'?'open':'done')+'">'+(r.status==='done'?'Reopen':'Mark done')+'</button></div></article>').join(''):'<div class="empty">No follow-ups match this view.</div>')+'</div></section>'+
+ '<p class="admin-note">Follow-up changes are stored in the shared Medlivo workflow and audit history. No email, text, submission, or JobDiva mutation is triggered.</p><footer class="footer"><span>Medlivo Recruit AI · Follow-ups</span><span>Shared audited workflow</span></footer>';
+}
 async function drawRecruiterDashboard(){
  if(session?.member?.role!=='recruiter')throw new Error('Recruiter access required.');
  weeklyWeek=weeklyWeek||currentMonday();
@@ -419,11 +432,13 @@ function more(cursor,kind){return cursor?'<button class="button pager" data-more
 async function act(button,fn){if(button?.disabled)return;if(button)button.disabled=true;msg('');try{await fn();}catch(error){msg(error.message);}finally{if(button?.isConnected)button.disabled=false;}}
 root.addEventListener('click',event=>{
  const b=event.target.closest('button');if(!b)return;
+ if(b.dataset.followupCase)return act(b,async()=>{shell();await loadCases();await loadCase(b.dataset.followupCase);});
  if(b.dataset.case)return act(b,()=>loadCase(b.dataset.case));
  if(b.dataset.tab)return act(b,async()=>{tab=b.dataset.tab;await drawDetail();});
  if(b.hasAttribute('data-admin'))return act(b,()=>drawAdmin());
  if(b.hasAttribute('data-match-queue'))return act(b,()=>drawMatchQueue());
  if(b.hasAttribute('data-recruiter-dashboard'))return act(b,()=>drawRecruiterDashboard());
+ if(b.hasAttribute('data-followups'))return act(b,()=>drawFollowups());
  if(b.dataset.matchJob)return act(b,async()=>drawMatchJob(b.dataset.matchJob));
  if(b.dataset.dailyMatchJob)return act(b,async()=>{await drawMatchQueue();drawMatchJob(b.dataset.dailyMatchJob);});
  if(b.hasAttribute('data-publications'))return act(b,()=>drawPublications());
@@ -446,6 +461,7 @@ root.addEventListener('click',event=>{
    if(activeMatchJob)drawMatchJob(activeMatchJob.job_id);
    msg('Match-quality feedback saved. Thank you.','success');
  });
+ if(b.id==='refreshFollowups')return act(b,()=>drawFollowups());
  if(b.id==='refreshMatchQueue')return act(b,()=>drawMatchQueue());
  if(b.id==='refreshJobs')return act(b,()=>drawJobs());
  if(b.id==='refreshCandidates')return act(b,()=>drawCandidates());
@@ -466,6 +482,7 @@ root.addEventListener('click',event=>{
  if(b.id==='refresh')return act(b,async()=>{await Promise.all([loadCases(),drawDailyPriorities()]);if(active)await loadCase(active.id);});
  if(b.id==='moreCases')return act(b,()=>loadCases(true));
  if(b.id==='signout')return act(b,async()=>{await call('/auth/logout',{method:'POST',data:{}});pending.clear();login('You are signed out.','success');});
+ if(b.dataset.followupTask)return act(b,async()=>{await write('task:'+b.dataset.followupTask,'/cases/'+b.dataset.caseId+'/tasks/'+b.dataset.followupTask,{status:b.dataset.status,expected_version:Number(b.dataset.version)},'PATCH');await drawFollowups();msg('Follow-up updated.','success');});
  if(b.dataset.task)return act(b,async()=>{await write('task:'+b.dataset.task,'/cases/'+active.id+'/tasks/'+b.dataset.task,{status:b.dataset.status,expected_version:Number(b.dataset.version)},'PATCH');await drawDetail();msg('Follow-up updated.','success');});
  if(b.dataset.more)return act(b,async()=>{const kind=b.dataset.kind;const result=await call('/cases/'+active.id+'/'+kind+'?limit=50&after='+encodeURIComponent(b.dataset.more));$('#records').insertAdjacentHTML('beforeend',({notes:noteRows,tasks:taskRows,audit:auditRows}[kind])(result.items));b.outerHTML=more(result.next_cursor,kind);});
 });
@@ -479,6 +496,7 @@ root.addEventListener('change',event=>{
  if(event.target?.id==='adminStatus'){adminStatus=event.target.value;const teamNames=new Map(adminTeams.map(t=>[t.id,t.name]));if($('#adminUserRows'))$('#adminUserRows').innerHTML=adminUserRows(teamNames);}
  if(event.target?.id==='matchBand'){matchBand=event.target.value;if(activeMatchJob)drawMatchJob(activeMatchJob.job_id);}
  if(event.target?.id==='hideReviewed'){hideReviewed=event.target.value==='true';if(activeMatchJob)drawMatchJob(activeMatchJob.job_id);}
+ if(event.target?.id==='followupStatus')drawFollowups().catch(error=>msg(error.message));
 });
 root.addEventListener('submit',event=>{event.preventDefault();const form=event.target,b=form.querySelector('button[type=submit]');
  if(form.id==='adminUserForm')return act(b,async()=>{const role=$('#adminRole').value,team=$('#adminTeam').value;if(['manager','recruiter'].includes(role)&&!team)throw new Error('Choose a team for a recruiter or manager.');await write('adminuser:'+$('#adminEmail').value.trim().toLowerCase(),'/admin/users',{email:$('#adminEmail').value.trim().toLowerCase(),display_name:$('#adminName').value.trim(),role,team_id:team||null,is_active:true});await drawAdmin();msg('User provisioned. They can sign in with the approved Medlivo Google account.','success');});

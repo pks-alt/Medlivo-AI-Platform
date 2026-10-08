@@ -1184,6 +1184,62 @@ class WorkspaceStore:
         return self._global_mutate(identity, key, "job_publication.decision", payload, apply)
 
 
+    def recruiter_followups(self, identity, *, status="open", limit=100):
+        """Recruiter-wide follow-up queue across assigned work items."""
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            if status not in {"open", "done", "all"}:
+                raise AccessError(422, "Unsupported follow-up status")
+
+            statement = (
+                select(
+                    t.tasks.c.id,
+                    t.tasks.c.case_id,
+                    t.tasks.c.title,
+                    t.tasks.c.status,
+                    t.tasks.c.due_at,
+                    t.tasks.c.version,
+                    t.tasks.c.created_at,
+                    t.tasks.c.updated_at,
+                    t.cases.c.title.label("case_title"),
+                    t.cases.c.job_id,
+                    t.cases.c.candidate_id,
+                )
+                .join(t.cases, and_(
+                    t.cases.c.id == t.tasks.c.case_id,
+                    t.cases.c.tenant_id == t.tasks.c.tenant_id,
+                ))
+                .where(
+                    t.tasks.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.owner_user_id == principal["id"],
+                )
+            )
+            if status != "all":
+                statement = statement.where(t.tasks.c.status == status)
+
+            rows = conn.execute(
+                statement.order_by(
+                    t.tasks.c.status.asc(),
+                    t.tasks.c.due_at.asc(),
+                    t.tasks.c.updated_at.desc(),
+                    t.tasks.c.id,
+                ).limit(limit)
+            ).mappings().all()
+
+            timestamp = now()
+            items = []
+            for row in rows:
+                due_at = row["due_at"]
+                if due_at is not None and due_at.tzinfo is None:
+                    due_at = due_at.replace(tzinfo=timezone.utc)
+                items.append({
+                    **dict(row),
+                    "is_overdue": bool(row["status"] == "open" and due_at and due_at < timestamp),
+                })
+            return clean({"items": items, "status": status, "read_only": False})
+
     def recruiter_dashboard(self, identity, week_start):
         """Recruiter-only read-only productivity scorecard."""
         with self.engine.begin() as conn:
