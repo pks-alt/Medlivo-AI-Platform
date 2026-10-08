@@ -1,0 +1,18 @@
+[project]
+name = "medlivo-candidate-intelligence"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.11,<3.0"
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8.3,<10.0"
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.uv]
+package = false
