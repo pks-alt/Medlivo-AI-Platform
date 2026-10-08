@@ -40,6 +40,13 @@ def _bounded_int(name: str, default: int, low: int, high: int) -> int:
     return value
 
 
+def _psycopg_database_url(database_url: str) -> str:
+    """Convert the staging SQLAlchemy psycopg URL into libpq/psycopg form."""
+    if database_url.startswith("postgresql+psycopg://"):
+        return database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+    return database_url
+
+
 def limits_from_env() -> PilotLimits:
     return PilotLimits(
         sync_page_size=_bounded_int("PILOT_SYNC_PAGE_SIZE", 100, 1, 250),
@@ -149,7 +156,7 @@ async def main() -> int:
         raise RuntimeError("JOBDIVA_LIVE_ENABLED must be true for an enabled pilot")
 
     limits = limits_from_env()
-    connection = await AsyncConnection.connect(database_url)
+    connection = await AsyncConnection.connect(_psycopg_database_url(database_url))
     try:
         async with JobDivaClient(settings) as client:
             result = await run_pilot_once(
