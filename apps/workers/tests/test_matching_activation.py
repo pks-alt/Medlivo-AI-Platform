@@ -41,6 +41,8 @@ def test_candidate_match_input_uses_enriched_credentials_and_resume_readiness():
         "state": "WA",
         "profile_freshness": 100,
         "resume_care_settings": ["acute_care", "icu"],
+        "resume_specialties": ["icu"],
+        "resume_clinical_skills": ["telemetry"],
     }
     result = candidate_match_input(
         candidate,
@@ -56,6 +58,8 @@ def test_candidate_match_input_uses_enriched_credentials_and_resume_readiness():
     assert result.resume_available is True
     assert result.profile_readiness == 100
     assert result.care_settings == ["acute_care", "icu"]
+    assert result.resume_specialties == ["icu"]
+    assert result.clinical_skills == ["telemetry"]
 
 
 class FakeMatchingStore:
