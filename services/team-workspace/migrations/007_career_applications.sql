@@ -46,6 +46,7 @@ DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='medlivo_team_api_runtime') THEN
     EXECUTE 'GRANT SELECT ON public.career_application TO medlivo_team_api_runtime';
+    EXECUTE 'GRANT UPDATE (assigned_recruiter_user_id, ownership_status, status, updated_at) ON public.career_application TO medlivo_team_api_runtime';
   END IF;
 END
 $$;
