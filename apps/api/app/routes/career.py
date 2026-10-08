@@ -31,15 +31,18 @@ async def jobs(
         raise HTTPException(422, "Unsupported division")
     if state:
         state = state.upper()
-    result = await get_public_jobs(
-        division=division,
-        profession=profession,
-        specialty=specialty,
-        state=state,
-        city=city,
-        after=after,
-        limit=limit,
-    )
+    try:
+        result = await get_public_jobs(
+            division=division,
+            profession=profession,
+            specialty=specialty,
+            state=state,
+            city=city,
+            after=after,
+            limit=limit,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Career jobs are temporarily unavailable") from exc
     _cache(response)
     return result
 
@@ -50,5 +53,7 @@ async def job(job_id: UUID, response: Response) -> PublicJobDetail:
         result = await get_public_job(job_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Job not found") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Career jobs are temporarily unavailable") from exc
     _cache(response)
     return result
