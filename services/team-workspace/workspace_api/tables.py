@@ -4,7 +4,7 @@ metadata.create_all is used only by isolated tests, never by service startup.
 """
 from sqlalchemy import (
     MetaData, Table, Column, String, Boolean, Integer, DateTime, Uuid, JSON,
-    ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Index, Date,
+    ForeignKeyConstraint, UniqueConstraint, CheckConstraint, Index, Date, Numeric,
 )
 
 metadata = MetaData()
@@ -23,10 +23,57 @@ teams = Table("team", metadata, U("id", primary_key=True), U("tenant_id", nullab
               S("name", nullable=False), S("division", nullable=False), U("manager_user_id"),
               UniqueConstraint("tenant_id", "id"), ForeignKeyConstraint(["tenant_id"], ["tenant.id"]))
 profiles = Table("recruiter_profile", metadata, U("user_id", primary_key=True), U("tenant_id", nullable=False), U("team_id"))
-jobs = Table("job", metadata, U("id", primary_key=True), U("tenant_id", nullable=False), S("title", nullable=False),
-             UniqueConstraint("tenant_id", "id"))
-candidates = Table("candidate", metadata, U("id", primary_key=True), U("tenant_id", nullable=False), S("canonical_name"),
-                   UniqueConstraint("tenant_id", "id"))
+jobs = Table(
+    "job", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("customer_id"),
+    S("title", nullable=False), S("profession"), S("specialty"), S("division"),
+    S("city"), S("state"), Column("start_date", Date), S("status", nullable=False),
+    Column("priority", Integer, nullable=False), U("owner_user_id"),
+    Column("normalized_payload", JSON, nullable=False), D("created_at"), D("updated_at"),
+    UniqueConstraint("tenant_id", "id"),
+)
+candidates = Table(
+    "candidate", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), S("canonical_name"),
+    S("primary_email"), S("primary_phone"), S("profession"), S("specialty"),
+    S("city"), S("state"), S("lifecycle_status"),
+    Column("profile_freshness", Numeric(5, 2)), Column("canonical_profile", JSON, nullable=False),
+    D("created_at"), D("updated_at"),
+    UniqueConstraint("tenant_id", "id"),
+)
+job_source_records = Table(
+    "job_source_record", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id"),
+    S("source_system", nullable=False), S("source_id", nullable=False), S("source_status"),
+    D("source_updated_at"), Column("raw_payload", JSON, nullable=False),
+)
+candidate_source_records = Table(
+    "candidate_source_record", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id"),
+    S("source_system", nullable=False), S("source_id", nullable=False), D("source_updated_at"),
+    Column("raw_payload", JSON, nullable=False),
+)
+matches = Table(
+    "match", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
+    U("candidate_id", nullable=False), Column("overall_score", Numeric(5, 2), nullable=False),
+    S("status", nullable=False), S("rules_version"), Column("explanation", JSON, nullable=False),
+    D("created_at"), D("updated_at"),
+    UniqueConstraint("tenant_id", "job_id", "candidate_id"),
+)
+conversations = Table(
+    "conversation", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
+    U("job_id"), U("owner_user_id"), S("status", nullable=False), S("ai_mode", nullable=False),
+    D("created_at"), D("updated_at"),
+)
+submissions = Table(
+    "submission", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
+    U("job_id", nullable=False), U("recruiter_user_id"), S("status", nullable=False),
+    S("readiness_status", nullable=False), S("summary"), S("source_system_submission_id"),
+    D("approved_at"), D("submitted_at"), D("created_at"), D("updated_at"),
+)
 
 identities = Table("ws_identity", metadata, S("provider", primary_key=True), S("subject", primary_key=True),
                    U("tenant_id", nullable=False), U("user_id", nullable=False),
