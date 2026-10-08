@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 from uuid import uuid4
 
@@ -10,6 +11,29 @@ from psycopg.types.json import Jsonb
 
 
 RULES_VERSION = "deterministic-v1"
+
+
+def _documented_experience_years(entries: list[dict[str, Any]]) -> int | None:
+    intervals: list[tuple[int, int]] = []
+    current_year = date.today().year
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        start = item.get("start_year")
+        end = current_year if item.get("is_current") else item.get("end_year")
+        if not isinstance(start, int) or not isinstance(end, int) or end < start:
+            continue
+        intervals.append((start, end))
+    if not intervals:
+        return None
+    intervals.sort()
+    merged: list[list[int]] = []
+    for start, end in intervals:
+        if not merged or start > merged[-1][1]:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    return sum(end - start for start, end in merged)
 
 
 class MatchingStore:
@@ -192,6 +216,11 @@ class MatchingStore:
                 for item in parsed_payload.get("clinical_skills", [])
                 if isinstance(item, dict) and item.get("key")
             ]
+            candidate_dict["documented_experience_years"] = _documented_experience_years(
+                parsed_payload.get("experience_entries", [])
+                if isinstance(parsed_payload.get("experience_entries", []), list)
+                else []
+            )
 
         return (
             candidate_dict,
