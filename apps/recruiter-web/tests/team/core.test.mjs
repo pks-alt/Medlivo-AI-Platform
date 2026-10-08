@@ -73,7 +73,10 @@ test('metadata failure does not fall back to anonymous API call',async()=>{let c
 test('team page uses hash-based CSP and no client token or impersonation selector',async()=>{const r=renderTeam(true),html=await r.text();assert.match(r.headers.get('content-security-policy'),/script-src 'sha256-/);assert.match(r.headers.get('content-security-policy'),/frame-ancestors 'none'/);assert.doesNotMatch(html,/localStorage|sessionStorage|id_token|demo-manager/);assert.match(html,/Continue with Google/);assert.equal(r.headers.get('cache-control'),'no-store, max-age=0');});
 
 
-test('gateway allows recruiter daily priorities read endpoint', () => {
-  const url = new URL('https://recruit.medlivo.com/api/team/daily-priorities?limit=12');
-  assert.equal(endpointForTest('/daily-priorities', 'GET', url.searchParams), '/daily-priorities?limit=12');
+test('daily priorities is an allowlisted authenticated read endpoint',async()=>{
+ const h=harness(),{sessionCookie}=await h.login();
+ const r=await h.request('/api/team/daily-priorities?limit=12',{headers:{Cookie:sessionCookie}});
+ assert.equal(r.status,200);
+ assert.equal(h.apiCalls.at(-1).options.method,'GET');
+ assert.equal(h.apiCalls.at(-1).path,'/daily-priorities?limit=12');
 });
