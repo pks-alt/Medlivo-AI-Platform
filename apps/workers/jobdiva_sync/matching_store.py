@@ -162,8 +162,39 @@ class MatchingStore:
             )
             resume_available = bool((await cur.fetchone())[0])
 
+            await cur.execute(
+                """
+                SELECT parsed_payload
+                FROM resume_version
+                WHERE tenant_id=%s AND candidate_id=%s AND is_primary=true
+                ORDER BY resume_date DESC NULLS LAST, updated_at DESC
+                LIMIT 1
+                """,
+                (tenant_id, candidate_id),
+            )
+            resume_row = await cur.fetchone()
+
+        candidate_dict = dict(candidate)
+        parsed_payload = (resume_row or {}).get("parsed_payload") if resume_row else None
+        if isinstance(parsed_payload, dict):
+            candidate_dict["resume_care_settings"] = [
+                str(item.get("key"))
+                for item in parsed_payload.get("care_settings", [])
+                if isinstance(item, dict) and item.get("key")
+            ]
+            candidate_dict["resume_specialties"] = [
+                str(item.get("key"))
+                for item in parsed_payload.get("specialties", [])
+                if isinstance(item, dict) and item.get("key")
+            ]
+            candidate_dict["resume_clinical_skills"] = [
+                str(item.get("key"))
+                for item in parsed_payload.get("clinical_skills", [])
+                if isinstance(item, dict) and item.get("key")
+            ]
+
         return (
-            dict(candidate),
+            candidate_dict,
             licenses,
             certifications,
             dict(availability) if availability else None,
