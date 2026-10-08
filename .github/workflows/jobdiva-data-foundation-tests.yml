@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'apps/workers/**'
+      - '.github/workflows/deploy-jobdiva-pilot-staging.yml'
       - 'apps/api/app/db/schema.sql'
       - 'apps/api/app/db/migrations/007_job_enrichment.sql'
       - 'apps/api/app/db/migrations/006_candidate_enrichment.sql'
@@ -43,6 +44,7 @@ jobs:
           python-version: '3.13'
       - name: Install shared intelligence packages and worker tests
         run: |
+          python -m pip install ../../services/jobdiva-connector
           python -m pip install ../../services/candidate-intelligence
           python -m pip install ../../services/job-intelligence
           python -m pip install ../../services/matching-engine
@@ -50,7 +52,7 @@ jobs:
       - name: Test JobDiva delta and backfill foundation
         run: python -m pytest -q
       - name: Compile workers
-        run: python -m compileall -q jobdiva_sync
+        run: python -m compileall -q jobdiva_sync pilot.py
 
   api-health:
     runs-on: ubuntu-24.04
@@ -69,3 +71,12 @@ jobs:
         run: python -m pytest -q tests/test_integration_health.py
       - name: Compile integration API
         run: python -m compileall -q app/routes/integration.py app/repositories/integration.py app/services/integration.py app/schemas/integration.py
+
+
+  pilot-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build disabled-by-default pilot image
+        run: docker build -f apps/workers/Dockerfile -t medlivo-jobdiva-pilot:test .
