@@ -49,7 +49,7 @@ class PilotBudget:
 class JobDivaClient:
     """Read-only JobDiva V2 client for Medlivo Phase 1."""
 
-    AUTH_PATH = "/apiv2/v2/authenticate"
+    AUTH_PATH = "/apiv2/authenticate"
     OPEN_JOBS_PATH = "/apiv2/bi/OpenJobsList"
     JOB_DETAIL_PATH = "/apiv2/bi/JobsDetail"
     UPDATED_JOBS_PATH = "/apiv2/bi/NewUpdatedJobRecords"
