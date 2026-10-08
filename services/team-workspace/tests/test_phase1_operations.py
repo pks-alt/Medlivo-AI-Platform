@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from uuid import uuid4
 from io import BytesIO
 from openpyxl import Workbook
@@ -744,5 +744,88 @@ def test_recruiter_cannot_access_manager_match_quality_summary(client, headers, 
     response = client.get(
         "/api/v1/team/manager/match-quality",
         headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 403
+
+
+def test_daily_priorities_puts_followups_before_unreviewed_matches(client, headers, seeded):
+    seed_match_queue(seeded)
+    overdue = now() - timedelta(hours=2)
+    soon = now() + timedelta(hours=4)
+    with seeded.begin() as conn:
+        conn.execute(insert(t.tasks), [
+            {
+                "id": idn(980), "tenant_id": idn(1), "case_id": idn(100),
+                "created_by": idn(10), "title": "Call candidate back",
+                "status": "open", "due_at": overdue, "version": 1,
+                "created_at": now(), "updated_at": now(),
+            },
+            {
+                "id": idn(981), "tenant_id": idn(1), "case_id": idn(100),
+                "created_by": idn(10), "title": "Confirm availability",
+                "status": "open", "due_at": soon, "version": 1,
+                "created_at": now(), "updated_at": now(),
+            },
+        ])
+
+    response = client.get(
+        "/api/v1/team/daily-priorities?limit=10",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["read_only"] is True
+    assert body["source_of_record"] == "jobdiva"
+    assert body["totals"]["overdue_followups"] == 1
+    assert body["totals"]["due_soon_followups"] == 1
+    assert body["totals"]["match_reviews"] == 1
+    assert [item["type"] for item in body["items"][:3]] == [
+        "follow_up", "follow_up", "match_review",
+    ]
+    assert body["items"][0]["urgency"] == "overdue"
+    assert body["items"][2]["score"] == 9.4
+
+
+def test_daily_priorities_excludes_other_recruiter_work(client, headers, seeded):
+    seed_match_queue(seeded)
+    with seeded.begin() as conn:
+        conn.execute(insert(t.tasks).values(
+            id=idn(982), tenant_id=idn(1), case_id=idn(102),
+            created_by=idn(15), title="Other recruiter follow-up",
+            status="open", due_at=now() - timedelta(hours=1), version=1,
+            created_at=now(), updated_at=now(),
+        ))
+
+    response = client.get(
+        "/api/v1/team/daily-priorities",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    titles = [item["title"] for item in response.json()["items"]]
+    assert "Other recruiter follow-up" not in titles
+    assert "Synthetic Candidate Three" not in titles
+
+
+def test_daily_priorities_hides_already_reviewed_match(client, headers, seeded):
+    seed_match_queue(seeded)
+    with seeded.begin() as conn:
+        conn.execute(insert(t.match_feedback).values(
+            id=idn(983), tenant_id=idn(1), match_id=idn(962),
+            recruiter_user_id=idn(10), feedback_code="strong_match",
+            reason_code=None, notes=None, created_at=now(),
+        ))
+
+    response = client.get(
+        "/api/v1/team/daily-priorities",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    assert not any(item["type"] == "match_review" for item in response.json()["items"])
+
+
+def test_manager_cannot_use_recruiter_daily_priorities(client, headers):
+    response = client.get(
+        "/api/v1/team/daily-priorities",
+        headers=headers("manager-a"),
     )
     assert response.status_code == 403
