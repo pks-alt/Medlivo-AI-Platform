@@ -160,6 +160,21 @@ def score_match(job: JobMatchInput, candidate: CandidateMatchInput) -> MatchResu
             ),
         ))
 
+    if job.minimum_experience_years is not None:
+        documented = candidate.documented_experience_years
+        if documented is None:
+            experience_score = 4
+            experience_reason = "Dated resume experience is not sufficient to confirm the job minimum"
+        else:
+            ratio = min(1.0, documented / job.minimum_experience_years) if job.minimum_experience_years else 1.0
+            experience_score = 10 * ratio
+            experience_reason = (
+                f"Resume documents at least {job.minimum_experience_years} years of experience"
+                if documented >= job.minimum_experience_years
+                else f"Resume documents {documented} of {job.minimum_experience_years} required years"
+            )
+        components.append(_component("experience", experience_score, 1.0, experience_reason))
+
     if job.state and candidate.state:
         same_state = job.state.upper() == candidate.state.upper()
         components.append(_component("location", 10 if same_state else 6, 0.5,
