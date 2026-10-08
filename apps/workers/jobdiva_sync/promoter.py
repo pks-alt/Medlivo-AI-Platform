@@ -26,7 +26,6 @@ class CanonicalPromoter:
         source_system = "jobdiva"
         entity_type = "job" if stream == SyncStream.JOBS else "candidate"
         source_table = "job_source_record" if stream == SyncStream.JOBS else "candidate_source_record"
-        link_column = "job_id" if stream == SyncStream.JOBS else "candidate_id"
         promotion_version = "jobdiva-explicit-v1"
         run_id = str(uuid4())
 
@@ -47,8 +46,14 @@ class CanonicalPromoter:
                     f"""
                     SELECT id, source_id, raw_payload
                     FROM {source_table}
-                    WHERE tenant_id=%s AND source_system=%s AND {link_column} IS NULL
-                    ORDER BY created_at, id
+                    WHERE tenant_id=%s
+                      AND source_system=%s
+                      AND (
+                        promoted_at IS NULL
+                        OR promoted_at < updated_at
+                        OR promotion_version IS DISTINCT FROM %s
+                      )
+                    ORDER BY updated_at, id
                     LIMIT %s
                     """,
                     (tenant_id, source_system, promotion_version, limit),
