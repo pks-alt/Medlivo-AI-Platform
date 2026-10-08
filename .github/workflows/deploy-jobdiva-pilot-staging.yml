@@ -75,6 +75,10 @@ jobs:
           test -n "${USERNAME_SECRET}"
           test -n "${PASSWORD_SECRET}"
           test "${DIAGNOSTICS_ONLY}" = "true" || test "${DIAGNOSTICS_ONLY}" = "false"
+          if [ "${DIAGNOSTICS_ONLY}" = "true" ] && [ "${{ inputs.enable_pilot }}" != "true" ]; then
+            echo "diagnostics_only=true requires enable_pilot=true" >&2
+            exit 1
+          fi
 
       - name: Configure Artifact Registry
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
