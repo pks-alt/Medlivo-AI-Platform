@@ -14,7 +14,31 @@ CARE_SETTING_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("long_term_care", ("long term care", "long-term care", "ltc")),
     ("icu", ("intensive care", "icu")),
     ("emergency", ("emergency department", "emergency room", "ed")),
-    ("operating_room", ("operating room", "surgery center", "or")),
+    ("operating_room", ("operating room", "surgery center", "perioperative")),
+)
+
+SPECIALTY_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("physical_therapy", ("physical therapy", "physical therapist")),
+    ("occupational_therapy", ("occupational therapy", "occupational therapist")),
+    ("speech_language_pathology", ("speech language pathology", "speech-language pathology", "speech therapist", "speech language pathologist")),
+    ("icu", ("intensive care", "critical care", "icu")),
+    ("emergency_medicine", ("emergency medicine", "emergency department", "emergency room")),
+    ("urology", ("urology", "urologist")),
+    ("cardiology", ("cardiology", "cardiologist")),
+    ("orthopedics", ("orthopedics", "orthopedic")),
+    ("behavioral_health", ("behavioral health", "psychiatry", "psychiatric")),
+)
+
+CLINICAL_SKILL_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("ventilator", ("ventilator", "mechanical ventilation")),
+    ("tracheostomy", ("tracheostomy", "trach care")),
+    ("wound_care", ("wound care",)),
+    ("gait_training", ("gait training",)),
+    ("manual_therapy", ("manual therapy",)),
+    ("medication_administration", ("medication administration", "administered medications")),
+    ("telemetry", ("telemetry",)),
+    ("central_line", ("central line", "picc line")),
+    ("dialysis", ("dialysis", "hemodialysis")),
 )
 
 DATE_RANGE_RE = re.compile(
@@ -41,6 +65,8 @@ class EvidenceSignal:
 class ResumeExtraction:
     experience_entries: tuple[ExperienceEntry, ...]
     care_settings: tuple[EvidenceSignal, ...]
+    specialties: tuple[EvidenceSignal, ...]
+    clinical_skills: tuple[EvidenceSignal, ...]
 
 
 def _nonempty_lines(text: str) -> Iterable[str]:
@@ -68,16 +94,28 @@ def _extract_experience(lines: Iterable[str]) -> tuple[ExperienceEntry, ...]:
     return tuple(entries)
 
 
-def _extract_care_settings(lines: Iterable[str]) -> tuple[EvidenceSignal, ...]:
+def _extract_signals(lines: Iterable[str], patterns_by_key: tuple[tuple[str, tuple[str, ...]], ...]) -> tuple[EvidenceSignal, ...]:
     found: dict[str, EvidenceSignal] = {}
     for line in lines:
         normalized = line.lower()
-        for key, patterns in CARE_SETTING_PATTERNS:
+        for key, patterns in patterns_by_key:
             if key in found:
                 continue
             if any(re.search(rf"(?<![a-z0-9]){re.escape(pattern)}(?![a-z0-9])", normalized) for pattern in patterns):
                 found[key] = EvidenceSignal(key=key, source_line=line)
-    return tuple(found[key] for key, _ in CARE_SETTING_PATTERNS if key in found)
+    return tuple(found[key] for key, _ in patterns_by_key if key in found)
+
+
+def _extract_care_settings(lines: Iterable[str]) -> tuple[EvidenceSignal, ...]:
+    return _extract_signals(lines, CARE_SETTING_PATTERNS)
+
+
+def _extract_specialties(lines: Iterable[str]) -> tuple[EvidenceSignal, ...]:
+    return _extract_signals(lines, SPECIALTY_PATTERNS)
+
+
+def _extract_clinical_skills(lines: Iterable[str]) -> tuple[EvidenceSignal, ...]:
+    return _extract_signals(lines, CLINICAL_SKILL_PATTERNS)
 
 
 def extract_resume_experience(text: str | None) -> ResumeExtraction:
@@ -87,10 +125,12 @@ def extract_resume_experience(text: str | None) -> ResumeExtraction:
     or care settings that are not literally supported by the resume text.
     """
     if not text or not text.strip():
-        return ResumeExtraction(experience_entries=(), care_settings=())
+        return ResumeExtraction(experience_entries=(), care_settings=(), specialties=(), clinical_skills=())
 
     lines = tuple(_nonempty_lines(text))
     return ResumeExtraction(
         experience_entries=_extract_experience(lines),
         care_settings=_extract_care_settings(lines),
+        specialties=_extract_specialties(lines),
+        clinical_skills=_extract_clinical_skills(lines),
     )
