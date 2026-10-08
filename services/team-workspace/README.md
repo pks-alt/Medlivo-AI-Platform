@@ -160,3 +160,14 @@ Authorization-header/body capture. Secrets must never be pasted into chat.
 - Cloud Run two-layer service/user identity: https://docs.cloud.google.com/run/docs/authenticating/service-to-service
 - PyJWT key retrieval and claims validation: https://pyjwt.readthedocs.io/en/stable/usage.html
 - Composite database constraints: https://docs.sqlalchemy.org/en/20/core/constraints.html
+
+
+## Candidate best jobs
+
+The candidate detail surface includes a read-only **Best current jobs** panel sourced from the canonical `match` table.
+
+- It does not run a separate scoring algorithm.
+- It displays persisted score, hard-gate status, strengths, gaps, JobDiva job reference, and recommended next review action.
+- Excluded matches are not placed in the ranked recommendation list; their count is shown separately.
+- Recruiter ownership and manager team scope are enforced.
+- No outreach, submission, ownership change, or JobDiva mutation is performed from this panel.
