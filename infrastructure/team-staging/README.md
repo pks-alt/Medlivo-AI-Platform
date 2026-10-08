@@ -172,3 +172,21 @@ Required repository/environment variables:
 The workflow obtains a short-lived Google identity token for the private API and runs `infrastructure/team-staging/acceptance.py`. The probe performs GET-only checks for the rendered team surface, no-store behavior, API liveness, database readiness, and rejection of an unauthenticated private API request. It creates no notes, tasks, feedback, submissions, outreach, JobDiva mutations, or other recruiter data.
 
 The JSON artifact `phase3-staging-acceptance.json` records only check names/status/details. It contains no tokens, credentials, candidate payloads, job payloads, or database values. This probe is one acceptance layer; the two-browser recruiter/manager workflow and real-data JobDiva pilot still require separate operator validation.
+
+
+## Phase 3 staging alerts
+
+Terraform definitions in `infrastructure/terraform/phase3_monitoring.tf` provide opt-in staging alerts for:
+
+- any sanitized workspace database/readiness failure event
+- 10 or more authentication/authorization denials in five minutes
+- 3 or more Cloud Run HTTP 5xx responses in five minutes
+
+They are created only when both conditions are true:
+
+- `environment = "staging"`
+- `enable_phase3_staging_alerts = true`
+
+The default is disabled. Existing Cloud Monitoring notification channel resource names are supplied through `phase3_alert_notification_channels`; this repository does not invent or auto-create email, SMS, PagerDuty, or other destinations.
+
+Before enabling, run `terraform plan`, verify the target Cloud Run service is `medlivo-team-api-staging`, confirm the notification channels are staging-approved, and ensure the alert-policy diff contains no production resource targets. Applying these definitions is an operator-controlled staging action.
