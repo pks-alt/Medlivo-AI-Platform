@@ -9,6 +9,9 @@ from .intelligence_store import CandidateIntelligenceStore
 from .job_enrichment import JobEnrichmentResult, build_job_intelligence, explicit_requirements
 from .job_enrichment_runner import enrich_pending_jobs
 from .job_intelligence_store import JobIntelligenceStore
+from .matching_adapter import candidate_match_input, job_match_input
+from .matching_runner import activate_matching
+from .matching_store import MatchingStore
 
 __all__ = [
     "PostgresSyncStore",
@@ -17,6 +20,10 @@ __all__ = [
     "CandidateIntelligenceStore",
     "JobEnrichmentResult",
     "JobIntelligenceStore",
+    "MatchingStore",
+    "activate_matching",
+    "candidate_match_input",
+    "job_match_input",
     "build_job_intelligence",
     "explicit_requirements",
     "enrich_pending_jobs",
