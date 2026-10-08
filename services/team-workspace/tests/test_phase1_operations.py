@@ -551,3 +551,87 @@ def test_recruiter_does_not_see_other_recruiters_jobs_in_match_queue(client, hea
     assert response.status_code == 200
     titles = [item["title"] for item in response.json()["items"]]
     assert titles == ["Synthetic Registered Nurse"]
+
+
+def seed_candidate_best_jobs(seeded):
+    seed_match_queue(seeded)
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(201)).values(
+            profession="Physical Therapist", specialty="Rehab",
+            division="Rehabilitation", city="Sacramento", state="CA",
+            start_date=date(2026, 12, 15), status="open", priority=6,
+            owner_user_id=idn(11), normalized_payload={"setting": "Outpatient"},
+        ))
+        conn.execute(insert(t.job_source_records).values(
+            id=idn(963), tenant_id=idn(1), job_id=idn(201),
+            source_system="jobdiva", source_id="JD-PT-201", source_status="open",
+            source_updated_at=now(), raw_payload={},
+        ))
+        conn.execute(insert(t.matches).values(
+            id=idn(964), tenant_id=idn(1), job_id=idn(201), candidate_id=idn(300),
+            overall_score=8.7, status="shortlisted", rules_version="deterministic-v1",
+            explanation={
+                "eligible": True,
+                "gates": [{"key": "profession", "passed": True, "reason": "Profession matches Physical Therapist"}],
+                "strengths": ["Exact profession match"],
+                "gaps": ["Care-setting experience not confirmed"],
+            },
+            created_at=now(), updated_at=now(),
+        ))
+        conn.execute(insert(t.matches).values(
+            id=idn(965), tenant_id=idn(1), job_id=idn(202), candidate_id=idn(300),
+            overall_score=0, status="excluded", rules_version="deterministic-v1",
+            explanation={
+                "eligible": False,
+                "gates": [{"key": "profession", "passed": False, "reason": "Requires profession Registered Nurse"}],
+                "strengths": [],
+                "gaps": ["Requires profession Registered Nurse"],
+            },
+            created_at=now(), updated_at=now(),
+        ))
+
+
+def test_candidate_best_jobs_returns_ranked_current_matches(client, headers, seeded):
+    seed_candidate_best_jobs(seeded)
+    response = client.get(
+        f"/api/v1/team/candidates/{idn(300)}/best-jobs?limit=20",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["read_only"] is True
+    assert body["source_of_record"] == "jobdiva"
+    assert body["candidate"]["id"] == idn(300)
+    assert body["excluded_count"] == 1
+    assert [item["job_id"] for item in body["items"]] == [idn(200), idn(201)]
+    assert body["items"][0]["score"] == 9.4
+    assert body["items"][0]["jobdiva_job_id"] == "JD-PT-200"
+    assert body["items"][1]["jobdiva_job_id"] == "JD-PT-201"
+    assert body["items"][1]["gates"][0]["passed"] is True
+
+
+def test_candidate_best_jobs_blocks_other_recruiter_owner(client, headers, seeded):
+    seed_candidate_best_jobs(seeded)
+    response = client.get(
+        f"/api/v1/team/candidates/{idn(300)}/best-jobs",
+        headers=headers("recruiter-other"),
+    )
+    assert response.status_code == 403
+
+
+def test_candidate_best_jobs_allows_managed_team_manager(client, headers, seeded):
+    seed_candidate_best_jobs(seeded)
+    response = client.get(
+        f"/api/v1/team/candidates/{idn(300)}/best-jobs",
+        headers=headers("manager-a"),
+    )
+    assert response.status_code == 200
+    assert response.json()["items"][0]["title"] == "Synthetic Physical Therapist"
+
+
+def test_candidate_best_jobs_hides_foreign_tenant_candidate(client, headers, seeded):
+    response = client.get(
+        f"/api/v1/team/candidates/{idn(303)}/best-jobs",
+        headers=headers("admin-a"),
+    )
+    assert response.status_code == 404
