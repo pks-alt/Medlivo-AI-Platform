@@ -130,6 +130,7 @@ function endpoint(path, method, query) {
     if (method !== 'GET' || query.getAll(key).length !== 1) throw new SafeError(400, 'Invalid request parameters.');
     if (key === 'after' && UUID.test(value)) params.set(key, value);
     else if (key === 'limit' && /^(?:[1-9][0-9]{0,2}|500)$/.test(value) && Number(value) <= 500) params.set(key, value);
+    else if (key === 'matches_per_job' && /^(?:[1-9]|10)$/.test(value)) params.set(key, value);
     else if (key === 'team_id' && UUID.test(value)) params.set(key, value);
     else if (key === 'week_start' && /^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/.test(value)) params.set(key, value);
     else if (key === 'division' && ['Rehabilitation','Nursing & Allied','Locum Tenens'].includes(value)) params.set(key, value);

@@ -1556,6 +1556,19 @@ class WorkspaceStore:
                         .limit(1)
                     ).mappings().first()
 
+                    feedback = None
+                    if principal["role"] == "recruiter":
+                        feedback = conn.execute(
+                            select(t.match_feedback.c.feedback_code, t.match_feedback.c.reason_code)
+                            .where(
+                                t.match_feedback.c.tenant_id == principal["tenant_id"],
+                                t.match_feedback.c.match_id == row["id"],
+                                t.match_feedback.c.recruiter_user_id == principal["id"],
+                            )
+                            .order_by(t.match_feedback.c.created_at.desc())
+                            .limit(1)
+                        ).mappings().first()
+
                     explanation = row["explanation"] or {}
                     strengths = explanation.get("strengths") if isinstance(explanation, dict) else []
                     gaps = explanation.get("gaps") if isinstance(explanation, dict) else []
@@ -1589,6 +1602,8 @@ class WorkspaceStore:
                         "submission_status": submission["status"] if submission else None,
                         "submission_readiness": submission["readiness_status"] if submission else None,
                         "recommended_next_action": next_action,
+                        "my_feedback_code": feedback["feedback_code"] if feedback else None,
+                        "my_feedback_reason": feedback["reason_code"] if feedback else None,
                     })
 
                 items.append({

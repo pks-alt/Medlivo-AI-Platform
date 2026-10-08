@@ -15,7 +15,7 @@ a:focus-visible,button:focus-visible,input:focus-visible,textarea:focus-visible,
 const SCRIPT=String.raw`
 (()=>{'use strict';
 const $=s=>document.querySelector(s), root=$('#app');
-let session=null,cases=[],active=null,tab='notes',nextCase=null,expiryTimer=null,adminUsers=[],adminTeams=[],adminQuery='',adminStatus='all',jobs=[],nextJob=null,activeJob=null,jobQuery='',candidates=[],nextCandidate=null,activeCandidate=null,candidateQuery='',intakeBatches=[],activeIntake=null,weeklyReview=null,weeklyWeek='',publications=[],activePublication=null,matchQueue=[],activeMatchJob=null;
+let session=null,cases=[],active=null,tab='notes',nextCase=null,expiryTimer=null,adminUsers=[],adminTeams=[],adminQuery='',adminStatus='all',jobs=[],nextJob=null,activeJob=null,jobQuery='',candidates=[],nextCandidate=null,activeCandidate=null,candidateQuery='',intakeBatches=[],activeIntake=null,weeklyReview=null,weeklyWeek='',publications=[],activePublication=null,matchQueue=[],activeMatchJob=null,matchBand='all',hideReviewed=false;
 const pending=new Map();
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt=v=>new Date(v).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});
@@ -128,10 +128,16 @@ function drawMatchJob(id){
  activeMatchJob=matchQueue.find(j=>j.job_id===id)||null;
  document.querySelectorAll('.match-job-card').forEach(n=>n.classList.toggle('active',n.dataset.matchJob===id));
  const detail=$('#matchQueueDetail');if(!detail||!activeMatchJob)return;
- const job=activeMatchJob,matches=job.matches||[];
+ const job=activeMatchJob,allMatches=job.matches||[];
+ const matches=allMatches.filter(match=>{
+   const score=Number(match.score||0);
+   const bandOk=matchBand==='all'||(matchBand==='strong'&&score>=9)||(matchBand==='good'&&score>=8&&score<9)||(matchBand==='review'&&score<8);
+   const reviewOk=!hideReviewed||!match.my_feedback_code;
+   return bandOk&&reviewOk;
+ });
  detail.innerHTML='<div class="detail-heading"><div><p class="eyebrow">PRIORITY JOB</p><h2>'+esc(job.title)+'</h2><p class="muted small">'+esc([job.division,job.profession,job.specialty,[job.city,job.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '))+'</p></div><div class="match-job-priority"><span>Priority</span><b>'+esc(job.priority||0)+'</b></div></div>'+
  '<div class="match-job-facts"><span>Start '+esc(job.start_date||'Not confirmed')+'</span><span>Status '+esc(job.status||'')+'</span>'+(job.jobdiva_job_id?'<span>JobDiva ID '+esc(job.jobdiva_job_id)+'</span>':'')+'</div>'+
- '<div class="section-title"><h2>Best candidates</h2><span class="pill">READ ONLY</span></div>'+
+ '<div class="section-title"><h2>Best candidates</h2><span class="pill">'+esc(matches.length)+' SHOWN</span></div>'+
  (matches.length?'<div class="match-candidate-list">'+matches.map(matchCandidateRow).join('')+'</div>':'<div class="empty">No eligible scored candidates are available for this job yet. The matching engine will populate this list after Candidate Intelligence and job requirements are synchronized.</div>')+
  '<p class="admin-note">Scores are Medlivo intelligence only. No candidate is contacted, submitted, reassigned, or changed in JobDiva from this screen.</p>';
 }
@@ -143,6 +149,7 @@ async function drawMatchQueue(){
  $('#main').innerHTML='<div id="message" class="status-message" role="status" aria-live="polite" hidden></div>'+
  '<section class="hero"><div><p class="eyebrow">AI-ASSISTED RECRUITER PRIORITIES</p><h2>Start with the jobs and candidates most worth reviewing.</h2><p>Priority comes from synchronized JobDiva records and Medlivo match intelligence. Hard requirements are evaluated before a candidate can appear as a strong match.</p></div><div class="hero-number"><b>'+esc(totalMatches)+'</b><small>TOP MATCHES LOADED</small></div></section>'+
  '<div class="section-title"><h2>Priority jobs</h2><button class="button" id="refreshMatchQueue">Refresh matches</button></div>'+
+ '<div class="jobs-tools"><div><label for="matchBand">Match score</label><select id="matchBand"><option value="all"'+(matchBand==='all'?' selected':'')+'>All matches</option><option value="strong"'+(matchBand==='strong'?' selected':'')+'>Strong 9+</option><option value="good"'+(matchBand==='good'?' selected':'')+'>Good 8–8.9</option><option value="review"'+(matchBand==='review'?' selected':'')+'>Needs review &lt;8</option></select></div><div><label for="hideReviewed">Review status</label><select id="hideReviewed"><option value="false"'+(!hideReviewed?' selected':'')+'>Show all</option><option value="true"'+(hideReviewed?' selected':'')+'>Hide my reviewed matches</option></select></div></div>'+
  '<div class="jobs-layout"><section><div class="job-list">'+
  (matchQueue.length?matchQueue.map(job=>'<button class="job-card match-job-card '+(activeMatchJob?.job_id===job.job_id?'active':'')+'" data-match-job="'+esc(job.job_id)+'"><div class="match-job-row"><div><strong>'+esc(job.title)+'</strong><small>'+esc([job.division,[job.city,job.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '))+'</small></div><span class="pill">'+esc((job.matches||[]).length)+' matches</span></div><small>Priority '+esc(job.priority||0)+(job.start_date?' · Starts '+esc(job.start_date):'')+'</small></button>').join(''):'<div class="panel empty">No owned open jobs are available in this queue yet. JobDiva synchronization and job ownership determine what appears here.</div>')+
  '</div></section><section class="panel" id="matchQueueDetail"><div class="empty">Select a priority job to review its best candidate matches.</div></section></div>'+
@@ -435,6 +442,8 @@ root.addEventListener('click',event=>{
    const reason=reasonEl?.value||null;
    if(negative&&!reason)throw new Error('Select a reason before saving Weak or Not a match feedback.');
    await write('matchfeedback:'+b.dataset.matchId,'/matches/'+b.dataset.matchId+'/feedback',{feedback_code:b.dataset.matchFeedback,reason_code:negative?reason:null,notes:null});
+   for(const job of matchQueue){const match=(job.matches||[]).find(item=>item.match_id===b.dataset.matchId);if(match){match.my_feedback_code=b.dataset.matchFeedback;match.my_feedback_reason=negative?reason:null;}}
+   if(activeMatchJob)drawMatchJob(activeMatchJob.job_id);
    msg('Match-quality feedback saved. Thank you.','success');
  });
  if(b.id==='refreshMatchQueue')return act(b,()=>drawMatchQueue());
@@ -468,6 +477,8 @@ root.addEventListener('input',event=>{
 });
 root.addEventListener('change',event=>{
  if(event.target?.id==='adminStatus'){adminStatus=event.target.value;const teamNames=new Map(adminTeams.map(t=>[t.id,t.name]));if($('#adminUserRows'))$('#adminUserRows').innerHTML=adminUserRows(teamNames);}
+ if(event.target?.id==='matchBand'){matchBand=event.target.value;if(activeMatchJob)drawMatchJob(activeMatchJob.job_id);}
+ if(event.target?.id==='hideReviewed'){hideReviewed=event.target.value==='true';if(activeMatchJob)drawMatchJob(activeMatchJob.job_id);}
 });
 root.addEventListener('submit',event=>{event.preventDefault();const form=event.target,b=form.querySelector('button[type=submit]');
  if(form.id==='adminUserForm')return act(b,async()=>{const role=$('#adminRole').value,team=$('#adminTeam').value;if(['manager','recruiter'].includes(role)&&!team)throw new Error('Choose a team for a recruiter or manager.');await write('adminuser:'+$('#adminEmail').value.trim().toLowerCase(),'/admin/users',{email:$('#adminEmail').value.trim().toLowerCase(),display_name:$('#adminName').value.trim(),role,team_id:team||null,is_active:true});await drawAdmin();msg('User provisioned. They can sign in with the approved Medlivo Google account.','success');});

@@ -188,3 +188,8 @@ The recruiter dashboard combines the selected week's goals and synchronized actu
 ## Candidate Best Jobs review UX
 
 The candidate detail surface now summarizes ranked persisted matches by score band and lets recruiters review the same evidence, next action, and match-quality feedback used in Match Queue. A recruiter can open the matched canonical job directly from the candidate view. The surface remains review-only for recruiting operations: it does not send outreach, submit candidates, change ownership, or mutate JobDiva.
+
+
+## Match Queue triage
+
+Recruiters can filter the Match Queue by Strong (9+), Good (8–8.9), or Needs Review (<8) without changing the underlying persisted score. Recruiter-specific review state is returned with the queue, allowing an optional “hide my reviewed matches” workflow. Saving match-quality feedback updates the visible queue state immediately; it remains measurement-only and never retrains or overrides the authoritative score.
