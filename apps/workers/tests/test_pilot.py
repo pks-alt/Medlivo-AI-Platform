@@ -201,7 +201,8 @@ async def test_schema_preflight_reports_missing_tables_and_columns():
 @pytest.mark.asyncio
 async def test_connectivity_diagnostic_surfaces_endpoint_401_without_secrets():
     class Client:
-        async def open_jobs(self):
+        OPEN_JOBS_PATH = "/apiv2/bi/OpenJobsList"
+        async def request(self, method, path):
             raise pilot.JobDivaHTTPError(401)
 
     result = await pilot.run_connectivity_diagnostic(Client())
@@ -209,6 +210,28 @@ async def test_connectivity_diagnostic_surfaces_endpoint_401_without_secrets():
         "authentication": "ok",
         "data_endpoint": "unauthorized",
         "http_status": 401,
+        "response_parse": "not_attempted",
+    }
+
+
+@pytest.mark.asyncio
+async def test_connectivity_diagnostic_distinguishes_http_success_from_payload_shape():
+    class Response:
+        status_code = 200
+
+    class Client:
+        OPEN_JOBS_PATH = "/apiv2/bi/OpenJobsList"
+        async def request(self, method, path):
+            return Response()
+        def _json_records(self, response):
+            raise pilot.JobDivaError("unexpected payload")
+
+    result = await pilot.run_connectivity_diagnostic(Client())
+    assert result == {
+        "authentication": "ok",
+        "data_endpoint": "ok",
+        "http_status": 200,
+        "response_parse": "unexpected_payload",
     }
 
 
