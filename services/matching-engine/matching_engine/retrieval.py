@@ -21,7 +21,9 @@ def _candidate_text(candidate: CandidateMatchInput, extra_text: str | None = Non
     parts = [
         candidate.profession,
         candidate.specialty,
+        *candidate.resume_specialties,
         *candidate.care_settings,
+        *candidate.clinical_skills,
         candidate.city,
         candidate.state,
         *(license.license_type for license in candidate.licenses),

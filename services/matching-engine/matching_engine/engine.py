@@ -110,9 +110,21 @@ def score_match(job: JobMatchInput, candidate: CandidateMatchInput) -> MatchResu
                                      "Exact profession match" if _same(job.profession, candidate.profession) else "Profession not confirmed"))
 
     if job.specialty:
-        specialty_match = _same(job.specialty, candidate.specialty) or _contains(job.specialty, candidate.specialty)
-        components.append(_component("specialty", 10 if specialty_match else 4 if candidate.specialty else 2, 2.0,
-                                     "Specialty aligns" if specialty_match else "Specialty is partial or unconfirmed"))
+        profile_specialty_match = _same(job.specialty, candidate.specialty) or _contains(job.specialty, candidate.specialty)
+        resume_specialty_match = any(_contains(job.specialty, value) for value in candidate.resume_specialties)
+        specialty_match = profile_specialty_match or resume_specialty_match
+        if profile_specialty_match:
+            specialty_reason = "Specialty aligns"
+        elif resume_specialty_match:
+            specialty_reason = "Resume evidence supports the job specialty"
+        else:
+            specialty_reason = "Specialty is partial or unconfirmed"
+        components.append(_component(
+            "specialty",
+            10 if specialty_match else 4 if candidate.specialty else 2,
+            2.0,
+            specialty_reason,
+        ))
 
     if job.care_setting:
         setting_match = any(_contains(job.care_setting, value) for value in candidate.care_settings)

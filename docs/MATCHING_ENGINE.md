@@ -50,3 +50,8 @@ A production vector store/embedding provider remains a deployment decision. Retr
 ## Worker pipeline integration
 
 The matching worker now groups pending pairs by job, persists hard-gate exclusions first, and uses hybrid retrieval to prioritize the remaining eligible candidates before deterministic scoring. If retrieval fails, the worker falls back to stable deterministic processing so retrieval cannot block matching.
+
+
+## Resume evidence in soft scoring
+
+Source-backed resume specialty signals may strengthen the existing specialty component when the canonical profile specialty is missing or incomplete. Resume clinical-skill signals are available to retrieval but are not yet scored unless an explicit job-side skill requirement exists. Resume evidence never creates a hard gate on its own.
