@@ -4,7 +4,7 @@ Goal: confirm that Medlivo AI is useful for daily recruiter work without duplica
 
 ## Acceptance status
 
-Code-complete does not equal production-ready. Phase 3 remains in acceptance until the private staging deployment, real JobDiva-backed data, recruiter pilot feedback, monitoring, and rollback expectations are verified.
+Code-complete does not equal production-ready. Phase 3 remains in acceptance until the private staging deployment, real JobDiva-backed data, recruiter pilot feedback, monitoring, and rollback expectations are verified. Current closure status: `PHASE3_COMPLETION_STATUS.md`. Known limitations: `docs/PHASE3_KNOWN_LIMITATIONS.md`.
 
 ## Recruiter workflow
 
@@ -72,7 +72,7 @@ Code-complete does not equal production-ready. Phase 3 remains in acceptance unt
 - [ ] JobDiva sync health and failed runs are observable.
 - [ ] Pilot rollback procedure is documented and tested. See `docs/PHASE3_ROLLBACK_RUNBOOK.md`.
 - [ ] Staging configuration/secrets are reviewed and reproducible.
-- [ ] Known limitations are documented for recruiters and managers.
+- [x] Known limitations are documented for recruiters and managers. See `docs/PHASE3_KNOWN_LIMITATIONS.md`.
 
 ## Phase 3 exit criteria
 
