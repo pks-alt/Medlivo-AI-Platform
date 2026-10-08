@@ -58,7 +58,7 @@ async function uploadXlsx(form){
  return value;
 }
 function shell(){const user=session.member;
- root.innerHTML='<div class="workspace"><aside class="sidebar"><div class="brand">medlivo<small>RECRUIT AI</small></div><nav aria-label="Team navigation"><p class="nav-label">TEAM WORKSPACE</p><button class="nav-item active" data-home>My work</button><button class="nav-item" data-match-queue>Match Queue</button><button class="nav-item" data-jobs>Jobs</button><button class="nav-item" data-candidates>Candidates</button>'+'<button class="nav-item" data-weekly>'+(managed()?'Weekly review':'Weekly goals')+'</button>'+(managed()?'<button class="nav-item" data-intake>Job intake</button><button class="nav-item" data-publications>Job approval</button><button class="nav-item" data-manager>Team overview</button>':'')+(user.role==='admin'?'<button class="nav-item" data-admin>Admin</button>':'')+'</nav><div class="sidebar-footer"><div class="status-line"><span class="status-dot"></span>Shared team workspace</div><p>JobDiva disconnected.<br>No outreach or submissions.</p></div></aside><div class="main-shell"><header class="topbar"><div><p class="eyebrow">RECRUITER COMMAND CENTER</p><h1 id="pageTitle">My work</h1></div><div class="account"><div><span class="account-name">'+esc(user.display_name||'Team member')+'</span><span class="account-role">'+esc(user.role)+'</span></div><button class="signout" id="signout">Sign out</button></div></header><main class="content" id="main" tabindex="-1"><div id="message" class="status-message" role="status" aria-live="polite" hidden></div><section class="hero"><div><p class="eyebrow">FOCUS ON THE NEXT ACTION</p><h2>Keep the work moving.</h2><p>Notes, follow-ups, and ownership are shared with your authorized team. Every change keeps its author and history.</p></div><div class="hero-number"><b id="caseCount">0</b><small>WORK ITEMS LOADED</small></div></section><div class="section-title"><h2>'+ (managed()?'Your team’s work':'Assigned to you') +'</h2><button class="button" id="refresh">Refresh workspace</button></div><div class="work-layout"><section aria-label="Assigned work items"><div id="workList" class="work-list"></div><button class="button pager" id="moreCases" hidden>Load more work</button></section><section class="panel" id="detail" aria-label="Work item details"><div class="empty">Select a work item to review its notes and follow-ups.</div></section></div><footer class="footer"><span>Medlivo Recruit AI · Private team workflow</span><span>Session ends '+esc(new Date(session.expires*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))+'</span></footer></main></div>';
+ root.innerHTML='<div class="workspace"><aside class="sidebar"><div class="brand">medlivo<small>RECRUIT AI</small></div><nav aria-label="Team navigation"><p class="nav-label">TEAM WORKSPACE</p><button class="nav-item active" data-home>My work</button><button class="nav-item" data-match-queue>Match Queue</button><button class="nav-item" data-jobs>Jobs</button><button class="nav-item" data-candidates>Candidates</button>'+'<button class="nav-item" data-weekly>'+(managed()?'Weekly review':'Weekly goals')+'</button>'+(managed()?'<button class="nav-item" data-intake>Job intake</button><button class="nav-item" data-publications>Job approval</button><button class="nav-item" data-manager>Team overview</button>':'')+(user.role==='admin'?'<button class="nav-item" data-admin>Admin</button>':'')+'</nav><div class="sidebar-footer"><div class="status-line"><span class="status-dot"></span>Shared team workspace</div><p>JobDiva disconnected.<br>No outreach or submissions.</p></div></aside><div class="main-shell"><header class="topbar"><div><p class="eyebrow">RECRUITER COMMAND CENTER</p><h1 id="pageTitle">My work</h1></div><div class="account"><div><span class="account-name">'+esc(user.display_name||'Team member')+'</span><span class="account-role">'+esc(user.role)+'</span></div><button class="signout" id="signout">Sign out</button></div></header><main class="content" id="main" tabindex="-1"><div id="message" class="status-message" role="status" aria-live="polite" hidden></div><section class="hero"><div><p class="eyebrow">FOCUS ON THE NEXT ACTION</p><h2>Keep the work moving.</h2><p>Notes, follow-ups, and ownership are shared with your authorized team. Every change keeps its author and history.</p></div><div class="hero-number"><b id="caseCount">0</b><small>WORK ITEMS LOADED</small></div></section>'+(user.role==='recruiter'?'<section id="dailyPriorities" class="panel"><div class="loading">Loading today\'s priorities…</div></section>':'')+'<div class="section-title"><h2>'+ (managed()?'Your team’s work':'Assigned to you') +'</h2><button class="button" id="refresh">Refresh workspace</button></div><div class="work-layout"><section aria-label="Assigned work items"><div id="workList" class="work-list"></div><button class="button pager" id="moreCases" hidden>Load more work</button></section><section class="panel" id="detail" aria-label="Work item details"><div class="empty">Select a work item to review its notes and follow-ups.</div></section></div><footer class="footer"><span>Medlivo Recruit AI · Private team workflow</span><span>Session ends '+esc(new Date(session.expires*1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}))+'</span></footer></main></div>';
  expiryTimer=setTimeout(()=>login('Your session has ended. Please sign in again.'),Math.max(0,session.expires*1000-Date.now()));
 }
 function drawCases(){
@@ -68,6 +68,18 @@ function drawCases(){
  if(moreButton)moreButton.hidden=!nextCase;
 }
 async function loadCases(append=false){const result=await call('/cases?limit=50'+(append&&nextCase?'&after='+encodeURIComponent(nextCase):''));cases=append?[...cases,...result.items]:result.items;nextCase=result.next_cursor;drawCases();}
+async function drawDailyPriorities(){
+ if(session?.member?.role!=='recruiter')return;
+ const host=$('#dailyPriorities');if(!host)return;
+ const result=await call('/daily-priorities?limit=12');
+ const totals=result.totals||{},items=result.items||[];
+ const cards='<div class="manager-metrics"><article class="metric-card"><b>'+esc(totals.overdue_followups||0)+'</b><span>Overdue follow-ups</span></article><article class="metric-card"><b>'+esc(totals.due_soon_followups||0)+'</b><span>Due next 24h</span></article><article class="metric-card"><b>'+esc(totals.match_reviews||0)+'</b><span>Matches to review</span></article></div>';
+ const rows=items.length?'<div class="work-list">'+items.map(item=>{
+   if(item.type==='follow_up')return '<button class="case-card" data-case="'+esc(item.case_id)+'"><strong>'+esc(item.title)+'</strong><small>'+esc(item.urgency==='overdue'?'Overdue':'Due soon')+' · '+esc(item.detail||'Work item')+' · '+esc(fmt(item.due_at))+'</small></button>';
+   return '<button class="case-card" data-daily-match-job="'+esc(item.job_id)+'"><strong>'+esc(item.title)+'</strong><small>'+esc((item.score||0).toFixed?Number(item.score).toFixed(1):item.score)+' match · '+esc(item.detail||'Job')+' · '+esc(item.recommended_next_action||'Review match')+'</small></button>';
+ }).join('')+'</div>':'<div class="empty">No urgent follow-ups or unreviewed strong matches right now.</div>';
+ host.innerHTML='<div class="section-title"><div><p class="eyebrow">DAILY PRIORITIES</p><h2>Start here.</h2></div><button class="button" id="refreshPriorities">Refresh priorities</button></div>'+cards+rows+'<p class="admin-note">Planning only. No outreach or JobDiva action is triggered from this list.</p>';
+}
 async function loadCase(id){
  try{active=await call('/cases/'+encodeURIComponent(id));drawCases();await drawDetail();}
  catch(error){if(error.status===403||error.status===404){active=null;drawCases();$('#detail').innerHTML='<div class="empty">This work item is no longer available to your account.</div>';}throw error;}
@@ -386,6 +398,7 @@ root.addEventListener('click',event=>{
  if(b.hasAttribute('data-admin'))return act(b,()=>drawAdmin());
  if(b.hasAttribute('data-match-queue'))return act(b,()=>drawMatchQueue());
  if(b.dataset.matchJob)return act(b,async()=>drawMatchJob(b.dataset.matchJob));
+ if(b.dataset.dailyMatchJob)return act(b,async()=>{await drawMatchQueue();drawMatchJob(b.dataset.dailyMatchJob);});
  if(b.hasAttribute('data-publications'))return act(b,()=>drawPublications());
  if(b.dataset.publication)return act(b,()=>loadPublication(b.dataset.publication));
  if(b.hasAttribute('data-weekly'))return act(b,()=>drawWeekly());
@@ -410,7 +423,7 @@ root.addEventListener('click',event=>{
  if(b.id==='moreCandidates')return act(b,()=>loadCandidates(true));
  if(b.dataset.editUser)return act(b,async()=>{const user=adminUsers.find(u=>u.id===b.dataset.editUser);if(!user)throw new Error('Reload the Admin page and try again.');$('#adminEditor').innerHTML=adminEditor(user);});
  if(b.hasAttribute('data-cancel-edit'))return act(b,async()=>{$('#adminEditor').innerHTML=adminEditor();});
- if(b.hasAttribute('data-home'))return act(b,async()=>{shell();await loadCases();if(cases.length)await loadCase(active?.id&&cases.some(c=>c.id===active.id)?active.id:cases[0].id);});
+ if(b.hasAttribute('data-home'))return act(b,async()=>{shell();await Promise.all([loadCases(),drawDailyPriorities()]);if(cases.length)await loadCase(active?.id&&cases.some(c=>c.id===active.id)?active.id:cases[0].id);});
  if(b.hasAttribute('data-manager'))return act(b,()=>drawManager());
  if(b.id==='refreshManager')return act(b,()=>drawManager());
  if(b.id==='refreshIntake')return act(b,()=>drawJobIntake());
@@ -418,7 +431,8 @@ root.addEventListener('click',event=>{
  if(b.dataset.pubDecision)return act(b,async()=>{if(!activePublication)throw new Error('Select a job first.');const [target,decision]=b.dataset.pubDecision.split(':');let reason=null;if(decision==='rejected'){reason=window.prompt('Reason for rejection:')?.trim();if(!reason)return;}await write('pubdecision:'+activePublication.id+':'+target,'/job-publications/'+activePublication.id+'/decision',{target,decision,reason,expected_version:activePublication.version});await drawPublications();await loadPublication(activePublication.id);msg((target==='website'?'Website':'Recruiting')+' decision saved.','success');});
  if(b.id==='refreshWeekly')return act(b,async()=>{const input=$('#weeklyWeek');if(input?.value)weeklyWeek=input.value;await drawWeekly();});
  if(b.id==='exportWeekly')return act(b,async()=>exportWeeklyCsv());
- if(b.id==='refresh')return act(b,async()=>{await loadCases();if(active)await loadCase(active.id);});
+ if(b.id==='refreshPriorities')return act(b,()=>drawDailyPriorities());
+ if(b.id==='refresh')return act(b,async()=>{await Promise.all([loadCases(),drawDailyPriorities()]);if(active)await loadCase(active.id);});
  if(b.id==='moreCases')return act(b,()=>loadCases(true));
  if(b.id==='signout')return act(b,async()=>{await call('/auth/logout',{method:'POST',data:{}});pending.clear();login('You are signed out.','success');});
  if(b.dataset.task)return act(b,async()=>{await write('task:'+b.dataset.task,'/cases/'+active.id+'/tasks/'+b.dataset.task,{status:b.dataset.status,expected_version:Number(b.dataset.version)},'PATCH');await drawDetail();msg('Follow-up updated.','success');});
@@ -447,7 +461,7 @@ async function boot(){
  if(!window.TEAM_ENABLED){login();return;}
  const error=new URLSearchParams(location.search).get('error');
  if(error){history.replaceState(null,'','/team');login(error==='access'?'Your Google account is not enabled for this workspace. Please contact your administrator.':'Sign-in could not be completed. Please start again.');return;}
- try{session=await call('/session');shell();await loadCases();if(cases.length)await loadCase(cases[0].id);}
+ try{session=await call('/session');shell();await Promise.all([loadCases(),drawDailyPriorities()]);if(cases.length)await loadCase(cases[0].id);}
  catch(error){if(!session)login(error.message);else msg(error.message);}
 }
 boot();

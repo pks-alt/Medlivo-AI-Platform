@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime, date, timezone
+from datetime import datetime, date, timezone, timedelta
 from decimal import Decimal
 import hashlib
 import json
@@ -1182,6 +1182,148 @@ class WorkspaceStore:
             ))
             return clean(dict(row, **updates))
         return self._global_mutate(identity, key, "job_publication.decision", payload, apply)
+
+
+    def daily_priorities(self, identity, *, limit=20):
+        """Recruiter-only, read-only start-of-day priorities.
+
+        Uses existing shared follow-ups plus strong unreviewed persisted matches.
+        No outreach, submission, ownership or JobDiva mutation occurs here.
+        """
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+
+            timestamp = now()
+            due_soon = timestamp + timedelta(hours=24)
+
+            task_rows = conn.execute(
+                select(
+                    t.tasks.c.id,
+                    t.tasks.c.case_id,
+                    t.tasks.c.title,
+                    t.tasks.c.due_at,
+                    t.tasks.c.version,
+                    t.cases.c.title.label("case_title"),
+                    t.cases.c.job_id,
+                    t.cases.c.candidate_id,
+                )
+                .join(t.cases, and_(
+                    t.cases.c.id == t.tasks.c.case_id,
+                    t.cases.c.tenant_id == t.tasks.c.tenant_id,
+                ))
+                .where(
+                    t.tasks.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.owner_user_id == principal["id"],
+                    t.tasks.c.status == "open",
+                    t.tasks.c.due_at <= due_soon,
+                )
+                .order_by(t.tasks.c.due_at.asc(), t.tasks.c.id)
+                .limit(limit)
+            ).mappings().all()
+
+            items = []
+            overdue_count = 0
+            due_soon_count = 0
+            for row in task_rows:
+                due_at = row["due_at"]
+                if due_at.tzinfo is None:
+                    due_at = due_at.replace(tzinfo=timezone.utc)
+                overdue = due_at < timestamp
+                overdue_count += 1 if overdue else 0
+                due_soon_count += 0 if overdue else 1
+                items.append({
+                    "type": "follow_up",
+                    "urgency": "overdue" if overdue else "due_soon",
+                    "title": row["title"],
+                    "detail": row["case_title"],
+                    "due_at": due_at,
+                    "case_id": row["case_id"],
+                    "job_id": row["job_id"],
+                    "candidate_id": row["candidate_id"],
+                    "task_id": row["id"],
+                    "version": row["version"],
+                    "recommended_next_action": "Complete overdue follow-up" if overdue else "Complete upcoming follow-up",
+                })
+
+            remaining = max(0, limit - len(items))
+            strong_match_count = 0
+            if remaining:
+                reviewed = (
+                    select(t.match_feedback.c.match_id)
+                    .where(
+                        t.match_feedback.c.tenant_id == principal["tenant_id"],
+                        t.match_feedback.c.recruiter_user_id == principal["id"],
+                    )
+                )
+                match_rows = conn.execute(
+                    select(
+                        t.matches.c.id.label("match_id"),
+                        t.matches.c.job_id,
+                        t.matches.c.candidate_id,
+                        t.matches.c.overall_score,
+                        t.jobs.c.title.label("job_title"),
+                        t.jobs.c.priority,
+                        t.jobs.c.start_date,
+                        t.candidates.c.canonical_name.label("candidate_name"),
+                        t.candidates.c.profession,
+                        t.candidates.c.specialty,
+                    )
+                    .join(t.jobs, and_(
+                        t.jobs.c.id == t.matches.c.job_id,
+                        t.jobs.c.tenant_id == t.matches.c.tenant_id,
+                    ))
+                    .join(t.candidates, and_(
+                        t.candidates.c.id == t.matches.c.candidate_id,
+                        t.candidates.c.tenant_id == t.matches.c.tenant_id,
+                    ))
+                    .where(
+                        t.matches.c.tenant_id == principal["tenant_id"],
+                        t.jobs.c.owner_user_id == principal["id"],
+                        t.jobs.c.status.not_in(["closed", "cancelled", "canceled"]),
+                        t.matches.c.status != "excluded",
+                        t.matches.c.overall_score >= 8,
+                        t.matches.c.id.not_in(reviewed),
+                    )
+                    .order_by(
+                        t.jobs.c.priority.desc(),
+                        t.matches.c.overall_score.desc(),
+                        t.jobs.c.start_date.asc().nulls_last(),
+                        t.matches.c.updated_at.desc(),
+                    )
+                    .limit(remaining)
+                ).mappings().all()
+
+                for row in match_rows:
+                    strong_match_count += 1
+                    score = float(row["overall_score"])
+                    items.append({
+                        "type": "match_review",
+                        "urgency": "strong_match" if score >= 9 else "good_match",
+                        "title": row["candidate_name"] or "Unnamed candidate",
+                        "detail": row["job_title"],
+                        "job_id": row["job_id"],
+                        "candidate_id": row["candidate_id"],
+                        "match_id": row["match_id"],
+                        "score": score,
+                        "profession": row["profession"],
+                        "specialty": row["specialty"],
+                        "start_date": row["start_date"],
+                        "recommended_next_action": "Review strong match" if score >= 9 else "Review match",
+                    })
+
+            return clean({
+                "items": items,
+                "totals": {
+                    "overdue_followups": overdue_count,
+                    "due_soon_followups": due_soon_count,
+                    "match_reviews": strong_match_count,
+                },
+                "read_only": True,
+                "window_hours": 24,
+                "source_of_record": "jobdiva",
+            })
 
 
     def match_work_queue(self, identity, *, limit=25, matches_per_job=5):

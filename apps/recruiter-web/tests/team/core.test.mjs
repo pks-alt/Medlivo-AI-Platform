@@ -71,3 +71,12 @@ test('responses do not allow caching or cross-origin reads',async()=>{const h=ha
 test('private transport separates Google user token and service identity',async()=>{const requests=[],origin='https://private-test.run.app',now=1000;const service='e30.'+Buffer.from(JSON.stringify({aud:origin,exp:4000})).toString('base64url')+'.sig';const api=createPrivateApi(origin,{clock:()=>now,fetcher:async(url,options)=>{requests.push({url:String(url),options});return String(url).startsWith('http://metadata.')?new Response(service):Response.json({});}});await api('synthetic-user-token','/me');await api('synthetic-user-token','/cases');assert.equal(requests.length,3);assert.equal(new URL(requests[0].url).searchParams.get('audience'),origin);assert.equal(requests[1].options.headers.Authorization,'Bearer synthetic-user-token');assert.equal(requests[1].options.headers['X-Serverless-Authorization'],'Bearer '+service);assert.equal(requests[1].options.redirect,'error');});
 test('metadata failure does not fall back to anonymous API call',async()=>{let calls=0;const api=createPrivateApi('https://private.run.app',{fetcher:async()=>{calls++;return new Response(null,{status:403});}});await assert.rejects(()=>api('user','/me'));assert.equal(calls,1);});
 test('team page uses hash-based CSP and no client token or impersonation selector',async()=>{const r=renderTeam(true),html=await r.text();assert.match(r.headers.get('content-security-policy'),/script-src 'sha256-/);assert.match(r.headers.get('content-security-policy'),/frame-ancestors 'none'/);assert.doesNotMatch(html,/localStorage|sessionStorage|id_token|demo-manager/);assert.match(html,/Continue with Google/);assert.equal(r.headers.get('cache-control'),'no-store, max-age=0');});
+
+
+test('daily priorities is an allowlisted authenticated read endpoint',async()=>{
+ const h=harness(),{sessionCookie}=await h.login();
+ const r=await h.request('/api/team/daily-priorities?limit=12',{headers:{Cookie:sessionCookie}});
+ assert.equal(r.status,200);
+ assert.equal(h.apiCalls.at(-1).options.method,'GET');
+ assert.equal(h.apiCalls.at(-1).path,'/daily-priorities?limit=12');
+});
