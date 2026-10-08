@@ -38,8 +38,8 @@ Status values:
 | Matching | Semantic/vector retrieval | PLANNED | Phase after sync foundation |
 | Matching | AI reranking | PLANNED | Must sit on top of deterministic gates/scoring |
 | Recruiter | Private recruiter workspace | BUILT | Notes, follow-ups, activity, ownership |
-| Recruiter | Match Queue | IN DEVELOPMENT | Reads persisted canonical match records; real-data activation/quality acceptance pending |
-| Recruiter | Candidate → best jobs | PLANNED | Next vertical slice after consolidation |
+| Recruiter | Match Queue | IN DEVELOPMENT | Job → candidates and candidate → jobs now both read persisted canonical matches; real-data quality acceptance pending |
+| Recruiter | Candidate → best jobs | IN DEVELOPMENT | Candidate detail now reads ranked persisted matches; real-data UX acceptance pending |
 | Recruiter | Recommended next action | BUILT | Read-only recommendation in Match Queue |
 | Recruiter | Automated outreach | DISABLED | Human approval, consent and policy required |
 | Recruiter | SMS / email outreach | PLANNED | After data foundation and consent controls |
