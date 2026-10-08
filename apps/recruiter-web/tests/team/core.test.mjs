@@ -80,3 +80,11 @@ test('daily priorities is an allowlisted authenticated read endpoint',async()=>{
  assert.equal(h.apiCalls.at(-1).options.method,'GET');
  assert.equal(h.apiCalls.at(-1).path,'/daily-priorities?limit=12');
 });
+
+
+test('recruiter dashboard is an allowlisted authenticated read endpoint',async()=>{
+ const h=harness(),{sessionCookie}=await h.login();
+ const r=await h.request('/api/team/recruiter/dashboard?week_start=2026-10-05',{headers:{Cookie:sessionCookie}});
+ assert.equal(r.status,200);
+ assert.equal(h.apiCalls.at(-1).path,'/recruiter/dashboard?week_start=2026-10-05');
+});

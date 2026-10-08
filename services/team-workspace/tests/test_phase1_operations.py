@@ -829,3 +829,66 @@ def test_manager_cannot_use_recruiter_daily_priorities(client, headers):
         headers=headers("manager-a"),
     )
     assert response.status_code == 403
+
+
+def test_recruiter_dashboard_combines_goals_actuals_and_workload(client, headers, seeded):
+    seed_match_queue(seeded)
+    goal = client.put(
+        f"/api/v1/team/recruiters/{idn(10)}/weekly-goals",
+        headers=headers("recruiter-a"),
+        json={
+            "week_start": "2026-10-05",
+            "submissions_target": 12,
+            "interviews_target": 5,
+            "closures_target": 2,
+            "priority_jobs_target": 8,
+        },
+    )
+    assert goal.status_code == 200
+
+    with seeded.begin() as conn:
+        conn.execute(insert(t.weekly_snapshots).values(
+            id=str(uuid4()), tenant_id=idn(1), team_id=idn(30), recruiter_user_id=idn(10),
+            week_start=date(2026, 10, 5), submissions_actual=9, interviews_actual=4,
+            closures_actual=1, offers_actual=2, starts_actual=1, qualified_actual=17,
+            responses_actual=28, source_breakdown={"jobdiva": True, "platform": True},
+            generated_at=now(),
+        ))
+        conn.execute(insert(t.tasks).values(
+            id=idn(990), tenant_id=idn(1), case_id=idn(100), created_by=idn(10),
+            title="Overdue recruiter follow-up", status="open",
+            due_at=now() - timedelta(hours=2), version=1,
+            created_at=now(), updated_at=now(),
+        ))
+
+    response = client.get(
+        "/api/v1/team/recruiter/dashboard?week_start=2026-10-05",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["targets"]["submissions"] == 12
+    assert body["actuals"]["submissions"] == 9
+    assert body["workload"]["owned_work_items"] == 1
+    assert body["workload"]["open_followups"] == 1
+    assert body["workload"]["overdue_followups"] == 1
+    assert body["workload"]["active_priority_jobs"] == 1
+    assert body["workload"]["unreviewed_matches"] == 1
+    assert body["read_only"] is True
+    assert body["source_of_record"] == "jobdiva"
+
+
+def test_manager_cannot_use_recruiter_dashboard(client, headers):
+    response = client.get(
+        "/api/v1/team/recruiter/dashboard?week_start=2026-10-05",
+        headers=headers("manager-a"),
+    )
+    assert response.status_code == 403
+
+
+def test_recruiter_dashboard_requires_monday(client, headers):
+    response = client.get(
+        "/api/v1/team/recruiter/dashboard?week_start=2026-10-06",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 422
