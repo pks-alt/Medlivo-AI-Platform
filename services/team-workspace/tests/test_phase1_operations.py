@@ -656,6 +656,26 @@ def test_recruiter_can_save_match_quality_feedback(client, headers, seeded):
     assert row["feedback_code"] == "strong_match"
 
 
+def test_negative_match_feedback_requires_structured_reason(client, headers, seeded):
+    seed_match_queue(seeded)
+    url = f"/api/v1/team/matches/{idn(962)}/feedback"
+
+    missing = client.post(
+        url,
+        headers=headers("recruiter-a"),
+        json={"feedback_code": "not_a_match"},
+    )
+    assert missing.status_code == 422
+
+    saved = client.post(
+        url,
+        headers=headers("recruiter-a"),
+        json={"feedback_code": "not_a_match", "reason_code": "license"},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["reason_code"] == "license"
+
+
 def test_recruiter_cannot_rate_another_recruiters_match(client, headers, seeded):
     seed_match_queue(seeded)
     response = client.post(
@@ -673,7 +693,7 @@ def test_manager_match_quality_summary_uses_managed_team_feedback(client, header
             {
                 "id": idn(970), "tenant_id": idn(1), "match_id": idn(962),
                 "recruiter_user_id": idn(10), "feedback_code": "strong_match",
-                "notes": None, "created_at": now(),
+                "reason_code": None, "notes": None, "created_at": now(),
             },
         ])
         conn.execute(insert(t.matches).values(
@@ -685,7 +705,7 @@ def test_manager_match_quality_summary_uses_managed_team_feedback(client, header
         conn.execute(insert(t.match_feedback).values(
             id=idn(972), tenant_id=idn(1), match_id=idn(971),
             recruiter_user_id=idn(15), feedback_code="not_a_match",
-            notes=None, created_at=now(),
+            reason_code="specialty", notes=None, created_at=now(),
         ))
 
     response = client.get(
@@ -700,6 +720,24 @@ def test_manager_match_quality_summary_uses_managed_team_feedback(client, header
     assert band["positive"] == 1
     assert band["agreement_rate"] == 100.0
     assert body["pilot_target"]["minimum_feedback"] == 100
+
+
+def test_manager_match_quality_reports_negative_reasons_in_scope(client, headers, seeded):
+    seed_match_queue(seeded)
+    with seeded.begin() as conn:
+        conn.execute(insert(t.match_feedback), {
+            "id": idn(973), "tenant_id": idn(1), "match_id": idn(962),
+            "recruiter_user_id": idn(10), "feedback_code": "weak_match",
+            "reason_code": "availability", "notes": None, "created_at": now(),
+        })
+
+    response = client.get(
+        "/api/v1/team/manager/match-quality",
+        headers=headers("manager-a"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["negative_reasons"] == [{"key": "availability", "count": 1}]
 
 
 def test_recruiter_cannot_access_manager_match_quality_summary(client, headers, seeded):
