@@ -36,11 +36,9 @@ class MatchingStore:
                 FROM job j
                 JOIN candidate c
                   ON c.tenant_id=j.tenant_id
-                 AND (
-                   j.profession IS NULL
-                   OR c.profession IS NULL
-                   OR lower(c.profession)=lower(j.profession)
-                 )
+                 AND j.profession IS NOT NULL
+                 AND c.profession IS NOT NULL
+                 AND lower(c.profession)=lower(j.profession)
                 LEFT JOIN match m
                   ON m.tenant_id=j.tenant_id
                  AND m.job_id=j.id
