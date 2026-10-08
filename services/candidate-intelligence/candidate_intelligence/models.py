@@ -40,11 +40,25 @@ class CertificationIntelligence(StrictModel):
     source_reference: str | None = None
 
 
+class ResumeExperienceEvidence(StrictModel):
+    source_line: str
+    start_year: int
+    end_year: int | None = None
+    is_current: bool = False
+
+
+class ResumeCareSettingEvidence(StrictModel):
+    key: str
+    source_line: str
+
+
 class ResumeIntelligence(StrictModel):
     source_resume_id: str
     resume_date: datetime | None = None
     text: str | None = None
     source_reference: str | None = None
+    experience_entries: list[ResumeExperienceEvidence] = Field(default_factory=list)
+    care_settings: list[ResumeCareSettingEvidence] = Field(default_factory=list)
 
 
 class MatchingReadiness(StrictModel):
