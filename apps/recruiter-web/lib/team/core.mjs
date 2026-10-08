@@ -109,7 +109,7 @@ function endpoint(path, method, query) {
   const id = '[0-9a-fA-F-]{36}', root = `/cases/${id}`;
   const read = [
     '/me', '/cases', '/jobs', `/jobs/${id}`, '/candidates', `/candidates/${id}`,
-    '/manager/overview', '/manager/weekly-review', '/admin/users', '/admin/teams', '/admin/audit',
+    '/manager/overview', '/manager/weekly-review', '/work-queue', '/admin/users', '/admin/teams', '/admin/audit',
     '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings', `/recruiters/${id}/weekly-goals`, '/job-publications', `/job-publications/${id}`,
     root, `${root}/(?:notes|tasks|audit|eligible-owners)`
   ];
