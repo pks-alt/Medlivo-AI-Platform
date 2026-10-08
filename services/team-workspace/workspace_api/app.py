@@ -13,7 +13,7 @@ from .config import Settings
 from .schemas import (
     NoteInput, TaskInput, TaskUpdate, Reassignment, AdminUserInput, AdminUserUpdate,
     JobIntakeBatchInput, CustomerJobMappingInput, WeeklyGoalInput, JobIntakeRowsInput,
-    JobPublicationDraftInput, JobPublicationDecision,
+    JobPublicationDraftInput, JobPublicationDecision, MatchFeedbackInput,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -202,6 +202,17 @@ def build_app(store, verifier):
                    who=Depends(identity)):
         return store.match_work_queue(
             who, limit=limit, matches_per_job=matches_per_job
+        )
+
+    @app.get(prefix + "/manager/match-quality")
+    def match_quality(who=Depends(identity)):
+        return store.match_quality_summary(who)
+
+    @app.post(prefix + "/matches/{match_id}/feedback")
+    def match_feedback(match_id: UUID, value: MatchFeedbackInput,
+                       idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.save_match_feedback(
+            who, str(match_id), str(idempotency_key), value
         )
 
     @app.post(prefix + "/job-publications", status_code=201)
