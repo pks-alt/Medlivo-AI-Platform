@@ -4,7 +4,7 @@ from io import BytesIO
 from openpyxl import Workbook
 
 from workspace_api import tables as t
-from sqlalchemy import insert, update
+from sqlalchemy import insert, update, select
 from workspace_api.store import now
 
 
@@ -635,3 +635,76 @@ def test_candidate_best_jobs_hides_foreign_tenant_candidate(client, headers, see
         headers=headers("admin-a"),
     )
     assert response.status_code == 404
+
+
+def test_recruiter_can_save_match_quality_feedback(client, headers, seeded):
+    seed_match_queue(seeded)
+    response = client.post(
+        f"/api/v1/team/matches/{idn(962)}/feedback",
+        headers=headers("recruiter-a"),
+        json={"feedback_code": "strong_match", "notes": "Synthetic pilot feedback"},
+    )
+    assert response.status_code == 200
+    assert response.json()["feedback_code"] == "strong_match"
+
+    with seeded.begin() as conn:
+        row = conn.execute(select(t.match_feedback).where(
+            t.match_feedback.c.tenant_id == idn(1),
+            t.match_feedback.c.match_id == idn(962),
+            t.match_feedback.c.recruiter_user_id == idn(10),
+        )).mappings().first()
+    assert row["feedback_code"] == "strong_match"
+
+
+def test_recruiter_cannot_rate_another_recruiters_match(client, headers, seeded):
+    seed_match_queue(seeded)
+    response = client.post(
+        f"/api/v1/team/matches/{idn(962)}/feedback",
+        headers=headers("recruiter-other"),
+        json={"feedback_code": "not_a_match"},
+    )
+    assert response.status_code == 403
+
+
+def test_manager_match_quality_summary_uses_managed_team_feedback(client, headers, seeded):
+    seed_match_queue(seeded)
+    with seeded.begin() as conn:
+        conn.execute(insert(t.match_feedback), [
+            {
+                "id": idn(970), "tenant_id": idn(1), "match_id": idn(962),
+                "recruiter_user_id": idn(10), "feedback_code": "strong_match",
+                "notes": None, "created_at": now(),
+            },
+        ])
+        conn.execute(insert(t.matches).values(
+            id=idn(971), tenant_id=idn(1), job_id=idn(202), candidate_id=idn(302),
+            overall_score=9.2, status="shortlisted", rules_version="deterministic-v1",
+            explanation={"strengths": ["Synthetic"], "gaps": []},
+            created_at=now(), updated_at=now(),
+        ))
+        conn.execute(insert(t.match_feedback).values(
+            id=idn(972), tenant_id=idn(1), match_id=idn(971),
+            recruiter_user_id=idn(15), feedback_code="not_a_match",
+            notes=None, created_at=now(),
+        ))
+
+    response = client.get(
+        "/api/v1/team/manager/match-quality",
+        headers=headers("manager-a"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["feedback_count"] == 1
+    band = next(item for item in body["score_bands"] if item["key"] == "9.0+")
+    assert band["total"] == 1
+    assert band["positive"] == 1
+    assert band["agreement_rate"] == 100.0
+    assert body["pilot_target"]["minimum_feedback"] == 100
+
+
+def test_recruiter_cannot_access_manager_match_quality_summary(client, headers, seeded):
+    response = client.get(
+        "/api/v1/team/manager/match-quality",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 403

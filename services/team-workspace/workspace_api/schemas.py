@@ -123,3 +123,8 @@ class JobPublicationDecision(StrictInput):
         if info.data.get("decision") == "rejected" and not value:
             raise ValueError("A rejection reason is required")
         return value
+
+
+class MatchFeedbackInput(StrictInput):
+    feedback_code: Literal["strong_match", "good_match", "weak_match", "not_a_match"]
+    notes: str | None = Field(default=None, max_length=1000)

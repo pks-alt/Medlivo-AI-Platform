@@ -35,10 +35,11 @@ Status values:
 | Matching | State license hard gate | BUILT | Deterministic and persisted as match exclusions when failed |
 | Matching | Required certification hard gate | BUILT | Deterministic and persisted as match exclusions when failed |
 | Matching | Explainable 0–10 score | IN DEVELOPMENT | Deterministic scoring is now activated against enriched canonical data; real-data quality acceptance pending |
+| Matching | Real-data acceptance pilot | IN DEVELOPMENT | Recruiter Strong/Good/Weak/Not-a-match feedback with manager score-band/division agreement summary |
 | Matching | Semantic/vector retrieval | PLANNED | Phase after sync foundation |
-| Matching | AI reranking | PLANNED | Must sit on top of deterministic gates/scoring |
+| Matching | AI reranking | PLANNED | Deferred until the real-data acceptance pilot identifies where deterministic ranking needs help |
 | Recruiter | Private recruiter workspace | BUILT | Notes, follow-ups, activity, ownership |
-| Recruiter | Match Queue | IN DEVELOPMENT | Job → candidates and candidate → jobs now both read persisted canonical matches; real-data quality acceptance pending |
+| Recruiter | Match Queue | IN DEVELOPMENT | Two-way persisted matching is active; recruiter match-quality pilot feedback is now being collected |
 | Recruiter | Candidate → best jobs | IN DEVELOPMENT | Candidate detail now reads ranked persisted matches; real-data UX acceptance pending |
 | Recruiter | Recommended next action | BUILT | Read-only recommendation in Match Queue |
 | Recruiter | Automated outreach | DISABLED | Human approval, consent and policy required |
