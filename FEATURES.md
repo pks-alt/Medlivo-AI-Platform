@@ -15,11 +15,11 @@ Status values:
 | Access | Recruiter / manager / admin RBAC | BUILT | Team and tenant scoping implemented |
 | Access | Production OAuth / Cloud Run acceptance | IN DEVELOPMENT | Must be validated in private staging |
 | JobDiva | Read-only jobs sync | IN DEVELOPMENT | Delta landing, resumable backfill and conservative canonical job promotion implemented; production scheduling/real-data acceptance pending |
-| JobDiva | Candidate profile read | BUILT | Read-only connector method |
-| JobDiva | License read | BUILT | Read-only connector method |
-| JobDiva | Certification read | BUILT | Read-only connector method |
-| JobDiva | Resume metadata read | BUILT | Read-only connector method |
-| JobDiva | Resume text read | BUILT | Read-only connector method |
+| JobDiva | Candidate profile read | BUILT | Read-only connector method feeding Candidate Intelligence enrichment |
+| JobDiva | License read | BUILT | Read-only connector method with normalized canonical persistence |
+| JobDiva | Certification read | BUILT | Read-only connector method with normalized canonical persistence |
+| JobDiva | Resume metadata read | BUILT | Read-only connector method with versioned canonical resume references |
+| JobDiva | Resume text read | BUILT | Bounded resume-text enrichment; JobDiva remains authoritative resume store |
 | JobDiva | Historical backfill | IN DEVELOPMENT | Resumable 14-day backfill orchestration implemented; production scheduling and real-data acceptance pending |
 | JobDiva | Delta / near-real-time sync | IN DEVELOPMENT | Replay-safe jobs/candidates delta landing worker implemented; deployment/webhook reconciliation still pending |
 | JobDiva | Candidate / resume / job write-back | DISABLED | Enable only after vendor API authorization and acceptance testing |
@@ -29,8 +29,8 @@ Status values:
 | Intelligence | Locum Tenens job template | BUILT | Schedule / call / license / credentialing oriented |
 | Intelligence | Source provenance | BUILT | source_confirmed / medlivo_standard / ai_suggested |
 | Intelligence | Job quality/readiness scoring | BUILT | Core / matching / publishing readiness |
-| Intelligence | Candidate Intelligence | BUILT | Canonical candidate facts + evidence; JobDiva delta identity fields can now seed canonical candidates conservatively |
-| Intelligence | Resume parsing / deep experience extraction | IN DEVELOPMENT | Basic resume text available; richer structured extraction still needed |
+| Intelligence | Candidate Intelligence | IN DEVELOPMENT | Canonical candidate facts + evidence plus JobDiva profile/license/cert/resume enrichment; production scheduling and real-data acceptance pending |
+| Intelligence | Resume parsing / deep experience extraction | IN DEVELOPMENT | JobDiva resume text now lands in Candidate Intelligence; deeper structured experience extraction still needed |
 | Matching | Profession hard gate | BUILT | Deterministic |
 | Matching | State license hard gate | BUILT | Deterministic |
 | Matching | Required certification hard gate | BUILT | Deterministic |
