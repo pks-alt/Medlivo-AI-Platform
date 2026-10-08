@@ -159,6 +159,7 @@ async def main() -> int:
     connection = await AsyncConnection.connect(_psycopg_database_url(database_url))
     try:
         async with JobDivaClient(settings) as client:
+            await client.authenticate()
             result = await run_pilot_once(
                 connection=connection,
                 client=client,
