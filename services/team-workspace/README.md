@@ -82,6 +82,7 @@ provisioned database account. The service itself must also require Cloud Run IAM
 | GET | `/api/v1/team/me` | Database-backed member name and role |
 | GET | `/api/v1/team/cases` | Assigned/managed cases, `limit` and `after` cursor |
 | GET | `/api/v1/team/daily-priorities` | Recruiter-only read-only priorities: overdue/due-soon follow-ups and strong unreviewed matches |
+| GET | `/api/v1/team/recruiter/dashboard` | Recruiter-only read-only scorecard for weekly goals, actuals, and workload |
 | GET | `/api/v1/team/cases/{id}` | Authorized workflow case |
 | GET | `/api/v1/team/cases/{id}/notes` | Shared note history |
 | POST | `/api/v1/team/cases/{id}/notes` | Append `{body}` |
@@ -177,3 +178,8 @@ The candidate detail surface includes a read-only **Best current jobs** panel so
 ## Daily priorities
 
 For recruiters, the top of **My work** now provides a read-only start-of-day priority list. It orders overdue follow-ups first, then follow-ups due within 24 hours, then strong unreviewed matches on jobs owned by that recruiter. The list is planning and review only: it does not send outreach, create submissions, change ownership, or mutate JobDiva.
+
+
+## Recruiter dashboard
+
+The recruiter dashboard combines the selected week's goals and synchronized actual activity with current workload pressure: owned work items, open and overdue follow-ups, active priority jobs, and unreviewed strong/good matches. It is read-only and uses existing canonical/workspace data; it does not create a second ATS record, send outreach, or mutate JobDiva.
