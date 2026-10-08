@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS integration_sync_run (
   tenant_id uuid NOT NULL REFERENCES tenant(id),
   source_system text NOT NULL,
   stream text NOT NULL,
+  mode text NOT NULL DEFAULT 'delta' CHECK (mode IN ('delta','backfill')),
   status text NOT NULL CHECK (status IN ('running','succeeded','failed')),
   window_start timestamptz NOT NULL,
   window_end timestamptz NOT NULL,

@@ -4,19 +4,29 @@ on:
     paths:
       - 'apps/workers/**'
       - 'apps/api/app/db/schema.sql'
-      - 'apps/api/app/db/migrations/002_integration_sync_foundation.sql'
+      - 'apps/api/app/db/migrations/003_sync_run_mode.sql'
+      - 'apps/api/app/routes/integration.py'
+      - 'apps/api/app/repositories/integration.py'
+      - 'apps/api/app/services/integration.py'
+      - 'apps/api/app/schemas/integration.py'
+      - 'apps/api/tests/test_integration_health.py'
       - '.github/workflows/jobdiva-data-foundation-tests.yml'
   push:
     branches: [main]
     paths:
       - 'apps/workers/**'
       - 'apps/api/app/db/schema.sql'
-      - 'apps/api/app/db/migrations/002_integration_sync_foundation.sql'
+      - 'apps/api/app/db/migrations/003_sync_run_mode.sql'
+      - 'apps/api/app/routes/integration.py'
+      - 'apps/api/app/repositories/integration.py'
+      - 'apps/api/app/services/integration.py'
+      - 'apps/api/app/schemas/integration.py'
+      - 'apps/api/tests/test_integration_health.py'
       - '.github/workflows/jobdiva-data-foundation-tests.yml'
 permissions:
   contents: read
 jobs:
-  unit:
+  worker:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     defaults:
@@ -29,7 +39,25 @@ jobs:
           python-version: '3.13'
       - name: Install worker tests
         run: python -m pip install '.[test]'
-      - name: Test JobDiva data foundation
+      - name: Test JobDiva delta and backfill foundation
         run: python -m pytest -q
       - name: Compile workers
         run: python -m compileall -q jobdiva_sync
+
+  api-health:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install API tests
+        run: python -m pip install '.[test]'
+      - name: Test JobDiva sync health API
+        run: python -m pytest -q tests/test_integration_health.py
+      - name: Compile integration API
+        run: python -m compileall -q app/routes/integration.py app/repositories/integration.py app/services/integration.py app/schemas/integration.py
