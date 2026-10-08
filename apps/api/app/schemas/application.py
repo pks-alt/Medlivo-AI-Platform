@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CareerApplicationInput(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     job_id: UUID
     name: str = Field(min_length=2, max_length=200)
-    email: EmailStr
+    email: str = Field(min_length=6, max_length=254)
     phone: str | None = Field(default=None, max_length=50)
     profession: str | None = Field(default=None, max_length=200)
     specialty: str | None = Field(default=None, max_length=200)
@@ -17,6 +17,14 @@ class CareerApplicationInput(BaseModel):
     availability: str | None = Field(default=None, max_length=200)
     resume_url: str | None = Field(default=None, max_length=1000)
     consent_to_contact: bool
+
+    @field_validator("email")
+    @classmethod
+    def validate_email(cls, value):
+        value = value.lower()
+        if "@" not in value or "." not in value.rsplit("@", 1)[-1] or any(ch.isspace() for ch in value):
+            raise ValueError("A valid email address is required")
+        return value
 
     @field_validator("resume_url")
     @classmethod
