@@ -50,6 +50,7 @@ class JobMatchInput(StrictModel):
     start_date: date | None = None
     required_license_states: list[str] = Field(default_factory=list)
     required_certifications: list[str] = Field(default_factory=list)
+    required_skills: list[str] = Field(default_factory=list)
 
 
 class MatchGate(StrictModel):
