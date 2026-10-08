@@ -127,4 +127,15 @@ class JobPublicationDecision(StrictInput):
 
 class MatchFeedbackInput(StrictInput):
     feedback_code: Literal["strong_match", "good_match", "weak_match", "not_a_match"]
+    reason_code: Literal[
+        "license", "certification", "specialty", "care_setting", "experience",
+        "availability", "location", "compensation", "other"
+    ] | None = None
     notes: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("reason_code")
+    @classmethod
+    def negative_feedback_needs_reason(cls, value, info):
+        if info.data.get("feedback_code") in {"weak_match", "not_a_match"} and value is None:
+            raise ValueError("A reason is required for weak or not-a-match feedback")
+        return value
