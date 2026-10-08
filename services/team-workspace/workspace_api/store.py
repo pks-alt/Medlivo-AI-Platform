@@ -4,7 +4,7 @@ from decimal import Decimal
 import hashlib
 import json
 from uuid import UUID, uuid4
-from sqlalchemy import select, insert, update, and_, true, text, func
+from sqlalchemy import select, insert, update, and_, true, text, func, or_
 from sqlalchemy.exc import IntegrityError
 from . import tables as t
 from .auth import Identity
@@ -1493,3 +1493,181 @@ class WorkspaceStore:
                 "read_only": True,
                 "source_of_record": "jobdiva",
             })
+
+
+    def save_match_feedback(self, identity, match_id, key, value):
+        payload = {
+            "match_id": match_id,
+            "feedback_code": value.feedback_code,
+            "notes": value.notes,
+        }
+        def apply(conn, principal):
+            match = conn.execute(
+                select(t.matches.c.id, t.matches.c.job_id, t.matches.c.candidate_id)
+                .where(
+                    t.matches.c.id == match_id,
+                    t.matches.c.tenant_id == principal["tenant_id"],
+                )
+            ).mappings().first()
+            if match is None:
+                raise AccessError(404, "Match not found")
+
+            candidate_case = conn.execute(
+                select(t.cases.c.owner_user_id, t.cases.c.team_id)
+                .where(
+                    t.cases.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.candidate_id == match["candidate_id"],
+                )
+                .order_by(t.cases.c.updated_at.desc())
+                .limit(1)
+            ).mappings().first()
+
+            if principal["role"] == "recruiter":
+                if candidate_case is not None and candidate_case["owner_user_id"] != principal["id"]:
+                    raise AccessError(403, "Match belongs to another recruiter")
+            elif principal["role"] == "manager":
+                if candidate_case is not None and not self._team_allowed(conn, principal, candidate_case["team_id"]):
+                    raise AccessError(403, "Match is outside your managed team")
+            elif principal["role"] != "admin":
+                raise AccessError(403, "Workspace access required")
+
+            timestamp = now()
+            existing = conn.execute(
+                select(t.match_feedback)
+                .where(
+                    t.match_feedback.c.tenant_id == principal["tenant_id"],
+                    t.match_feedback.c.match_id == match_id,
+                    t.match_feedback.c.recruiter_user_id == principal["id"],
+                )
+                .order_by(t.match_feedback.c.created_at.desc())
+                .limit(1)
+            ).mappings().first()
+
+            if existing:
+                conn.execute(
+                    update(t.match_feedback)
+                    .where(
+                        t.match_feedback.c.id == existing["id"],
+                        t.match_feedback.c.tenant_id == principal["tenant_id"],
+                    )
+                    .values(
+                        feedback_code=value.feedback_code,
+                        notes=value.notes,
+                        created_at=timestamp,
+                    )
+                )
+                return clean(dict(existing, feedback_code=value.feedback_code, notes=value.notes, created_at=timestamp))
+
+            row = {
+                "id": uid(),
+                "tenant_id": principal["tenant_id"],
+                "match_id": match_id,
+                "recruiter_user_id": principal["id"],
+                "feedback_code": value.feedback_code,
+                "notes": value.notes,
+                "created_at": timestamp,
+            }
+            conn.execute(insert(t.match_feedback).values(**row))
+            return clean(row)
+
+        return self._global_mutate(identity, key, "match.feedback.saved", payload, apply)
+
+
+    def match_quality_summary(self, identity):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Manager access required")
+
+            statement = (
+                select(
+                    t.match_feedback.c.feedback_code,
+                    t.matches.c.overall_score,
+                    t.jobs.c.division,
+                )
+                .join(t.matches, and_(
+                    t.matches.c.id == t.match_feedback.c.match_id,
+                    t.matches.c.tenant_id == t.match_feedback.c.tenant_id,
+                ))
+                .join(t.jobs, and_(
+                    t.jobs.c.id == t.matches.c.job_id,
+                    t.jobs.c.tenant_id == t.matches.c.tenant_id,
+                ))
+                .where(t.match_feedback.c.tenant_id == principal["tenant_id"])
+            )
+
+            if principal["role"] == "manager":
+                managed_recruiters = (
+                    select(t.profiles.c.user_id)
+                    .join(t.teams, and_(
+                        t.teams.c.id == t.profiles.c.team_id,
+                        t.teams.c.tenant_id == t.profiles.c.tenant_id,
+                    ))
+                    .where(
+                        t.profiles.c.tenant_id == principal["tenant_id"],
+                        t.teams.c.manager_user_id == principal["id"],
+                    )
+                )
+                statement = statement.where(
+                    or_(
+                        t.jobs.c.owner_user_id.in_(managed_recruiters),
+                        t.match_feedback.c.recruiter_user_id.in_(managed_recruiters),
+                    )
+                )
+
+            rows = conn.execute(statement).mappings().all()
+
+            def band(score):
+                score = float(score)
+                if score >= 9:
+                    return "9.0+"
+                if score >= 8:
+                    return "8.0-8.9"
+                return "<8.0"
+
+            summary = {}
+            divisions = {}
+            positive = {"strong_match", "good_match"}
+            for row in rows:
+                b = band(row["overall_score"])
+                bucket = summary.setdefault(b, {"total": 0, "positive": 0, "strong": 0, "good": 0, "weak": 0, "not_a_match": 0})
+                bucket["total"] += 1
+                code = row["feedback_code"]
+                if code in positive:
+                    bucket["positive"] += 1
+                if code == "strong_match":
+                    bucket["strong"] += 1
+                elif code == "good_match":
+                    bucket["good"] += 1
+                elif code == "weak_match":
+                    bucket["weak"] += 1
+                elif code == "not_a_match":
+                    bucket["not_a_match"] += 1
+
+                division = row["division"] or "Unclassified"
+                d = divisions.setdefault(division, {"total": 0, "positive": 0})
+                d["total"] += 1
+                if code in positive:
+                    d["positive"] += 1
+
+            def add_rates(mapping):
+                result = []
+                for key, value in mapping.items():
+                    total = value["total"]
+                    result.append({
+                        "key": key,
+                        **value,
+                        "agreement_rate": round(100 * value["positive"] / total, 1) if total else None,
+                    })
+                return result
+
+            return {
+                "feedback_count": len(rows),
+                "score_bands": add_rates(summary),
+                "divisions": add_rates(divisions),
+                "pilot_target": {
+                    "minimum_feedback": 100,
+                    "recommended_division_minimum": 25,
+                    "nine_plus_agreement_goal": 80.0,
+                },
+            }
