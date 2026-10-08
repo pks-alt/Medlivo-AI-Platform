@@ -1,12 +1,13 @@
 """Factory for a separate private service; existing recruiter API is untouched."""
 from contextlib import asynccontextmanager
+import logging
 from uuid import UUID
 from datetime import date
 from fastapi import FastAPI, Depends, HTTPException, Header, Query, UploadFile, File, Form
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from .auth import AuthenticationError, GoogleIdentityVerifier
 from .config import Settings
@@ -16,6 +17,9 @@ from .schemas import (
     JobPublicationDraftInput, JobPublicationDecision, MatchFeedbackInput,
 )
 from .store import WorkspaceStore, AccessError
+
+
+logger = logging.getLogger("medlivo.workspace")
 
 
 class LimitsMiddleware:
@@ -74,28 +78,52 @@ def build_app(store, verifier):
 
     def identity(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
         if credentials is None or credentials.scheme.lower() != "bearer":
+            logger.warning("workspace_authentication_denied")
             raise HTTPException(401, "Authentication required", headers={"WWW-Authenticate": "Bearer"})
         try:
             return verifier.verify(credentials.credentials)
         except AuthenticationError:
+            logger.warning("workspace_authentication_denied")
             raise HTTPException(401, "Authentication required", headers={"WWW-Authenticate": "Bearer"}) from None
 
     @app.exception_handler(AccessError)
     async def access_error(request, error):
+        if error.status in {401, 403, 404}:
+            logger.warning("workspace_authorization_denied", extra={"status_code": error.status})
         return JSONResponse({"detail": error.message}, status_code=error.status)
 
     @app.exception_handler(RequestValidationError)
     async def validation_error(request, error):
+        logger.warning("workspace_validation_rejected")
         return JSONResponse({"detail": "Invalid request fields"}, status_code=422)
 
     @app.exception_handler(SQLAlchemyError)
     async def database_error(request, error):
-        # Database exceptions can include credentials/SQL/record values; never echo them.
+        # Event-only logging: never include exception text, SQL, parameters, credentials, or record data.
+        logger.error("workspace_database_unavailable")
         return JSONResponse({"detail": "Workspace storage is unavailable"}, status_code=503)
 
     @app.get("/health")
     def health():
         return {"ok": True, "workspace_enabled": True, "database_checked": False}
+
+    @app.get("/ready")
+    def ready():
+        try:
+            with store.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+        except SQLAlchemyError:
+            logger.error("workspace_readiness_database_unavailable")
+            return JSONResponse(
+                {"ok": False, "workspace_enabled": True, "database_checked": True, "database_reachable": False},
+                status_code=503,
+            )
+        return {
+            "ok": True,
+            "workspace_enabled": True,
+            "database_checked": True,
+            "database_reachable": True,
+        }
 
     prefix = "/api/v1/team"
 
@@ -313,7 +341,13 @@ def create_app():
         app.add_middleware(LimitsMiddleware)
         @app.get("/health")
         def disabled():
-            return {"ok": True, "workspace_enabled": False}
+            return {"ok": True, "workspace_enabled": False, "database_checked": False}
+        @app.get("/ready")
+        def disabled_ready():
+            return JSONResponse(
+                {"ok": False, "workspace_enabled": False, "database_checked": False, "database_reachable": False},
+                status_code=503,
+            )
         return app
     engine = create_engine(settings.database_url.get_secret_value(), pool_pre_ping=True,
                            hide_parameters=True, echo=False, pool_size=5, max_overflow=5)
