@@ -4,7 +4,6 @@ from fastapi import FastAPI
 
 from app.routes.recruiting import router as recruiting_router
 from app.routes.career import router as career_router
-from app.routes.application import router as application_router
 from app.db.database import open_database, close_database
 
 @asynccontextmanager
@@ -24,7 +23,6 @@ app = FastAPI(
 
 app.include_router(recruiting_router)
 app.include_router(career_router)
-app.include_router(application_router)
 
 
 @app.get("/health")
