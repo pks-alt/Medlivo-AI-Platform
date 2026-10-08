@@ -359,6 +359,7 @@ CREATE TABLE IF NOT EXISTS match_feedback (
   match_id uuid NOT NULL REFERENCES match(id) ON DELETE CASCADE,
   recruiter_user_id uuid NOT NULL REFERENCES app_user(id),
   feedback_code text NOT NULL,
+  reason_code text,
   notes text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
