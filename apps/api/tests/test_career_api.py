@@ -4,7 +4,9 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.routes import career as career_routes
+from app.routes import application as application_routes
 from app.schemas.career import PublicJobDetail, PublicJobListItem, PublicJobPage, PublicJobSection
+from app.schemas.application import CareerApplicationReceipt
 
 
 JOB_ID = UUID("00000000-0000-0000-0000-000000000901")
@@ -89,3 +91,68 @@ def test_invalid_division_is_rejected_before_query(monkeypatch):
     with TestClient(app) as client:
         response = client.get("/api/v1/careers/jobs?division=unknown")
     assert response.status_code == 422
+
+
+def test_public_job_application_returns_safe_receipt(monkeypatch):
+    async def fake_submit(value):
+        assert value.job_id == JOB_ID
+        assert value.email == "clinician@example.com"
+        return CareerApplicationReceipt(
+            application_id=UUID("00000000-0000-0000-0000-000000000902"),
+            job_id=JOB_ID,
+            status="received",
+            candidate_status="matched_existing_candidate",
+            ownership_status="owned",
+            recruiter_assigned=True,
+        )
+
+    monkeypatch.setattr(application_routes, "submit_career_application", fake_submit)
+    with TestClient(app) as client:
+        response = client.post("/api/v1/careers/applications", json={
+            "job_id": str(JOB_ID),
+            "name": "Synthetic Clinician",
+            "email": "Clinician@Example.com",
+            "phone": "555-0100",
+            "profession": "Physical Therapist",
+            "specialty": "Physical Therapy",
+            "preferred_location": "CA",
+            "availability": "2026-11-15",
+            "resume_url": "https://example.com/resume.pdf",
+            "consent_to_contact": True,
+        })
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "received"
+    assert body["recruiter_assigned"] is True
+    assert "email" not in body
+    assert response.headers["cache-control"] == "no-store"
+
+
+def test_job_application_requires_contact_consent(monkeypatch):
+    async def should_not_run(value):
+        raise AssertionError("submit should not run")
+
+    monkeypatch.setattr(application_routes, "submit_career_application", should_not_run)
+    with TestClient(app) as client:
+        response = client.post("/api/v1/careers/applications", json={
+            "job_id": str(JOB_ID),
+            "name": "Synthetic Clinician",
+            "email": "clinician@example.com",
+            "consent_to_contact": False,
+        })
+    assert response.status_code == 422
+
+
+def test_job_application_for_unavailable_job_returns_404(monkeypatch):
+    async def missing(value):
+        raise KeyError(value.job_id)
+
+    monkeypatch.setattr(application_routes, "submit_career_application", missing)
+    with TestClient(app) as client:
+        response = client.post("/api/v1/careers/applications", json={
+            "job_id": str(JOB_ID),
+            "name": "Synthetic Clinician",
+            "email": "clinician@example.com",
+            "consent_to_contact": True,
+        })
+    assert response.status_code == 404
