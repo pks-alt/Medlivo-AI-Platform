@@ -173,6 +173,9 @@ async function loadCandidate(id){
  activeCandidate=candidate;drawCandidateList();
  const detail=$('#candidateDetail');if(!detail)return;
  const jobs=bestJobs.items||[],profile=bestJobs.candidate||{};
+ const strongJobs=jobs.filter(job=>Number(job.score||0)>=9).length;
+ const goodJobs=jobs.filter(job=>Number(job.score||0)>=8&&Number(job.score||0)<9).length;
+ const reviewJobs=jobs.filter(job=>Number(job.score||0)<8).length;
  const jobCards=jobs.length?jobs.map(job=>{
    const gates=(job.gates||[]),passed=gates.filter(g=>g.passed).length;
    const strengths=(job.strengths||[]).slice(0,3),gaps=(job.gaps||[]).slice(0,2);
@@ -180,10 +183,11 @@ async function loadCandidate(id){
    '<div class="match-meta"><span>'+esc(passed)+' / '+esc(gates.length)+' hard gates passed</span>'+(job.start_date?'<span>Starts '+esc(job.start_date)+'</span>':'')+(job.jobdiva_job_id?'<span>JobDiva ID '+esc(job.jobdiva_job_id)+'</span>':'')+'</div>'+
    (strengths.length?'<div class="match-reasons"><b>Why it matches</b>'+strengths.map(x=>'<span>✓ '+esc(x)+'</span>').join('')+'</div>':'')+
    (gaps.length?'<div class="match-gaps"><b>Needs review</b>'+gaps.map(x=>'<span>• '+esc(x)+'</span>').join('')+'</div>':'')+
-   '<div class="match-next"><span class="eyebrow">RECOMMENDED NEXT STEP</span><strong>'+esc(job.recommended_next_action||'Review job match')+'</strong>'+(job.submission_status?'<small>Submission: '+esc(job.submission_status)+(job.submission_readiness?' · '+esc(job.submission_readiness):'')+'</small>':'')+'</div></article>';
+   '<div class="match-next"><span class="eyebrow">RECOMMENDED NEXT STEP</span><strong>'+esc(job.recommended_next_action||'Review job match')+'</strong>'+(job.submission_status?'<small>Submission: '+esc(job.submission_status)+(job.submission_readiness?' · '+esc(job.submission_readiness):'')+'</small>':'')+'</div>'+
+   '<div class="match-feedback"><div class="admin-actions"><button class="button compact" data-candidate-job="'+esc(job.job_id)+'">Open job</button><button class="button compact" data-match-feedback="strong_match" data-match-id="'+esc(job.match_id)+'">Strong</button><button class="button compact" data-match-feedback="good_match" data-match-id="'+esc(job.match_id)+'">Good</button><button class="button compact" data-match-feedback="weak_match" data-match-id="'+esc(job.match_id)+'">Weak</button><button class="button compact" data-match-feedback="not_a_match" data-match-id="'+esc(job.match_id)+'">Not a match</button></div><label class="small">Reason for Weak / Not a match</label><select data-match-reason="'+esc(job.match_id)+'"><option value="">Select reason</option><option value="license">License</option><option value="certification">Certification</option><option value="specialty">Specialty</option><option value="care_setting">Care setting</option><option value="experience">Experience</option><option value="availability">Availability</option><option value="location">Location</option><option value="compensation">Compensation</option><option value="other">Other</option></select></div></article>';
  }).join(''):'<div class="empty">No eligible persisted job matches are available for this candidate yet.</div>';
  detail.innerHTML='<div class="detail-heading"><div><p class="eyebrow">CANONICAL CANDIDATE</p><h2>'+esc(activeCandidate.canonical_name||'Unnamed candidate')+'</h2><p class="muted small">'+esc([profile.profession,profile.specialty,[profile.city,profile.state].filter(Boolean).join(', ')].filter(Boolean).join(' · '))+'</p></div><span class="pill">READ ONLY</span></div>'+
- '<div class="manager-metrics"><article class="metric-card"><b>'+esc(profile.profile_freshness??'–')+'</b><span>Profile readiness</span></article><article class="metric-card"><b>'+esc(jobs.length)+'</b><span>Eligible jobs</span></article><article class="metric-card attention"><b>'+esc(bestJobs.excluded_count||0)+'</b><span>Hard-gate exclusions</span></article></div>'+
+ '<div class="manager-metrics"><article class="metric-card"><b>'+esc(profile.profile_freshness??'–')+'</b><span>Profile readiness</span></article><article class="metric-card"><b>'+esc(strongJobs)+'</b><span>Strong matches 9+</span></article><article class="metric-card"><b>'+esc(goodJobs)+'</b><span>Good matches 8–8.9</span></article><article class="metric-card"><b>'+esc(reviewJobs)+'</b><span>Review matches &lt;8</span></article><article class="metric-card attention"><b>'+esc(bestJobs.excluded_count||0)+'</b><span>Hard-gate exclusions</span></article></div>'+
  '<div class="section-title" style="margin-top:18px"><h2>Best current jobs</h2><span class="pill">PERSISTED MATCHES</span></div><div class="match-candidate-list">'+jobCards+'</div>'+
  '<p class="admin-note">These recommendations come from stored Medlivo match results built from synchronized JobDiva data. No outreach, submission, ownership change, or JobDiva write-back is performed from this screen.</p>';
 }
@@ -422,6 +426,7 @@ root.addEventListener('click',event=>{
  if(b.dataset.intakeBatch)return act(b,()=>loadIntakeBatch(b.dataset.intakeBatch));
  if(b.hasAttribute('data-jobs'))return act(b,()=>drawJobs());
  if(b.hasAttribute('data-candidates'))return act(b,()=>drawCandidates());
+ if(b.dataset.candidateJob)return act(b,async()=>{await drawJobs();await loadJob(b.dataset.candidateJob);});
  if(b.dataset.job)return act(b,()=>loadJob(b.dataset.job));
  if(b.dataset.candidate)return act(b,()=>loadCandidate(b.dataset.candidate));
  if(b.dataset.matchFeedback&&b.dataset.matchId)return act(b,async()=>{
