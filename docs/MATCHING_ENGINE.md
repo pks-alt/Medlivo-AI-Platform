@@ -55,3 +55,8 @@ The matching worker now groups pending pairs by job, persists hard-gate exclusio
 ## Resume evidence in soft scoring
 
 Source-backed resume specialty signals may strengthen the existing specialty component when the canonical profile specialty is missing or incomplete. Resume clinical-skill signals are available to retrieval but are not yet scored unless an explicit job-side skill requirement exists. Resume evidence never creates a hard gate on its own.
+
+
+## Explicit clinical-skill alignment
+
+Job-side clinical skills are accepted only from explicit source requirement fields. They are persisted as non-hard-gate skill requirements. Matching compares those explicit job skills with resume-backed clinical-skill evidence as a soft component; missing skill evidence lowers the component but never excludes the candidate.
