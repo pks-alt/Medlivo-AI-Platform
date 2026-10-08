@@ -17,6 +17,16 @@ def test_pilot_limits_are_bounded(monkeypatch):
         limits_from_env()
 
 
+def test_pilot_normalizes_sqlalchemy_psycopg_url_for_direct_connection():
+    url = "postgresql+psycopg://user:pass@/medlivo_team_staging?host=/cloudsql/example"
+    assert (
+        pilot._psycopg_database_url(url)
+        == "postgresql://user:pass@/medlivo_team_staging?host=/cloudsql/example"
+    )
+    native = "postgresql://user:pass@localhost/db"
+    assert pilot._psycopg_database_url(native) == native
+
+
 @pytest.mark.asyncio
 async def test_disabled_main_does_not_require_database_or_jobdiva(monkeypatch, capsys):
     monkeypatch.setenv("PILOT_ENABLED", "false")
