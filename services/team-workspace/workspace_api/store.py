@@ -4,7 +4,7 @@ from decimal import Decimal
 import hashlib
 import json
 from uuid import UUID, uuid4
-from sqlalchemy import select, insert, update, and_, true, text
+from sqlalchemy import select, insert, update, and_, true, text, func
 from sqlalchemy.exc import IntegrityError
 from . import tables as t
 from .auth import Identity
