@@ -1,13 +1,28 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from app.routes.recruiting import router as recruiting_router
+from app.routes.career import router as career_router
+from app.db.database import open_database, close_database
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await open_database()
+    try:
+        yield
+    finally:
+        await close_database()
+
 
 app = FastAPI(
     title="Medlivo AI Platform API",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.include_router(recruiting_router)
+app.include_router(career_router)
 
 
 @app.get("/health")
