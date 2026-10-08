@@ -19,6 +19,11 @@ class JobDivaClient:
     OPEN_JOBS_PATH = "/apiv2/bi/OpenJobsList"
     UPDATED_JOBS_PATH = "/apiv2/bi/NewUpdatedJobRecords"
     UPDATED_CANDIDATES_PATH = "/apiv2/bi/NewUpdatedCandidateRecords"
+    CANDIDATE_PROFILE_PATH = "/apiv2/bi/CandidatesProfileDetail"
+    CANDIDATE_LICENSES_PATH = "/apiv2/bi/CandidatesLicensesDetail"
+    CANDIDATE_CERTIFICATIONS_PATH = "/apiv2/bi/CandidatesCertificationsDetails"
+    CANDIDATE_RESUMES_PATH = "/apiv2/bi/CandidatesResumesDetail"
+    RESUME_TEXT_PATH = "/apiv2/bi/ResumesTextDetail"
     DATE_FORMAT = "%m/%d/%Y %H:%M:%S"
 
     def __init__(
@@ -167,3 +172,35 @@ class JobDivaClient:
             "pageNumber": page_number,
             "pageSize": page_size,
         }))
+
+
+    async def candidate_profile(self, candidate_id: str | int) -> list[dict[str, Any]]:
+        """Fetch the authoritative JobDiva candidate profile detail.
+
+        The connector remains read-only. Query naming follows JobDiva's BI V2
+        convention and is isolated here so live source validation can adjust it
+        without changing Candidate Intelligence.
+        """
+        return self._json_records(await self.request(
+            "GET", self.CANDIDATE_PROFILE_PATH, params={"candidateId": candidate_id}
+        ))
+
+    async def candidate_licenses(self, candidate_id: str | int) -> list[dict[str, Any]]:
+        return self._json_records(await self.request(
+            "GET", self.CANDIDATE_LICENSES_PATH, params={"candidateId": candidate_id}
+        ))
+
+    async def candidate_certifications(self, candidate_id: str | int) -> list[dict[str, Any]]:
+        return self._json_records(await self.request(
+            "GET", self.CANDIDATE_CERTIFICATIONS_PATH, params={"candidateId": candidate_id}
+        ))
+
+    async def candidate_resumes(self, candidate_id: str | int) -> list[dict[str, Any]]:
+        return self._json_records(await self.request(
+            "GET", self.CANDIDATE_RESUMES_PATH, params={"candidateId": candidate_id}
+        ))
+
+    async def resume_text(self, resume_id: str | int) -> list[dict[str, Any]]:
+        return self._json_records(await self.request(
+            "GET", self.RESUME_TEXT_PATH, params={"resumeId": resume_id}
+        ))
