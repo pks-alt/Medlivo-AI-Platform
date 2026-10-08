@@ -1,0 +1,20 @@
+[project]
+name = "medlivo-workers"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "psycopg[binary]>=3.2,<4.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8,<10",
+  "pytest-asyncio>=0.25,<1.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+
+[tool.uv]
+package = false

@@ -1,0 +1,35 @@
+name: Test JobDiva Data Foundation
+on:
+  pull_request:
+    paths:
+      - 'apps/workers/**'
+      - 'apps/api/app/db/schema.sql'
+      - 'apps/api/app/db/migrations/002_integration_sync_foundation.sql'
+      - '.github/workflows/jobdiva-data-foundation-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/workers/**'
+      - 'apps/api/app/db/schema.sql'
+      - 'apps/api/app/db/migrations/002_integration_sync_foundation.sql'
+      - '.github/workflows/jobdiva-data-foundation-tests.yml'
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: apps/workers
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install worker tests
+        run: python -m pip install '.[test]'
+      - name: Test JobDiva data foundation
+        run: python -m pytest -q
+      - name: Compile workers
+        run: python -m compileall -q jobdiva_sync
