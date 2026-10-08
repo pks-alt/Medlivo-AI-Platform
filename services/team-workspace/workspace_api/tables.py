@@ -141,3 +141,35 @@ Index("idx_ws_job_intake_batch_team_created", job_intake_batches.c.tenant_id, jo
 Index("idx_ws_job_intake_item_batch_status", job_intake_items.c.tenant_id, job_intake_items.c.batch_id, job_intake_items.c.status, job_intake_items.c.row_number)
 Index("idx_ws_weekly_goal_team_week", weekly_goals.c.tenant_id, weekly_goals.c.team_id, weekly_goals.c.week_start)
 Index("idx_ws_weekly_snapshot_team_week", weekly_snapshots.c.tenant_id, weekly_snapshots.c.team_id, weekly_snapshots.c.week_start)
+
+
+job_publications = Table(
+    "ws_job_publication", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("team_id"),
+    U("job_id"), U("intake_item_id"), Column("source_snapshot", JSON, nullable=False),
+    Column("enhanced_snapshot", JSON, nullable=False), Column("quality_score", JSON, nullable=False),
+    S("readiness", nullable=False), S("recruiting_status", nullable=False), S("website_status", nullable=False),
+    U("recruiting_approved_by"), D("recruiting_approved_at"),
+    U("website_approved_by"), D("website_approved_at"),
+    Column("version", Integer, nullable=False), U("created_by", nullable=False),
+    D("created_at", nullable=False), D("updated_at", nullable=False),
+    UniqueConstraint("tenant_id", "id"),
+    ForeignKeyConstraint(["tenant_id", "team_id"], ["team.tenant_id", "team.id"]),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "intake_item_id"], ["ws_job_intake_item.tenant_id", "ws_job_intake_item.id"]),
+    ForeignKeyConstraint(["tenant_id", "created_by"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "recruiting_approved_by"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "website_approved_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+job_publication_audit = Table(
+    "ws_job_publication_audit", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("publication_id", nullable=False),
+    U("actor_user_id", nullable=False), S("action", nullable=False), Column("details", JSON, nullable=False),
+    D("created_at", nullable=False),
+    ForeignKeyConstraint(["tenant_id", "publication_id"], ["ws_job_publication.tenant_id", "ws_job_publication.id"]),
+    ForeignKeyConstraint(["tenant_id", "actor_user_id"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+Index("idx_ws_job_publication_team_status", job_publications.c.tenant_id, job_publications.c.team_id, job_publications.c.recruiting_status, job_publications.c.website_status, job_publications.c.updated_at)
+Index("idx_ws_job_publication_audit_pub_created", job_publication_audit.c.tenant_id, job_publication_audit.c.publication_id, job_publication_audit.c.created_at)
