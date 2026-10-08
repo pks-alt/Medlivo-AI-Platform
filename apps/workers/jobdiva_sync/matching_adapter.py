@@ -32,6 +32,7 @@ def job_match_input(
     required_license_states: list[str] = []
     required_certifications: list[str] = []
     care_setting = None
+    required_skills: list[str] = []
 
     for requirement in requirements:
         key = requirement.get("canonical_key")
@@ -49,6 +50,9 @@ def job_match_input(
                 required_certifications.append(text)
         elif key == "setting":
             care_setting = care_setting or text
+        elif key == "skill":
+            if text not in required_skills:
+                required_skills.append(text)
 
     payload = job.get("normalized_payload") or {}
     if not care_setting and isinstance(payload, dict):
@@ -65,6 +69,7 @@ def job_match_input(
         start_date=job.get("start_date"),
         required_license_states=required_license_states,
         required_certifications=required_certifications,
+        required_skills=required_skills,
     )
 
 

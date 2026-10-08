@@ -23,7 +23,7 @@ Status values:
 | JobDiva | Historical backfill | IN DEVELOPMENT | Resumable 14-day backfill orchestration implemented; production scheduling and real-data acceptance pending |
 | JobDiva | Delta / near-real-time sync | IN DEVELOPMENT | Replay-safe jobs/candidates delta landing plus disabled-by-default Cloud Run pilot runtime; real staging execution still requires operator approval |
 | JobDiva | Candidate / resume / job write-back | DISABLED | Enable only after vendor API authorization and acceptance testing |
-| Intelligence | Job normalization | IN DEVELOPMENT | Division-aware model plus JobDiva JobsDetail enrichment and source-backed requirements; real-data field acceptance pending |
+| Intelligence | Job normalization | IN DEVELOPMENT | Division-aware model plus JobDiva JobsDetail enrichment and source-backed license/certification/setting/skill requirements; real-data field acceptance pending |
 | Intelligence | Rehabilitation job template | BUILT | PT/PTA/OT/COTA/SLP oriented |
 | Intelligence | Nursing & Allied job template | BUILT | Profession / specialty / shift / credential oriented |
 | Intelligence | Locum Tenens job template | BUILT | Schedule / call / license / credentialing oriented |
@@ -34,7 +34,7 @@ Status values:
 | Matching | Profession hard gate | BUILT | Deterministic and now active in persisted canonical matching |
 | Matching | State license hard gate | BUILT | Deterministic and persisted as match exclusions when failed |
 | Matching | Required certification hard gate | BUILT | Deterministic and persisted as match exclusions when failed |
-| Matching | Explainable 0–10 score | IN DEVELOPMENT | Deterministic scoring now consumes source-backed care-setting and resume specialty evidence; real-data quality acceptance pending |
+| Matching | Explainable 0–10 score | IN DEVELOPMENT | Deterministic scoring consumes source-backed care-setting, resume specialty, and explicit job-skill alignment; real-data quality acceptance pending |
 | Matching | Real-data acceptance pilot | IN DEVELOPMENT | Recruiter Strong/Good/Weak/Not-a-match feedback with manager score-band/division agreement summary |
 | Matching | Semantic/vector retrieval | IN DEVELOPMENT | Hybrid retrieval is integrated into worker processing priority behind hard gates; production embedding/vector-store integration and real-data acceptance pending |
 | Matching | AI reranking | PLANNED | Deferred until the real-data acceptance pilot identifies where deterministic ranking needs help |

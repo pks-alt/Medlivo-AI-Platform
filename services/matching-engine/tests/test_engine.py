@@ -156,3 +156,51 @@ def test_resume_specialty_evidence_does_not_create_hard_gate():
     result = score_match(job, candidate)
     assert result.eligible is False
     assert any(gate.key == "license_state" and not gate.passed for gate in result.gates)
+
+
+def test_explicit_job_skills_use_resume_clinical_skill_evidence_as_soft_score():
+    candidate = CandidateMatchInput(
+        candidate_id="candidate-skills",
+        profession="Registered Nurse",
+        specialty="ICU",
+        clinical_skills=["telemetry", "ventilator"],
+        licenses=[CandidateLicense(license_type="RN", state="WA", status="Active")],
+        resume_available=True,
+        profile_readiness=90,
+    )
+    job = JobMatchInput(
+        job_id="job-skills",
+        division="nursing_allied",
+        profession="Registered Nurse",
+        specialty="ICU",
+        required_license_states=["WA"],
+        required_skills=["Telemetry", "Ventilator"],
+    )
+    result = score_match(job, candidate)
+    skills = next(component for component in result.components if component.key == "clinical_skills")
+    assert skills.score == 10
+    assert "all explicit job clinical skills" in skills.reason
+
+
+def test_missing_soft_skill_evidence_does_not_exclude_candidate():
+    candidate = CandidateMatchInput(
+        candidate_id="candidate-partial-skills",
+        profession="Registered Nurse",
+        specialty="ICU",
+        clinical_skills=["telemetry"],
+        licenses=[CandidateLicense(license_type="RN", state="WA", status="Active")],
+        resume_available=True,
+        profile_readiness=90,
+    )
+    job = JobMatchInput(
+        job_id="job-partial-skills",
+        division="nursing_allied",
+        profession="Registered Nurse",
+        specialty="ICU",
+        required_license_states=["WA"],
+        required_skills=["Telemetry", "Ventilator"],
+    )
+    result = score_match(job, candidate)
+    assert result.eligible is True
+    skills = next(component for component in result.components if component.key == "clinical_skills")
+    assert skills.score == 5
