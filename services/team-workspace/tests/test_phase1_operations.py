@@ -342,3 +342,128 @@ def test_recruiter_cannot_read_another_recruiters_weekly_progress(client, header
         headers=headers("recruiter-a"),
     )
     assert response.status_code == 403
+
+
+def publication_payload():
+    return {
+        "team_id": idn(30),
+        "job_id": idn(200),
+        "intake_item_id": None,
+        "source_snapshot": {
+            "title": "Contract PT - Maternity Leave Coverage",
+            "city": "Fresno",
+            "state": "CA",
+            "bill_rate": 85,
+        },
+        "enhanced_snapshot": {
+            "public_title": "Physical Therapist Travel Contract - Fresno, CA",
+            "summary": "Medlivo is seeking a Physical Therapist in Fresno, California.",
+            "sections": [
+                {
+                    "key": "overview",
+                    "heading": "About the Opportunity",
+                    "content": "Medlivo is seeking a Physical Therapist in Fresno, California.",
+                    "provenance": "medlivo_standard",
+                    "requires_confirmation": False,
+                }
+            ],
+            "public_fields": {"city": "Fresno", "state": "CA"},
+            "internal_fields": {"bill_rate": 85},
+        },
+        "quality_score": {
+            "overall": 92,
+            "core_data": 95,
+            "matching_readiness": 95,
+            "publishing_readiness": 90,
+            "missing_fields": [],
+            "warnings": [],
+        },
+        "readiness": "ready_to_publish",
+    }
+
+
+def test_manager_approves_recruiting_before_website(client, headers):
+    created = client.post(
+        "/api/v1/team/job-publications",
+        headers=headers("manager-a"),
+        json=publication_payload(),
+    )
+    assert created.status_code == 201
+    publication = created.json()
+
+    premature = client.post(
+        f"/api/v1/team/job-publications/{publication['id']}/decision",
+        headers=headers("manager-a"),
+        json={
+            "target": "website",
+            "decision": "approved",
+            "expected_version": publication["version"],
+        },
+    )
+    assert premature.status_code == 422
+
+    recruiting = client.post(
+        f"/api/v1/team/job-publications/{publication['id']}/decision",
+        headers=headers("manager-a"),
+        json={
+            "target": "recruiting",
+            "decision": "approved",
+            "expected_version": publication["version"],
+        },
+    )
+    assert recruiting.status_code == 200
+    assert recruiting.json()["recruiting_status"] == "approved"
+
+    website = client.post(
+        f"/api/v1/team/job-publications/{publication['id']}/decision",
+        headers=headers("manager-a"),
+        json={
+            "target": "website",
+            "decision": "approved",
+            "expected_version": recruiting.json()["version"],
+        },
+    )
+    assert website.status_code == 200
+    assert website.json()["website_status"] == "approved"
+
+    detail = client.get(
+        f"/api/v1/team/job-publications/{publication['id']}",
+        headers=headers("manager-a"),
+    )
+    assert detail.status_code == 200
+    actions = [item["action"] for item in detail.json()["history"]]
+    assert actions == ["draft.created", "recruiting.approved", "website.approved"]
+
+
+def test_website_cannot_approve_job_that_is_not_publish_ready(client, headers):
+    payload = publication_payload()
+    payload["readiness"] = "manager_review"
+    payload["quality_score"]["warnings"] = ["Confirm requirements"]
+    created = client.post(
+        "/api/v1/team/job-publications",
+        headers=headers("manager-a"),
+        json=payload,
+    )
+    assert created.status_code == 201
+
+    recruiting = client.post(
+        f"/api/v1/team/job-publications/{created.json()['id']}/decision",
+        headers=headers("manager-a"),
+        json={"target": "recruiting", "decision": "approved", "expected_version": 1},
+    )
+    assert recruiting.status_code == 200
+
+    website = client.post(
+        f"/api/v1/team/job-publications/{created.json()['id']}/decision",
+        headers=headers("manager-a"),
+        json={"target": "website", "decision": "approved", "expected_version": 2},
+    )
+    assert website.status_code == 422
+
+
+def test_recruiter_cannot_access_job_publication_approval(client, headers):
+    response = client.get(
+        "/api/v1/team/job-publications",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 403
