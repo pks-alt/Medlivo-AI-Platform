@@ -1,0 +1,45 @@
+name: Phase 3 read-only staging acceptance probe
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    if: github.repository == 'pks-alt/Medlivo-AI-Platform'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate probe logic
+        run: python3 -m unittest infrastructure/team-staging/tests/test_acceptance.py -v
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Require configured staging origins
+        env:
+          WEB_URL: ${{ vars.TEAM_STAGING_WEB_URL }}
+          API_URL: ${{ vars.TEAM_STAGING_API_URL }}
+        run: |
+          test -n "$WEB_URL"
+          test -n "$API_URL"
+      - name: Run read-only deployed staging probe
+        env:
+          WEB_URL: ${{ vars.TEAM_STAGING_WEB_URL }}
+          API_URL: ${{ vars.TEAM_STAGING_API_URL }}
+        run: |
+          set -euo pipefail
+          TOKEN="$(gcloud auth print-identity-token --audiences="$API_URL")"
+          python3 infrastructure/team-staging/acceptance.py             --web-url "$WEB_URL"             --api-url "$API_URL"             --api-token "$TOKEN"             --output phase3-staging-acceptance.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase3-staging-acceptance
+          path: phase3-staging-acceptance.json
+          if-no-files-found: ignore
+          retention-days: 14
