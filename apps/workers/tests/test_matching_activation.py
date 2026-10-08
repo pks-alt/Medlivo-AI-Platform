@@ -40,6 +40,7 @@ def test_candidate_match_input_uses_enriched_credentials_and_resume_readiness():
         "city": "Seattle",
         "state": "WA",
         "profile_freshness": 100,
+        "resume_care_settings": ["acute_care", "icu"],
     }
     result = candidate_match_input(
         candidate,
@@ -54,6 +55,7 @@ def test_candidate_match_input_uses_enriched_credentials_and_resume_readiness():
     assert result.certifications[0].name == "BLS"
     assert result.resume_available is True
     assert result.profile_readiness == 100
+    assert result.care_settings == ["acute_care", "icu"]
 
 
 class FakeMatchingStore:
@@ -189,3 +191,21 @@ async def test_retrieval_integration_still_persists_hard_gate_exclusions():
     excluded = next(item for item in store.persisted if item.candidate_id == "candidate-med-surg")
     assert excluded.eligible is False
     assert any("BLS" in gap for gap in excluded.gaps)
+
+
+def test_explicit_care_settings_argument_overrides_resume_evidence():
+    candidate = {
+        "id": "candidate-override",
+        "profession": "Physical Therapist",
+        "profile_freshness": 80,
+        "resume_care_settings": ["skilled_nursing"],
+    }
+    result = candidate_match_input(
+        candidate,
+        licenses=[],
+        certifications=[],
+        availability=None,
+        resume_available=True,
+        care_settings=["outpatient"],
+    )
+    assert result.care_settings == ["outpatient"]

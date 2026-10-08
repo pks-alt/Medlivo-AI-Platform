@@ -81,7 +81,7 @@ def candidate_match_input(
         candidate_id=str(candidate["id"]),
         profession=candidate.get("profession"),
         specialty=candidate.get("specialty"),
-        care_settings=care_settings or [],
+        care_settings=care_settings if care_settings is not None else list(candidate.get("resume_care_settings") or []),
         city=candidate.get("city"),
         state=candidate.get("state"),
         available_from=availability.get("available_from") if availability else None,

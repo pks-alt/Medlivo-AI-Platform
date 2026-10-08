@@ -30,7 +30,7 @@ Status values:
 | Intelligence | Source provenance | BUILT | source_confirmed / medlivo_standard / ai_suggested |
 | Intelligence | Job quality/readiness scoring | BUILT | Core / matching / publishing readiness |
 | Intelligence | Candidate Intelligence | IN DEVELOPMENT | Canonical candidate facts + evidence plus JobDiva profile/license/cert/resume enrichment; production scheduling and real-data acceptance pending |
-| Intelligence | Resume parsing / deep experience extraction | IN DEVELOPMENT | Evidence-backed dated experience, care-setting, specialty, and clinical-skill extraction implemented; real-data acceptance and broader vocabulary tuning pending |
+| Intelligence | Resume parsing / deep experience extraction | IN DEVELOPMENT | Evidence-backed dated experience, care-setting, specialty, and clinical-skill extraction implemented; primary-resume care-setting evidence now feeds matching; real-data acceptance and vocabulary tuning pending |
 | Matching | Profession hard gate | BUILT | Deterministic and now active in persisted canonical matching |
 | Matching | State license hard gate | BUILT | Deterministic and persisted as match exclusions when failed |
 | Matching | Required certification hard gate | BUILT | Deterministic and persisted as match exclusions when failed |
