@@ -6,6 +6,56 @@ from typing import Any
 from psycopg.rows import dict_row
 
 from app.db.database import connection
+MATCH_STRONG_THRESHOLD = 8.0
+
+
+def _display_key(key: str) -> str:
+    return key.replace(":", " ").replace("_", " ").title()
+
+
+def _match_signals(explanation: dict | None, components: list[dict] | None) -> list[MatchSignal]:
+    signals: list[MatchSignal] = []
+    payload = explanation or {}
+    for gate in payload.get("gates", []):
+        if not isinstance(gate, dict):
+            continue
+        key = str(gate.get("key") or "hard_gate")
+        signals.append(MatchSignal(
+            key=key,
+            label=_display_key(key),
+            status="passed" if gate.get("passed") else "failed",
+            value=str(gate.get("reason") or "Hard-gate result recorded"),
+        ))
+
+    for component in components or []:
+        if not isinstance(component, dict):
+            continue
+        score = float(component.get("score") or 0)
+        evidence = component.get("evidence") if isinstance(component.get("evidence"), dict) else {}
+        key = str(component.get("key") or "score_component")
+        signals.append(MatchSignal(
+            key=key,
+            label=_display_key(key),
+            status="strong" if score >= 8 else "gap" if score < 5 else "review",
+            value=str(evidence.get("reason") or f"Score component: {score:.1f}/10"),
+        ))
+    return signals
+
+
+def _why_matched(explanation: dict | None, readiness_status: str) -> str:
+    payload = explanation or {}
+    summary = payload.get("summary")
+    if summary:
+        return str(summary)
+    if readiness_status == "excluded":
+        gaps = [str(v) for v in payload.get("gaps", []) if v]
+        return "Excluded: " + "; ".join(gaps[:3]) if gaps else "Excluded by a required hard gate."
+    strengths = [str(v) for v in payload.get("strengths", []) if v]
+    if strengths:
+        return "; ".join(strengths[:3])
+    return "Eligible match; recruiter review recommended."
+
+
 from app.schemas.recruiting import (
     CandidateMatch,
     CandidateProfile,
@@ -70,7 +120,7 @@ class RecruitingRepository:
                       COALESCE(c.name, '') AS customer,
                       CONCAT_WS(', ', j.city, j.state) AS location,
                       j.status,
-                      COUNT(m.id) FILTER (WHERE m.overall_score >= 80) AS strong_matches,
+                      COUNT(m.id) FILTER (WHERE m.overall_score >= 8.0 AND m.status <> 'excluded') AS strong_matches,
                       COUNT(s.id) FILTER (WHERE s.readiness_status = 'submission_ready') AS submission_ready,
                       j.start_date
                     FROM job j
@@ -151,7 +201,20 @@ class RecruitingRepository:
                       CONCAT_WS(', ', ca.city, ca.state) AS location,
                       m.overall_score,
                       m.status AS readiness_status,
-                      m.explanation
+                      m.explanation,
+                      COALESCE((
+                        SELECT jsonb_agg(
+                          jsonb_build_object(
+                            'key', msc.component_key,
+                            'score', msc.score,
+                            'weight', msc.weight,
+                            'evidence', msc.evidence
+                          )
+                          ORDER BY msc.weight DESC, msc.score DESC
+                        )
+                        FROM match_score_component msc
+                        WHERE msc.tenant_id=m.tenant_id AND msc.match_id=m.id
+                      ), '[]'::jsonb) AS components
                     FROM match m
                     JOIN candidate ca ON ca.id = m.candidate_id
                     WHERE m.job_id = %s
@@ -180,8 +243,8 @@ class RecruitingRepository:
                 location=r["location"] or "",
                 overall_score=float(r["overall_score"]),
                 readiness_status=r["readiness_status"],
-                signals=[],
-                why_matched=(r["explanation"] or {}).get("summary", "Strong candidate match."),
+                signals=_match_signals(r["explanation"], r["components"]),
+                why_matched=_why_matched(r["explanation"], r["readiness_status"]),
             )
             for r in match_rows
         ]
@@ -290,5 +353,5 @@ class RecruitingRepository:
             engagement="Unknown",
             owner="Unassigned",
             evidence=evidence,
-            readiness_status="near_ready" if score >= 80 else "review",
+            readiness_status="near_ready" if score >= MATCH_STRONG_THRESHOLD else "review",
         )
