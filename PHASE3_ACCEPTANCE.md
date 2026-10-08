@@ -68,7 +68,7 @@ Code-complete does not equal production-ready. Phase 3 remains in acceptance unt
 
 - [ ] Required CI workflows are green on canonical `main`.
 - [ ] No staging test uses production credentials or production mutation.
-- [ ] Authentication, authorization denial, and workspace-service failures are observable. Workspace event-only logs and `/ready` database reachability are implemented; staging log-based metrics/alerts still require configuration.
+- [ ] Authentication, authorization denial, and workspace-service failures are observable. Workspace event-only logs, `/ready`, and opt-in Terraform alert policies are implemented; staging apply and notification-channel verification remain required.
 - [ ] JobDiva sync health and failed runs are observable.
 - [ ] Pilot rollback procedure is documented and tested. See `docs/PHASE3_ROLLBACK_RUNBOOK.md`.
 - [ ] Staging configuration/secrets are reviewed and reproducible.
