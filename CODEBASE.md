@@ -78,24 +78,22 @@ Temporary secure file staging is allowed only when technically required for tran
 It contains the private team workspace plus current Phase 1 intelligence and recruiter workflow work. It should target `main`.
 
 ### PR #3
-Superseded by PR #4 because PR #4 is built on top of the private team workspace work.
+**MERGED INTO `main`.** The private team workspace foundation is now part of the canonical base.
 
 ### PR #1
-Reference-only Cloud Run service-to-service authentication repair. Do not merge independently. The unique authentication safeguards must be reconciled into PR #4 before the consolidation merge.
+**CLOSED / SUPERSEDED.** Its Cloud Run service-to-service authentication safeguards have been reconciled into PR #4.
 
 ### PR #2
-Reference-only read-only JobDiva pilot. Do not merge independently. Its stronger rate-limit, retry, resume-selection, connector-contract and safety tests must be reconciled into the active JobDiva connector before the consolidation merge.
+**CLOSED / SUPERSEDED.** Its relevant read-only JobDiva safety controls have been reconciled into the active connector in PR #4.
 
 ## Required before merging PR #4 to main
 
-1. Reconcile PR #1 service-to-service authentication safeguards.
-2. Reconcile PR #2 JobDiva connector safeguards and useful tests.
-3. Run all current CI suites.
-4. Confirm no parallel ATS application/resume persistence remains.
-5. Confirm JobDiva write paths remain disabled.
-6. Confirm recruiter/manager RBAC and tenant isolation.
-7. Confirm public Career API exposes approved public fields only.
-8. Update this document if any component changes status.
+1. Run all current CI suites.
+2. Confirm no parallel ATS application/resume persistence remains.
+3. Confirm JobDiva write paths remain disabled.
+4. Confirm recruiter/manager RBAC and tenant isolation.
+5. Confirm public Career API exposes approved public fields only.
+6. Update this document if any component changes status.
 
 ## Development rule after consolidation
 
