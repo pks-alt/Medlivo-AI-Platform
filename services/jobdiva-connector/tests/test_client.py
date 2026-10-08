@@ -2,13 +2,15 @@ from datetime import datetime
 import httpx
 import pytest
 
-from jobdiva_connector.client import JobDivaClient, JobDivaError
+from jobdiva_connector.client import JobDivaClient, JobDivaError, JobDivaHTTPError, PilotBudget
 from jobdiva_connector.config import JobDivaSettings
+from jobdiva_connector.resumes import latest_resume_id
 
 
 def settings(**overrides):
     values = dict(
-        client_id=2781,
+        live_enabled=True,
+        client_id="2781",
         username="api-user@example.test",
         password="not-a-real-secret",
         api_base_url="https://api.jobdiva.com",
@@ -116,3 +118,93 @@ async def test_candidate_intelligence_reads_use_candidate_and_resume_ids():
         ]
     finally:
         await client.close()
+
+
+def test_disabled_settings_require_no_credentials():
+    disabled = JobDivaSettings(live_enabled=False)
+    assert disabled.live_enabled is False
+
+
+def test_disabled_client_never_connects():
+    with pytest.raises(JobDivaError, match="disabled"):
+        JobDivaClient(JobDivaSettings(live_enabled=False))
+
+
+@pytest.mark.asyncio
+async def test_503_retries_are_bounded():
+    calls = 0
+    sleeps = []
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(503)
+    async def sleep(seconds):
+        sleeps.append(seconds)
+    client = JobDivaClient(settings(), transport=httpx.MockTransport(handler), sleep=sleep)
+    client._access_token = "synthetic-token-123"
+    try:
+        with pytest.raises(JobDivaHTTPError, match="503"):
+            await client.open_jobs()
+        assert calls == 3
+        assert sleeps == [1.0, 2.0]
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_429_retry_after_is_honored():
+    calls = 0
+    sleeps = []
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return httpx.Response(429, headers={"Retry-After": "7"})
+        return httpx.Response(200, json=[])
+    async def sleep(seconds):
+        sleeps.append(seconds)
+    client = JobDivaClient(settings(), transport=httpx.MockTransport(handler), sleep=sleep)
+    client._access_token = "synthetic-token-123"
+    try:
+        rows = await client.open_jobs()
+        assert rows == []
+        assert sleeps == [7.0]
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_response_size_limit_stops_large_payload():
+    async def handler(request):
+        return httpx.Response(200, content=b"x" * 101)
+    client = JobDivaClient(settings(max_response_bytes=100), transport=httpx.MockTransport(handler))
+    client._access_token = "synthetic-token-123"
+    try:
+        with pytest.raises(JobDivaError, match="size limit"):
+            await client.open_jobs()
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_read_allowlist_blocks_unknown_endpoint():
+    client = JobDivaClient(settings(), transport=httpx.MockTransport(lambda r: httpx.Response(200)))
+    client._access_token = "synthetic-token-123"
+    try:
+        with pytest.raises(JobDivaError, match="allowlisted"):
+            await client.request("GET", "/apiv2/bi/Unknown")
+    finally:
+        await client.close()
+
+
+def test_latest_resume_selection_requires_unambiguous_timestamp():
+    records = [
+        {"RESUMEID": 7, "DATECREATED": "2026-01-01T00:00:00Z"},
+        {"RESUMEID": 8, "DATECREATED": "2026-02-01T00:00:00Z"},
+    ]
+    assert latest_resume_id(records) == "8"
+    with pytest.raises(JobDivaError, match="Multiple resumes"):
+        latest_resume_id([
+            {"RESUMEID": 7, "DATECREATED": "2026-02-01T00:00:00Z"},
+            {"RESUMEID": 8, "DATECREATED": "2026-02-01T00:00:00Z"},
+        ])
