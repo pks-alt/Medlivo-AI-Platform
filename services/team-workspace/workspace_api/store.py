@@ -1184,6 +1184,117 @@ class WorkspaceStore:
         return self._global_mutate(identity, key, "job_publication.decision", payload, apply)
 
 
+    def recruiter_dashboard(self, identity, week_start):
+        """Recruiter-only read-only productivity scorecard."""
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+
+            goal = conn.execute(select(t.weekly_goals).where(
+                t.weekly_goals.c.tenant_id == principal["tenant_id"],
+                t.weekly_goals.c.recruiter_user_id == principal["id"],
+                t.weekly_goals.c.week_start == week_start,
+            )).mappings().first()
+            actual = conn.execute(select(t.weekly_snapshots).where(
+                t.weekly_snapshots.c.tenant_id == principal["tenant_id"],
+                t.weekly_snapshots.c.recruiter_user_id == principal["id"],
+                t.weekly_snapshots.c.week_start == week_start,
+            )).mappings().first()
+
+            owned_cases = conn.execute(
+                select(func.count()).select_from(t.cases).where(
+                    t.cases.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.owner_user_id == principal["id"],
+                )
+            ).scalar_one()
+
+            open_followups = conn.execute(
+                select(func.count()).select_from(t.tasks)
+                .join(t.cases, and_(
+                    t.cases.c.id == t.tasks.c.case_id,
+                    t.cases.c.tenant_id == t.tasks.c.tenant_id,
+                ))
+                .where(
+                    t.tasks.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.owner_user_id == principal["id"],
+                    t.tasks.c.status == "open",
+                )
+            ).scalar_one()
+
+            overdue_followups = conn.execute(
+                select(func.count()).select_from(t.tasks)
+                .join(t.cases, and_(
+                    t.cases.c.id == t.tasks.c.case_id,
+                    t.cases.c.tenant_id == t.tasks.c.tenant_id,
+                ))
+                .where(
+                    t.tasks.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.owner_user_id == principal["id"],
+                    t.tasks.c.status == "open",
+                    t.tasks.c.due_at < now(),
+                )
+            ).scalar_one()
+
+            active_priority_jobs = conn.execute(
+                select(func.count()).select_from(t.jobs).where(
+                    t.jobs.c.tenant_id == principal["tenant_id"],
+                    t.jobs.c.owner_user_id == principal["id"],
+                    t.jobs.c.status.not_in(["closed", "cancelled", "canceled"]),
+                    t.jobs.c.priority >= 8,
+                )
+            ).scalar_one()
+
+            reviewed = select(t.match_feedback.c.match_id).where(
+                t.match_feedback.c.tenant_id == principal["tenant_id"],
+                t.match_feedback.c.recruiter_user_id == principal["id"],
+            )
+            unreviewed_matches = conn.execute(
+                select(func.count()).select_from(t.matches)
+                .join(t.jobs, and_(
+                    t.jobs.c.id == t.matches.c.job_id,
+                    t.jobs.c.tenant_id == t.matches.c.tenant_id,
+                ))
+                .where(
+                    t.matches.c.tenant_id == principal["tenant_id"],
+                    t.jobs.c.owner_user_id == principal["id"],
+                    t.jobs.c.status.not_in(["closed", "cancelled", "canceled"]),
+                    t.matches.c.status != "excluded",
+                    t.matches.c.overall_score >= 8,
+                    t.matches.c.id.not_in(reviewed),
+                )
+            ).scalar_one()
+
+            return clean({
+                "week_start": week_start,
+                "targets": {
+                    "submissions": goal["submissions_target"] if goal else 0,
+                    "interviews": goal["interviews_target"] if goal else 0,
+                    "closures": goal["closures_target"] if goal else 0,
+                    "priority_jobs": goal["priority_jobs_target"] if goal else 0,
+                },
+                "actuals": {
+                    "submissions": actual["submissions_actual"] if actual else 0,
+                    "interviews": actual["interviews_actual"] if actual else 0,
+                    "closures": actual["closures_actual"] if actual else 0,
+                    "offers": actual["offers_actual"] if actual else 0,
+                    "starts": actual["starts_actual"] if actual else 0,
+                    "qualified": actual["qualified_actual"] if actual else 0,
+                    "responses": actual["responses_actual"] if actual else 0,
+                },
+                "workload": {
+                    "owned_work_items": owned_cases,
+                    "open_followups": open_followups,
+                    "overdue_followups": overdue_followups,
+                    "active_priority_jobs": active_priority_jobs,
+                    "unreviewed_matches": unreviewed_matches,
+                },
+                "actuals_generated_at": actual["generated_at"] if actual else None,
+                "read_only": True,
+                "source_of_record": "jobdiva",
+            })
+
+
     def daily_priorities(self, identity, *, limit=20):
         """Recruiter-only, read-only start-of-day priorities.
 
