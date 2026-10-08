@@ -41,7 +41,7 @@ Status values:
 | Recruiter | Private recruiter workspace | BUILT | Notes, follow-ups, activity, ownership |
 | Recruiter | Daily priorities | IN DEVELOPMENT | My Work now prioritizes overdue/due-soon follow-ups and strong unreviewed matches; staging recruiter acceptance pending |
 | Recruiter | Recruiter dashboard | IN DEVELOPMENT | Weekly goal-vs-actual plus owned workload, follow-ups, priority jobs, and unreviewed matches; staging recruiter acceptance pending |
-| Recruiter | Match Queue | IN DEVELOPMENT | Two-way persisted matching is active; recruiter match-quality pilot feedback is now being collected |
+| Recruiter | Match Queue | IN DEVELOPMENT | Persisted matching now includes score-band triage, hide-reviewed workflow, explainable evidence, and recruiter feedback; real-data UX acceptance pending |
 | Recruiter | Candidate → best jobs | IN DEVELOPMENT | Ranked persisted matches now include score-band summary, direct job opening, explanations, next action, and recruiter feedback; real-data UX acceptance pending |
 | Recruiter | Recommended next action | BUILT | Read-only recommendation in Match Queue |
 | Recruiter | Automated outreach | DISABLED | Human approval, consent and policy required |
