@@ -15,7 +15,7 @@ Status values:
 | --- | --- | --- | --- |
 | Access | Google sign-in | BUILT | Private workspace foundation; staging acceptance still required |
 | Access | Recruiter / manager / admin RBAC | BUILT | Team and tenant scoping implemented |
-| Access | Production OAuth / Cloud Run acceptance | IN DEVELOPMENT | Must be validated in private staging |
+| Access | Production OAuth / Cloud Run acceptance | IN DEVELOPMENT | Manual read-only deployed staging probe implemented; real OAuth/two-browser acceptance still required |
 | JobDiva | Read-only jobs sync | IN DEVELOPMENT | Delta landing, backfill, canonical promotion and JobsDetail enrichment implemented; production scheduling/real-data acceptance pending |
 | JobDiva | Candidate profile read | BUILT | Read-only connector method feeding Candidate Intelligence enrichment |
 | JobDiva | License read | BUILT | Read-only connector method with normalized canonical persistence |
