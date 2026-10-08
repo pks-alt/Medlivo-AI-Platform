@@ -20,7 +20,7 @@ Status values:
 | JobDiva | Certification read | BUILT | Read-only connector method |
 | JobDiva | Resume metadata read | BUILT | Read-only connector method |
 | JobDiva | Resume text read | BUILT | Read-only connector method |
-| JobDiva | Historical backfill | IN DEVELOPMENT | Durable checkpoints/runs added; historical window orchestration still pending |
+| JobDiva | Historical backfill | IN DEVELOPMENT | Resumable 14-day backfill orchestration implemented; production scheduling and real-data acceptance pending |
 | JobDiva | Delta / near-real-time sync | IN DEVELOPMENT | Replay-safe jobs/candidates delta landing worker implemented; deployment/webhook reconciliation still pending |
 | JobDiva | Candidate / resume / job write-back | DISABLED | Enable only after vendor API authorization and acceptance testing |
 | Intelligence | Job normalization | BUILT | Division-aware canonical job model |
@@ -61,5 +61,5 @@ Status values:
 | External | Clinician recruiter feedback | PLANNED | Anonymous clinician feedback; management first |
 | Platform | Background workers | IN DEVELOPMENT | JobDiva checkpointed delta worker is now implemented; production scheduling/deployment pending |
 | Platform | Auditability | BUILT | Workspace and approval audit foundations |
-| Platform | Monitoring / alerting | PLANNED | Required before production readiness |
+| Platform | Monitoring / alerting | IN DEVELOPMENT | Read-only JobDiva sync health API implemented; alert delivery still pending |
 | Platform | Rollback / runbooks | PLANNED | Required before production readiness |
