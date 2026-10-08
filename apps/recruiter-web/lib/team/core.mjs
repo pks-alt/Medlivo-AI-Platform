@@ -110,11 +110,11 @@ function endpoint(path, method, query) {
   const read = [
     '/me', '/cases', '/jobs', `/jobs/${id}`, '/candidates', `/candidates/${id}`,
     '/manager/overview', '/manager/weekly-review', '/admin/users', '/admin/teams', '/admin/audit',
-    '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings', `/recruiters/${id}/weekly-goals`, '/job-publications', `/job-publications/${id}`, '/applications',
+    '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings', `/recruiters/${id}/weekly-goals`, '/job-publications', `/job-publications/${id}`,
     root, `${root}/(?:notes|tasks|audit|eligible-owners)`
   ];
   const post = [
-    '/admin/users', '/job-intake/upload', '/job-intake/batches', `/job-intake/batches/${id}/rows`, '/job-publications', `/job-publications/${id}/decision`, `/applications/${id}/assign`,
+    '/admin/users', '/job-intake/upload', '/job-intake/batches', `/job-intake/batches/${id}/rows`, '/job-publications', `/job-publications/${id}/decision`,
     `${root}/(?:notes|tasks|reassign)`
   ];
   const put = ['/job-intake/mappings', `/recruiters/${id}/weekly-goals`];
