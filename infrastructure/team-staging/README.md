@@ -154,3 +154,21 @@ Official references (reviewed 2026-10-05):
 - https://docs.cloud.google.com/run/docs/configuring/services/secrets
 - https://docs.cloud.google.com/sql/docs/postgres/connect-run
 - https://developers.google.com/identity/protocols/oauth2/web-server
+
+
+## Phase 3 deployed acceptance probe
+
+After the staging web/API services and Workload Identity Federation are configured, run the manual GitHub Actions workflow:
+
+`Phase 3 read-only staging acceptance probe`
+
+Required repository/environment variables:
+
+- `TEAM_STAGING_WEB_URL`
+- `TEAM_STAGING_API_URL`
+- `GCP_WORKLOAD_IDENTITY_PROVIDER`
+- `GCP_DEPLOY_SERVICE_ACCOUNT`
+
+The workflow obtains a short-lived Google identity token for the private API and runs `infrastructure/team-staging/acceptance.py`. The probe performs GET-only checks for the rendered team surface, no-store behavior, API liveness, database readiness, and rejection of an unauthenticated private API request. It creates no notes, tasks, feedback, submissions, outreach, JobDiva mutations, or other recruiter data.
+
+The JSON artifact `phase3-staging-acceptance.json` records only check names/status/details. It contains no tokens, credentials, candidate payloads, job payloads, or database values. This probe is one acceptance layer; the two-browser recruiter/manager workflow and real-data JobDiva pilot still require separate operator validation.
