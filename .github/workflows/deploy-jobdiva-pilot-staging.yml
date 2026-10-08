@@ -1,0 +1,124 @@
+name: Deploy JobDiva real-data pilot to staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable_pilot:
+        description: "Enable real JobDiva reads after deployment"
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
+      confirm_read_only:
+        description: "Type READ_ONLY to confirm this pilot must not write to JobDiva"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: jobdiva-real-data-pilot-staging
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: medlivo-ai-platform
+  REGION: us-west1
+  GAR_REPOSITORY: medlivo-ai-containers
+  JOB_NAME: medlivo-jobdiva-pilot-staging
+  JOB_SERVICE_ACCOUNT: medlivo-ai-workers@medlivo-ai-platform.iam.gserviceaccount.com
+  CLOUDSQL_INSTANCE: medlivo-ai-platform:us-west1:medlivo-ai-postgres
+
+jobs:
+  deploy:
+    if: github.repository == 'pks-alt/Medlivo-AI-Platform' && inputs.confirm_read_only == 'READ_ONLY'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging-real-data-pilot
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Validate required staging configuration
+        env:
+          PILOT_TENANT_ID: ${{ vars.PILOT_TENANT_ID }}
+          DB_SECRET: ${{ vars.PILOT_DATABASE_SECRET }}
+          CLIENT_ID_SECRET: ${{ vars.JOBDIVA_CLIENT_ID_SECRET }}
+          USERNAME_SECRET: ${{ vars.JOBDIVA_USERNAME_SECRET }}
+          PASSWORD_SECRET: ${{ vars.JOBDIVA_PASSWORD_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "${PILOT_TENANT_ID}"
+          test -n "${DB_SECRET}"
+          test -n "${CLIENT_ID_SECRET}"
+          test -n "${USERNAME_SECRET}"
+          test -n "${PASSWORD_SECRET}"
+
+      - name: Configure Artifact Registry
+        run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
+
+      - name: Build and push pilot worker
+        run: |
+          set -euo pipefail
+          IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${GAR_REPOSITORY}/${JOB_NAME}:${GITHUB_SHA}"
+          docker build -f apps/workers/Dockerfile -t "${IMAGE}" .
+          docker push "${IMAGE}"
+          echo "IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
+
+      - name: Deploy disabled or enabled pilot job
+        env:
+          ENABLE_PILOT: ${{ inputs.enable_pilot }}
+          PILOT_TENANT_ID: ${{ vars.PILOT_TENANT_ID }}
+          DB_SECRET: ${{ vars.PILOT_DATABASE_SECRET }}
+          CLIENT_ID_SECRET: ${{ vars.JOBDIVA_CLIENT_ID_SECRET }}
+          USERNAME_SECRET: ${{ vars.JOBDIVA_USERNAME_SECRET }}
+          PASSWORD_SECRET: ${{ vars.JOBDIVA_PASSWORD_SECRET }}
+        run: |
+          set -euo pipefail
+
+          PILOT_ENABLED="false"
+          JOBDIVA_LIVE_ENABLED="false"
+          if [ "${ENABLE_PILOT}" = "true" ]; then
+            PILOT_ENABLED="true"
+            JOBDIVA_LIVE_ENABLED="true"
+          fi
+
+          gcloud run jobs deploy "${JOB_NAME}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${IMAGE}" \
+            --service-account="${JOB_SERVICE_ACCOUNT}" \
+            --set-cloudsql-instances="${CLOUDSQL_INSTANCE}" \
+            --set-env-vars="PILOT_ENABLED=${PILOT_ENABLED},JOBDIVA_LIVE_ENABLED=${JOBDIVA_LIVE_ENABLED},PILOT_TENANT_ID=${PILOT_TENANT_ID},PILOT_SYNC_PAGE_SIZE=50,PILOT_PROMOTION_LIMIT=100,PILOT_CANDIDATE_ENRICHMENT_LIMIT=10,PILOT_JOB_ENRICHMENT_LIMIT=10,PILOT_MATCHING_LIMIT=200,PILOT_MAX_RESUMES=2" \
+            --set-secrets="DATABASE_URL=${DB_SECRET}:latest,JOBDIVA_CLIENT_ID=${CLIENT_ID_SECRET}:latest,JOBDIVA_USERNAME=${USERNAME_SECRET}:latest,JOBDIVA_PASSWORD=${PASSWORD_SECRET}:latest" \
+            --max-retries=0 \
+            --task-timeout=15m \
+            --tasks=1 \
+            --parallelism=1 \
+            --quiet
+
+      - name: Show pilot job configuration
+        run: |
+          gcloud run jobs describe "${JOB_NAME}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --format='yaml(metadata.name,spec.template.template.spec.taskCount,spec.template.template.spec.template.spec.timeoutSeconds,spec.template.template.spec.template.spec.serviceAccountName)'
+
+      - name: Do not auto-execute
+        run: |
+          echo "Pilot job deployed."
+          echo "This workflow intentionally does NOT execute the Cloud Run Job."
+          echo "An authorized operator must inspect configuration and explicitly run:"
+          echo "gcloud run jobs execute ${JOB_NAME} --project=${PROJECT_ID} --region=${REGION} --wait"
