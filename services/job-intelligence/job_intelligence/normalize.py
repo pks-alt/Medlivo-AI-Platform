@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Iterable
 
 from .models import NormalizedJob, SourceRef
+from .division import classify_division
 
 
 def _first(payload: dict[str, Any], names: Iterable[str]):
@@ -109,6 +110,7 @@ def normalize_job(payload: dict[str, Any], *, system: str = "jobdiva") -> Normal
         source=SourceRef(system=system, source_id=str(source_id), source_updated_at=source_updated_at),
         status=_status(_first(payload, ("status", "STATUS", "jobStatus", "JOBSTATUS"))),
         title=str(title).strip(),
+        division=classify_division(payload),
         profession=_text(_first(payload, ("profession", "PROFESSION", "jobType", "JOBTYPE"))),
         specialty=_text(_first(payload, ("specialty", "SPECIALTY"))),
         care_setting=_text(_first(payload, ("setting", "SETTING", "careSetting", "CARESETTING"))),
