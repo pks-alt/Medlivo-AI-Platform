@@ -22,6 +22,7 @@ from jobdiva_sync import (
     enrich_pending_candidates,
     enrich_pending_jobs,
     run_delta_sync,
+    persist_active_job_sample,
 )
 
 
@@ -67,6 +68,10 @@ def pilot_enabled() -> bool:
 
 def diagnostics_only() -> bool:
     return os.getenv("PILOT_DIAGNOSTICS_ONLY", "false").strip().lower() == "true"
+
+
+def active_jobs_by_division_mode() -> bool:
+    return os.getenv("PILOT_ACTIVE_JOBS_BY_DIVISION", "false").strip().lower() == "true"
 
 
 def emit_event(payload: dict) -> None:
@@ -340,6 +345,24 @@ async def main() -> int:
                     "jobdiva": diagnostic,
                 })
                 return 0 if diagnostic["contract_status"] == "verified" else 3
+
+            if active_jobs_by_division_mode():
+                per_division = _bounded_int("PILOT_ACTIVE_JOBS_PER_DIVISION", 100, 1, 500)
+                max_scan = _bounded_int("PILOT_ACTIVE_JOBS_MAX_SCAN", 5000, per_division, 20000)
+                result = await persist_active_job_sample(
+                    client,
+                    PostgresSyncStore(connection),
+                    CanonicalPromoter(connection),
+                    tenant_id=tenant_id,
+                    per_division=per_division,
+                    max_scan=max_scan,
+                )
+                emit_event({
+                    "pilot": "active_jobs_by_division",
+                    "tenant_id": tenant_id,
+                    "result": result,
+                })
+                return 0 if result["complete"] else 4
 
             result = await run_pilot_once(
                 connection=connection,
