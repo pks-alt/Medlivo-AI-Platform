@@ -92,3 +92,15 @@ def test_invalid_state_is_not_promoted():
     candidate = promote_candidate_payload({"CANDIDATEID": 203, "STATE": "Washington"})
     assert job.state is None
     assert candidate.state is None
+
+
+def test_open_jobs_selection_is_promoted_as_open_and_keeps_division():
+    result = promote_job_payload({
+        "JOBID": 104,
+        "JOBTITLE": "Travel RN ICU",
+        "PROFESSION": "Registered Nurse",
+        "SPECIALTY": "ICU",
+        "_medlivo_selection_source": "jobdiva_open_jobs",
+    })
+    assert result.status == "open"
+    assert result.division == "nursing_allied"
