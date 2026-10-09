@@ -295,3 +295,57 @@ async def test_open_jobs_shape_is_structural_only():
         assert "123" not in str(shape)
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_transient_network_failure_retries_then_succeeds():
+    calls = 0
+    sleeps = []
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise httpx.ReadTimeout("synthetic timeout", request=request)
+        return httpx.Response(200, json=[])
+    async def sleep(seconds):
+        sleeps.append(seconds)
+    client = JobDivaClient(settings(), transport=httpx.MockTransport(handler), sleep=sleep)
+    client._access_token = "synthetic-token-123"
+    try:
+        rows = await client.updated_jobs(
+            from_date=datetime(2026, 10, 1, 0, 0, 0),
+            to_date=datetime(2026, 10, 2, 0, 0, 0),
+            page_number=1,
+            page_size=5,
+        )
+        assert rows == []
+        assert calls == 3
+        assert sleeps == [1.0, 2.0]
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_network_failure_stops_after_three_attempts():
+    calls = 0
+    sleeps = []
+    async def handler(request):
+        nonlocal calls
+        calls += 1
+        raise httpx.ConnectError("synthetic network failure", request=request)
+    async def sleep(seconds):
+        sleeps.append(seconds)
+    client = JobDivaClient(settings(), transport=httpx.MockTransport(handler), sleep=sleep)
+    client._access_token = "synthetic-token-123"
+    try:
+        with pytest.raises(JobDivaError, match="network request failed or timed out"):
+            await client.updated_jobs(
+                from_date=datetime(2026, 10, 1, 0, 0, 0),
+                to_date=datetime(2026, 10, 2, 0, 0, 0),
+                page_number=1,
+                page_size=5,
+            )
+        assert calls == 3
+        assert sleeps == [1.0, 2.0]
+    finally:
+        await client.close()
