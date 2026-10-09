@@ -99,8 +99,9 @@ async def import_six_month_jobs(connection, client, *, tenant_id: str, page_size
     promoter = CanonicalPromoter(connection)
 
     runs = []
-    for window_start, window_end in backfill_windows(start, end):
-        runs.append(await run_backfill_window(
+    windows = list(backfill_windows(start, end))
+    for index, (window_start, window_end) in enumerate(windows, start=1):
+        summary = await run_backfill_window(
             client,
             sync_store,
             tenant_id=tenant_id,
@@ -109,7 +110,17 @@ async def import_six_month_jobs(connection, client, *, tenant_id: str, page_size
             window_end=window_end,
             page_size=page_size,
             source_ids_sink=source_ids,
-        ))
+        )
+        runs.append(summary)
+        emit_event({
+            "pilot": "six_month_jobs_progress",
+            "tenant_id": tenant_id,
+            "window_index": index,
+            "window_count": len(windows),
+            "window_start": window_start.isoformat(),
+            "window_end": window_end.isoformat(),
+            "source_jobs_seen": len(source_ids),
+        })
 
     if not source_ids:
         return {
