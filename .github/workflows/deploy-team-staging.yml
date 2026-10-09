@@ -47,7 +47,7 @@ jobs:
       - name: Build and push private API
         run: |
           API_IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${GAR_REPOSITORY}/${API_SERVICE}:${GITHUB_SHA}"
-          docker build -t "${API_IMAGE}" services/team-workspace
+          docker build -f infrastructure/team-staging/Dockerfile.api -t "${API_IMAGE}" .
           docker push "${API_IMAGE}"
           echo "API_IMAGE=${API_IMAGE}" >> "${GITHUB_ENV}"
 
