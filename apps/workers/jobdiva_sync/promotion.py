@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Iterable
 
+from job_intelligence import classify_division
+
 
 def _first(payload: dict[str, Any], names: Iterable[str]):
     for name in names:
@@ -67,6 +69,7 @@ class JobPromotion:
     title: str
     profession: str | None
     specialty: str | None
+    division: str | None
     city: str | None
     state: str | None
     start_date: date | None
@@ -105,6 +108,7 @@ def promote_job_payload(payload: dict[str, Any]) -> JobPromotion:
         title=str(title).strip(),
         profession=_text(_first(payload, ("PROFESSION", "profession", "JOBTYPE", "jobType"))),
         specialty=_text(_first(payload, ("SPECIALTY", "specialty"))),
+        division=classify_division(payload),
         city=_text(_first(payload, ("CITY", "city"))),
         state=_state(_first(payload, ("STATE", "state"))),
         start_date=_date(_first(payload, ("STARTDATE", "startDate"))),
