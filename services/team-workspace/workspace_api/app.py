@@ -15,6 +15,7 @@ from .schemas import (
     NoteInput, TaskInput, TaskUpdate, Reassignment, AdminUserInput, AdminUserUpdate,
     JobIntakeBatchInput, CustomerJobMappingInput, WeeklyGoalInput, JobIntakeRowsInput,
     JobPublicationDraftInput, JobPublicationDecision, MatchFeedbackInput,
+    JobOperationalUpdate, JobAssignmentInput, JobIntakeItemDecision,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -298,6 +299,40 @@ def build_app(store, verifier):
     @app.get(prefix + "/jobs/{job_id}")
     def job(job_id: UUID, who=Depends(identity)):
         return store.get_job(who, str(job_id))
+
+    @app.get(prefix + "/jobs/{job_id}/operational")
+    def job_operational(job_id: UUID, who=Depends(identity)):
+        return store.get_job_operational_overlay(who, str(job_id))
+
+    @app.put(prefix + "/jobs/{job_id}/operational")
+    def update_job_operational(job_id: UUID, value: JobOperationalUpdate,
+                               idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.update_job_operational_overlay(
+            who, str(job_id), str(idempotency_key), value
+        )
+
+    @app.put(prefix + "/jobs/{job_id}/assignment")
+    def assign_job(job_id: UUID, value: JobAssignmentInput,
+                   idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.assign_job(who, str(job_id), str(idempotency_key), value)
+
+    @app.post(prefix + "/job-intake/batches/{batch_id}/items/{item_id}/decision")
+    def decide_job_intake_item(batch_id: UUID, item_id: UUID, value: JobIntakeItemDecision,
+                               idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.decide_job_intake_item(
+            who, str(batch_id), str(item_id), str(idempotency_key), value
+        )
+
+    @app.get(prefix + "/manager/operational-audit")
+    def operational_audit(object_type: str | None = None, object_id: UUID | None = None,
+                          limit: int = Query(default=100, ge=1, le=200),
+                          who=Depends(identity)):
+        return store.list_operational_audit(
+            who,
+            object_type=object_type,
+            object_id=str(object_id) if object_id else None,
+            limit=limit,
+        )
 
     @app.get(prefix + "/cases")
     def cases(after: UUID | None = None, limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
