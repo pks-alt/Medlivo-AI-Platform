@@ -3,11 +3,13 @@ on:
   pull_request:
     paths:
       - 'services/team-workspace/**'
+      - 'services/job-intelligence/**'
       - '.github/workflows/team-workspace-tests.yml'
   push:
     branches: [main]
     paths:
       - 'services/team-workspace/**'
+      - 'services/job-intelligence/**'
       - '.github/workflows/team-workspace-tests.yml'
 permissions:
   contents: read
@@ -26,7 +28,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
-      - run: python -m pip install '.[test]'
+      - run: python -m pip install '../job-intelligence' '.[test]'
       - run: python -m pytest -q
       - run: python -m compileall -q workspace_api
   postgres:
@@ -54,5 +56,5 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
-      - run: python -m pip install '.[test]'
+      - run: python -m pip install '../job-intelligence' '.[test]'
       - run: python -m pytest -q

@@ -11,9 +11,10 @@ from openpyxl import load_workbook
 # Canonical Phase 1 fields. Customer spreadsheets can use any headers; mappings
 # translate them into these names before validation and JobDiva write-back.
 CANONICAL_FIELDS = {
-    "requisition_id", "title", "facility", "city", "state", "bill_rate",
-    "start_date", "end_date", "setting", "hours_per_week", "specialty",
-    "schedule", "coverage_type", "providers_needed", "call_details", "notes",
+    "requisition_id", "title", "profession", "specialty", "facility", "city", "state",
+    "bill_rate", "start_date", "end_date", "duration_weeks", "setting", "hours_per_week",
+    "shift", "schedule", "description", "coverage_type", "providers_needed", "call_details",
+    "notes",
 }
 
 HEADER_ALIASES = {
@@ -23,6 +24,9 @@ HEADER_ALIASES = {
     "posting title": "title",
     "job title": "title",
     "position": "title",
+    "profession": "profession",
+    "discipline": "profession",
+    "specialty": "specialty",
     "location name linked": "facility",
     "facility": "facility",
     "facility name": "facility",
@@ -35,13 +39,16 @@ HEADER_ALIASES = {
     "bill rate": "bill_rate",
     "start date": "start_date",
     "end date": "end_date",
+    "duration weeks": "duration_weeks",
+    "contract weeks": "duration_weeks",
     "location location setting": "setting",
     "setting": "setting",
     "hours per week": "hours_per_week",
     "weekly hours": "hours_per_week",
-    "specialty": "specialty",
-    "shift": "schedule",
+    "shift": "shift",
     "schedule": "schedule",
+    "job description": "description",
+    "description": "description",
     "coverage": "coverage_type",
     "coverage type": "coverage_type",
     "providers needed": "providers_needed",

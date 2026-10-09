@@ -9,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from . import tables as t
 from .auth import Identity
 from .job_intake import process_rows, parse_xlsx, suggest_mapping
+from .intake_intelligence import analyze_intake_job
 
 
 class AccessError(Exception):
@@ -1148,6 +1149,76 @@ class WorkspaceStore:
             }
 
 
+    def _persist_intake_items(self, conn, principal, *, batch_id, division,
+                              customer_name, processed, timestamp):
+        statuses = []
+        for item in processed:
+            item_id = uid()
+            source_id = str(
+                item["normalized_job"].get("requisition_id")
+                or f"{batch_id}:{item['row_number']}"
+            )
+            intelligence = analyze_intake_job(
+                item["normalized_job"],
+                division=division,
+                source_id=source_id,
+                customer_name=customer_name,
+            )
+            conflicts = intelligence["conflicts"]
+            missing_fields = intelligence["missing_fields"]
+
+            status = item["status"]
+            if status != "duplicate" and (conflicts or missing_fields):
+                status = "review"
+            statuses.append(status)
+
+            conn.execute(insert(t.job_intake_items).values(
+                id=item_id,
+                tenant_id=principal["tenant_id"],
+                batch_id=batch_id,
+                duplicate_job_id=None,
+                created_job_id=None,
+                created_at=timestamp,
+                updated_at=timestamp,
+                row_number=item["row_number"],
+                source_row=item["source_row"],
+                normalized_job=item["normalized_job"],
+                validation_errors=item["validation_errors"],
+                status=status,
+                extracted_values=intelligence["extracted_values"],
+                ai_suggestions=intelligence["ai_suggestions"],
+                conflicts=conflicts,
+                missing_fields=missing_fields,
+                final_approved_values=None,
+                standardized_internal_jd=intelligence["standardized_internal_jd"],
+                bill_rate_state=intelligence["bill_rate_state"],
+                recruiting_readiness=intelligence["recruiting_readiness"],
+                commercial_readiness=intelligence["commercial_readiness"],
+                reviewed_by=None,
+                reviewed_at=None,
+            ))
+            for provenance in intelligence["provenance"]:
+                conn.execute(insert(t.provenance_records).values(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    object_type="job_intake_item",
+                    object_id=item_id,
+                    field_path=provenance["field"],
+                    source_type=provenance["source_type"],
+                    source_reference=provenance["source_reference"],
+                    confidence=provenance["confidence"],
+                    value_payload={
+                        "value": item["normalized_job"].get(provenance["field"])
+                    },
+                    created_at=timestamp,
+                ))
+
+        return {
+            "ready_count": sum(1 for status in statuses if status == "ready"),
+            "review_count": sum(1 for status in statuses if status == "review"),
+            "duplicate_count": sum(1 for status in statuses if status == "duplicate"),
+        }
+
     def ingest_job_intake_rows(self, identity, batch_id, key, value):
         payload = {"batch_id": batch_id, "rows": value.rows, "mapping": value.mapping}
         def apply(conn, principal):
@@ -1174,20 +1245,23 @@ class WorkspaceStore:
                 t.job_intake_items.c.batch_id == batch_id,
             ))
             timestamp = now()
-            for item in processed:
-                conn.execute(insert(t.job_intake_items).values(
-                    id=uid(), tenant_id=principal["tenant_id"], batch_id=batch_id,
-                    duplicate_job_id=None, created_job_id=None, created_at=timestamp,
-                    updated_at=timestamp, **item,
-                ))
-            ready_count = sum(1 for item in processed if item["status"] == "ready")
-            review_count = sum(1 for item in processed if item["status"] == "review")
-            duplicate_count = sum(1 for item in processed if item["status"] == "duplicate")
+            counts = self._persist_intake_items(
+                conn,
+                principal,
+                batch_id=batch_id,
+                division=batch["division"],
+                customer_name=batch["customer_name"],
+                processed=processed,
+                timestamp=timestamp,
+            )
+            ready_count = counts["ready_count"]
+            review_count = counts["review_count"]
+            duplicate_count = counts["duplicate_count"]
             conn.execute(update(t.job_intake_batches).where(
                 t.job_intake_batches.c.id == batch_id,
                 t.job_intake_batches.c.tenant_id == principal["tenant_id"],
             ).values(
-                mapping=mapping, status="review", row_count=len(processed),
+                mapping=mapping, status="review", ai_processing_status="rules_analyzed", row_count=len(processed),
                 ready_count=ready_count, review_count=review_count,
                 duplicate_count=duplicate_count, updated_at=timestamp,
             ))
@@ -1260,26 +1334,57 @@ class WorkspaceStore:
             processed = process_rows(rows, mapping, division)
             timestamp = now()
             batch_id = uid()
-            ready_count = sum(1 for item in processed if item["status"] == "ready")
-            review_count = sum(1 for item in processed if item["status"] == "review")
-            duplicate_count = sum(1 for item in processed if item["status"] == "duplicate")
+            file_hash = hashlib.sha256(content).hexdigest()
             batch = dict(
-                id=batch_id, tenant_id=principal["tenant_id"], team_id=resolved_team_id,
-                uploaded_by=principal["id"], customer_name=customer_name,
-                division=division, source_filename=source_filename,
-                status="review", mapping=mapping, row_count=len(processed),
-                ready_count=ready_count, review_count=review_count,
-                duplicate_count=duplicate_count, created_at=timestamp, updated_at=timestamp,
+                id=batch_id,
+                tenant_id=principal["tenant_id"],
+                team_id=resolved_team_id,
+                uploaded_by=principal["id"],
+                customer_name=customer_name,
+                division=division,
+                source_filename=source_filename,
+                status="review",
+                mapping=mapping,
+                source_file_hash=file_hash,
+                ai_processing_status="not_started",
+                row_count=len(processed),
+                ready_count=0,
+                review_count=0,
+                duplicate_count=0,
+                created_at=timestamp,
+                updated_at=timestamp,
             )
             conn.execute(insert(t.job_intake_batches).values(**batch))
-            for item in processed:
-                conn.execute(insert(t.job_intake_items).values(
-                    id=uid(), tenant_id=principal["tenant_id"], batch_id=batch_id,
-                    duplicate_job_id=None, created_job_id=None,
-                    created_at=timestamp, updated_at=timestamp, **item,
-                ))
+
+            counts = self._persist_intake_items(
+                conn,
+                principal,
+                batch_id=batch_id,
+                division=division,
+                customer_name=customer_name,
+                processed=processed,
+                timestamp=timestamp,
+            )
+            ready_count = counts["ready_count"]
+            review_count = counts["review_count"]
+            duplicate_count = counts["duplicate_count"]
+
+            conn.execute(update(t.job_intake_batches).where(
+                t.job_intake_batches.c.tenant_id == principal["tenant_id"],
+                t.job_intake_batches.c.id == batch_id,
+            ).values(
+                ai_processing_status="rules_analyzed",
+                ready_count=ready_count,
+                review_count=review_count,
+                duplicate_count=duplicate_count,
+                updated_at=timestamp,
+            ))
             return {
                 **batch,
+                "ai_processing_status": "rules_analyzed",
+                "ready_count": ready_count,
+                "review_count": review_count,
+                "duplicate_count": duplicate_count,
                 "headers": headers,
                 "mapping_source": "saved" if saved else "suggested",
                 "recognized_columns": len(mapping),
@@ -2626,14 +2731,53 @@ class WorkspaceStore:
             if value.decision == "approved" and final_values is None:
                 final_values = item["normalized_job"]
 
-            # Bill rate remains explicitly unknown unless confirmed by source or approved evidence.
-            if value.bill_rate_state == "confirmed" and not final_values.get("bill_rate"):
-                raise AccessError(422, "Confirmed bill rate requires an approved bill rate value")
+            if value.decision == "approved":
+                source_id = str(final_values.get("requisition_id") or f"{batch_id}:{item['row_number']}")
+                final_review = analyze_intake_job(
+                    final_values,
+                    division=batch["division"],
+                    source_id=source_id,
+                    customer_name=batch["customer_name"],
+                )
+
+                # A manager may confirm or correct missing source facts, but the
+                # platform still re-runs canonical readiness rules before release.
+                if value.recruiting_readiness == "ready" and final_review["recruiting_readiness"] != "ready":
+                    raise AccessError(
+                        422,
+                        "Recruiting Ready requires all required job facts to be confirmed and conflict-free",
+                    )
+
+                if value.bill_rate_state == "confirmed" and not final_values.get("bill_rate"):
+                    raise AccessError(422, "Confirmed bill rate requires an approved bill rate value")
+
+                if value.commercial_readiness == "ready":
+                    if value.bill_rate_state != "confirmed" or not final_values.get("bill_rate"):
+                        raise AccessError(
+                            422,
+                            "Commercially Ready requires an approved confirmed bill rate",
+                        )
+                    if final_review["recruiting_readiness"] != "ready":
+                        raise AccessError(
+                            422,
+                            "Commercially Ready requires the job to be Recruiting Ready first",
+                        )
+
+                standardized_internal_jd = final_review["standardized_internal_jd"]
+                conflicts = final_review["conflicts"]
+                missing_fields = final_review["missing_fields"]
+            else:
+                standardized_internal_jd = item["standardized_internal_jd"]
+                conflicts = item["conflicts"]
+                missing_fields = item["missing_fields"]
 
             timestamp = now()
             new_status = "approved" if value.decision == "approved" else "rejected"
             updates = dict(
                 final_approved_values=final_values,
+                standardized_internal_jd=standardized_internal_jd,
+                conflicts=conflicts,
+                missing_fields=missing_fields,
                 bill_rate_state=value.bill_rate_state,
                 recruiting_readiness=value.recruiting_readiness,
                 commercial_readiness=value.commercial_readiness,
