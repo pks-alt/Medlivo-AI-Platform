@@ -246,9 +246,9 @@ def test_rehab_rows_are_normalized_and_classified(client, headers):
     assert processed.status_code == 200
     summary = processed.json()
     assert summary["row_count"] == 4
-    assert summary["ready_count"] == 2
+    assert summary["ready_count"] == 0
     assert summary["duplicate_count"] == 1
-    assert summary["review_count"] == 1
+    assert summary["review_count"] == 3
 
     reviewed = client.get(
         f"/api/v1/team/job-intake/batches/{batch_id}/items",
@@ -297,8 +297,8 @@ def test_manager_can_upload_real_rehab_xlsx(client, headers):
     assert response.status_code == 201
     body = response.json()
     assert body["row_count"] == 2
-    assert body["ready_count"] == 2
-    assert body["review_count"] == 0
+    assert body["ready_count"] == 0
+    assert body["review_count"] == 2
     assert body["duplicate_count"] == 0
     assert body["mapping_source"] == "suggested"
     assert body["recognized_columns"] >= 8
@@ -1251,10 +1251,19 @@ def test_delivery_manager_approves_direct_intake_without_inventing_bill_rate(cli
         headers=headers("manager-a"),
         json={
             "decision": "approved",
+            "final_approved_values": {
+                "title": "Travel Physical Therapist",
+                "profession": "Physical Therapist",
+                "specialty": "Physical Therapy",
+                "city": "Seattle",
+                "state": "WA",
+                "start_date": "2026-11-01",
+                "hours_per_week": 40
+            },
             "bill_rate_state": "unknown",
             "recruiting_readiness": "ready",
             "commercial_readiness": "review",
-            "reason": "Enough information to recruit; commercial rate still pending",
+            "reason": "Manager confirmed missing recruiting facts; commercial rate still pending",
         },
     )
     assert approved.status_code == 200
@@ -1306,6 +1315,105 @@ def test_confirmed_bill_rate_requires_approved_value(client, headers):
             "bill_rate_state": "confirmed",
             "recruiting_readiness": "ready",
             "commercial_readiness": "ready",
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_intake_processing_persists_standardized_jd_readiness_and_provenance(client, headers, seeded):
+    created = client.post(
+        "/api/v1/team/job-intake/batches",
+        headers=headers("manager-a"),
+        json={
+            "customer_name": "Synthetic Rehab Customer",
+            "division": "Rehabilitation",
+            "source_filename": "rehab-intelligence.xlsx",
+            "mapping": {
+                "Title": "title",
+                "Profession": "profession",
+                "Specialty": "specialty",
+                "City": "city",
+                "State": "state",
+                "Start": "start_date",
+                "Bill Rate": "bill_rate",
+                "Description": "description"
+            },
+        },
+    )
+    batch_id = created.json()["id"]
+    processed = client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/rows",
+        headers=headers("manager-a"),
+        json={"rows": [{
+            "Title": "Travel Physical Therapist",
+            "Profession": "Physical Therapist",
+            "Specialty": "Physical Therapy",
+            "City": "Seattle",
+            "State": "WA",
+            "Start": "2026-11-01",
+            "Bill Rate": 95,
+            "Description": "Treat adult patients in the client's rehabilitation setting."
+        }]},
+    )
+    assert processed.status_code == 200
+    assert processed.json()["ready_count"] == 1
+
+    items = client.get(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items",
+        headers=headers("manager-a"),
+    ).json()["items"]
+    item = items[0]
+    assert item["bill_rate_state"] == "confirmed"
+    assert item["recruiting_readiness"] == "ready"
+    assert item["commercial_readiness"] == "ready"
+    assert item["standardized_internal_jd"]["job_title"] == "Travel Physical Therapist"
+    assert item["standardized_internal_jd"]["source_description"].startswith("Treat adult patients")
+    assert "patient-centered" not in str(item["standardized_internal_jd"]).lower()
+
+    with seeded.begin() as conn:
+        provenance = conn.execute(select(t.provenance_records).where(
+            t.provenance_records.c.tenant_id == idn(1),
+            t.provenance_records.c.object_type == "job_intake_item",
+            t.provenance_records.c.object_id == item["id"],
+        )).mappings().all()
+    fields = {row["field_path"] for row in provenance}
+    assert {"title", "profession", "specialty", "city", "state", "bill_rate"}.issubset(fields)
+
+
+def test_manager_cannot_mark_incomplete_intake_recruiting_ready(client, headers):
+    created = client.post(
+        "/api/v1/team/job-intake/batches",
+        headers=headers("manager-a"),
+        json={
+            "customer_name": "Synthetic Rehab Customer",
+            "division": "Rehabilitation",
+            "source_filename": "incomplete.xlsx",
+            "mapping": {"Title": "title", "State": "state", "Start": "start_date"},
+        },
+    )
+    batch_id = created.json()["id"]
+    client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/rows",
+        headers=headers("manager-a"),
+        json={"rows": [{
+            "Title": "Travel Physical Therapist",
+            "State": "WA",
+            "Start": "2026-11-01"
+        }]},
+    )
+    item_id = client.get(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items",
+        headers=headers("manager-a"),
+    ).json()["items"][0]["id"]
+
+    response = client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items/{item_id}/decision",
+        headers=headers("manager-a"),
+        json={
+            "decision": "approved",
+            "bill_rate_state": "unknown",
+            "recruiting_readiness": "ready",
+            "commercial_readiness": "review"
         },
     )
     assert response.status_code == 422
