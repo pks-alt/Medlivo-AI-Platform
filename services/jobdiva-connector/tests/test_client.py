@@ -271,3 +271,27 @@ async def test_open_jobs_accepts_columns_plus_rows_payload():
         ]
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_open_jobs_shape_is_structural_only():
+    async def handler(request):
+        return httpx.Response(200, json={
+            "mysteryRows": [
+                ["JOBID", "JOBTITLE"],
+                [123, "Synthetic RN"],
+            ],
+            "meta": {"source": "synthetic"},
+        })
+    client = JobDivaClient(settings(), transport=httpx.MockTransport(handler))
+    client._access_token = "synthetic-token-123"
+    try:
+        shape = await client.open_jobs_response_shape()
+        assert shape["json_type"] == "dict"
+        assert shape["top_level_keys"] == ["meta", "mysteryRows"]
+        assert shape["list_fields"]["mysteryRows"]["length"] == 2
+        assert shape["list_fields"]["mysteryRows"]["first_item_type"] == "list"
+        assert "Synthetic RN" not in str(shape)
+        assert "123" not in str(shape)
+    finally:
+        await client.close()
