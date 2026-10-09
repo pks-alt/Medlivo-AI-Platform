@@ -138,7 +138,10 @@ class JobDivaClient:
                     headers=headers,
                 )
             except (httpx.TransportError, TimeoutError):
-                raise JobDivaError("JobDiva network request failed or timed out") from None
+                if attempt == 2:
+                    raise JobDivaError("JobDiva network request failed or timed out") from None
+                await self._sleep(float(2 ** attempt))
+                continue
 
             body = response.content
             if len(body) > self.settings.max_response_bytes:
