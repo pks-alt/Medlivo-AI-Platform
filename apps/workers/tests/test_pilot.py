@@ -359,3 +359,22 @@ async def test_main_runs_only_active_job_division_sample_when_enabled(monkeypatc
     result = await pilot.main()
     assert result == 0
     assert ("sample", 100, 5000) in calls
+
+
+def test_six_calendar_months_ago_uses_calendar_boundary():
+    value = pilot.datetime(2026, 10, 9, 7, 30, tzinfo=pilot.timezone.utc)
+    assert pilot.six_calendar_months_ago(value) == pilot.datetime(
+        2026, 4, 9, 7, 30, tzinfo=pilot.timezone.utc
+    )
+
+
+def test_six_calendar_months_ago_clamps_end_of_month():
+    value = pilot.datetime(2026, 8, 31, 12, 0, tzinfo=pilot.timezone.utc)
+    assert pilot.six_calendar_months_ago(value) == pilot.datetime(
+        2026, 2, 28, 12, 0, tzinfo=pilot.timezone.utc
+    )
+
+
+def test_six_month_jobs_mode_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("PILOT_SIX_MONTH_JOBS", raising=False)
+    assert pilot.six_month_jobs_mode() is False
