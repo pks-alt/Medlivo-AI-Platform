@@ -101,3 +101,10 @@ Rules:
 - The Match Queue remains read-only and consumes persisted match records.
 - Matching never writes to JobDiva.
 - Division is not invented when the source has not yet established it.
+
+
+## JobDiva full read-contract diagnostic
+
+The staging pilot supports `PILOT_DIAGNOSTICS_ONLY=true` to validate all enabled Phase 1 JobDiva read permissions before any source records are persisted. The diagnostic uses a bounded 14-day delta window and page size 5, selects at most one sample job/candidate/resume for detail checks, and logs only endpoint status/count metadata.
+
+A `partial` result means no safe sample record was available to exercise every detail endpoint. A `failed` result means an endpoint returned authorization, HTTP, or connector failure. Only `verified` should be treated as permission-complete for the real-data pilot.
