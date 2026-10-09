@@ -5,7 +5,8 @@ import json
 import os
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from calendar import monthrange
+from datetime import datetime, timedelta, timezone
 
 from psycopg import AsyncConnection
 
@@ -22,6 +23,8 @@ from jobdiva_sync import (
     enrich_pending_candidates,
     enrich_pending_jobs,
     run_delta_sync,
+    backfill_windows,
+    run_backfill_window,
     persist_active_job_sample,
 )
 
@@ -72,6 +75,107 @@ def diagnostics_only() -> bool:
 
 def active_jobs_by_division_mode() -> bool:
     return os.getenv("PILOT_ACTIVE_JOBS_BY_DIVISION", "false").strip().lower() == "true"
+
+
+def six_month_jobs_mode() -> bool:
+    return os.getenv("PILOT_SIX_MONTH_JOBS", "false").strip().lower() == "true"
+
+
+def six_calendar_months_ago(value: datetime) -> datetime:
+    month = value.month - 6
+    year = value.year
+    if month <= 0:
+        month += 12
+        year -= 1
+    day = min(value.day, monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+async def import_six_month_jobs(connection, client, *, tenant_id: str, page_size: int = 100) -> dict:
+    end = datetime.now(timezone.utc)
+    start = six_calendar_months_ago(end)
+    source_ids: set[str] = set()
+    sync_store = PostgresSyncStore(connection)
+    promoter = CanonicalPromoter(connection)
+
+    runs = []
+    for window_start, window_end in backfill_windows(start, end):
+        runs.append(await run_backfill_window(
+            client,
+            sync_store,
+            tenant_id=tenant_id,
+            stream=SyncStream.JOBS,
+            window_start=window_start,
+            window_end=window_end,
+            page_size=page_size,
+            source_ids_sink=source_ids,
+        ))
+
+    if not source_ids:
+        return {
+            "window_start": start.isoformat(),
+            "window_end": end.isoformat(),
+            "windows_completed": len(runs),
+            "source_jobs": 0,
+            "promotion": {"promoted": 0, "skipped": 0, "failed": 0},
+            "status_counts": {},
+            "division_counts": {},
+            "includes_closed": True,
+            "historical_scope": "last_six_calendar_months",
+        }
+
+    promotion = await promoter.promote_unlinked(
+        tenant_id=tenant_id,
+        stream=SyncStream.JOBS,
+        limit=len(source_ids),
+        source_ids=sorted(source_ids),
+    )
+
+    async with connection.cursor() as cur:
+        await cur.execute(
+            """
+            SELECT status, count(*)
+            FROM job
+            WHERE tenant_id=%s
+              AND id IN (
+                SELECT job_id FROM job_source_record
+                WHERE tenant_id=%s AND source_system='jobdiva'
+                  AND source_id = ANY(%s)
+              )
+            GROUP BY status
+            ORDER BY status
+            """,
+            (tenant_id, tenant_id, sorted(source_ids)),
+        )
+        status_rows = await cur.fetchall()
+        await cur.execute(
+            """
+            SELECT COALESCE(division,'Unclassified'), count(*)
+            FROM job
+            WHERE tenant_id=%s
+              AND id IN (
+                SELECT job_id FROM job_source_record
+                WHERE tenant_id=%s AND source_system='jobdiva'
+                  AND source_id = ANY(%s)
+              )
+            GROUP BY COALESCE(division,'Unclassified')
+            ORDER BY 1
+            """,
+            (tenant_id, tenant_id, sorted(source_ids)),
+        )
+        division_rows = await cur.fetchall()
+
+    return {
+        "window_start": start.isoformat(),
+        "window_end": end.isoformat(),
+        "windows_completed": len(runs),
+        "source_jobs": len(source_ids),
+        "promotion": promotion,
+        "status_counts": {str(k): int(v) for k, v in status_rows},
+        "division_counts": {str(k): int(v) for k, v in division_rows},
+        "includes_closed": True,
+        "historical_scope": "last_six_calendar_months",
+    }
 
 
 def emit_event(payload: dict) -> None:
@@ -345,6 +449,20 @@ async def main() -> int:
                     "jobdiva": diagnostic,
                 })
                 return 0 if diagnostic["contract_status"] == "verified" else 3
+
+            if six_month_jobs_mode():
+                result = await import_six_month_jobs(
+                    connection,
+                    client,
+                    tenant_id=tenant_id,
+                    page_size=limits.sync_page_size,
+                )
+                emit_event({
+                    "pilot": "six_month_jobs",
+                    "tenant_id": tenant_id,
+                    "result": result,
+                })
+                return 0
 
             if active_jobs_by_division_mode():
                 per_division = _bounded_int("PILOT_ACTIVE_JOBS_PER_DIVISION", 100, 1, 500)

@@ -31,6 +31,14 @@ on:
           - "false"
           - "true"
         default: "false"
+      six_month_jobs:
+        description: "Import all JobDiva jobs updated in the last six calendar months, including closed jobs"
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
 
 permissions:
   contents: read
@@ -76,6 +84,7 @@ jobs:
           PASSWORD_SECRET: ${{ vars.JOBDIVA_PASSWORD_SECRET }}
           DIAGNOSTICS_ONLY: ${{ inputs.diagnostics_only }}
           ACTIVE_JOBS_BY_DIVISION: ${{ inputs.active_jobs_by_division }}
+          SIX_MONTH_JOBS: ${{ inputs.six_month_jobs }}
         run: |
           set -euo pipefail
           test -n "${PILOT_TENANT_ID}"
@@ -85,8 +94,13 @@ jobs:
           test -n "${PASSWORD_SECRET}"
           test "${DIAGNOSTICS_ONLY}" = "true" || test "${DIAGNOSTICS_ONLY}" = "false"
           test "${ACTIVE_JOBS_BY_DIVISION}" = "true" || test "${ACTIVE_JOBS_BY_DIVISION}" = "false"
-          if [ "${DIAGNOSTICS_ONLY}" = "true" ] && [ "${ACTIVE_JOBS_BY_DIVISION}" = "true" ]; then
-            echo "Choose diagnostics_only OR active_jobs_by_division, not both" >&2
+          test "${SIX_MONTH_JOBS}" = "true" || test "${SIX_MONTH_JOBS}" = "false"
+          SELECTED_MODES=0
+          [ "${DIAGNOSTICS_ONLY}" = "true" ] && SELECTED_MODES=$((SELECTED_MODES+1))
+          [ "${ACTIVE_JOBS_BY_DIVISION}" = "true" ] && SELECTED_MODES=$((SELECTED_MODES+1))
+          [ "${SIX_MONTH_JOBS}" = "true" ] && SELECTED_MODES=$((SELECTED_MODES+1))
+          if [ "${SELECTED_MODES}" -gt 1 ]; then
+            echo "Choose only one of diagnostics_only, active_jobs_by_division, or six_month_jobs" >&2
             exit 1
           fi
           if [ "${DIAGNOSTICS_ONLY}" = "true" ] && [ "${{ inputs.enable_pilot }}" != "true" ]; then
@@ -95,6 +109,10 @@ jobs:
           fi
           if [ "${ACTIVE_JOBS_BY_DIVISION}" = "true" ] && [ "${{ inputs.enable_pilot }}" != "true" ]; then
             echo "active_jobs_by_division=true requires enable_pilot=true" >&2
+            exit 1
+          fi
+          if [ "${SIX_MONTH_JOBS}" = "true" ] && [ "${{ inputs.enable_pilot }}" != "true" ]; then
+            echo "six_month_jobs=true requires enable_pilot=true" >&2
             exit 1
           fi
 
@@ -119,6 +137,7 @@ jobs:
           PASSWORD_SECRET: ${{ vars.JOBDIVA_PASSWORD_SECRET }}
           DIAGNOSTICS_ONLY: ${{ inputs.diagnostics_only }}
           ACTIVE_JOBS_BY_DIVISION: ${{ inputs.active_jobs_by_division }}
+          SIX_MONTH_JOBS: ${{ inputs.six_month_jobs }}
         run: |
           set -euo pipefail
 
@@ -135,7 +154,7 @@ jobs:
             --image="${IMAGE}" \
             --service-account="${JOB_SERVICE_ACCOUNT}" \
             --set-cloudsql-instances="${CLOUDSQL_INSTANCE}" \
-            --set-env-vars="PILOT_ENABLED=${PILOT_ENABLED},JOBDIVA_LIVE_ENABLED=${JOBDIVA_LIVE_ENABLED},PILOT_DIAGNOSTICS_ONLY=${DIAGNOSTICS_ONLY},PILOT_ACTIVE_JOBS_BY_DIVISION=${ACTIVE_JOBS_BY_DIVISION},PILOT_ACTIVE_JOBS_PER_DIVISION=100,PILOT_ACTIVE_JOBS_MAX_SCAN=5000,PILOT_TENANT_ID=${PILOT_TENANT_ID},PILOT_SYNC_PAGE_SIZE=50,PILOT_PROMOTION_LIMIT=100,PILOT_CANDIDATE_ENRICHMENT_LIMIT=10,PILOT_JOB_ENRICHMENT_LIMIT=10,PILOT_MATCHING_LIMIT=200,PILOT_MAX_RESUMES=2" \
+            --set-env-vars="PILOT_ENABLED=${PILOT_ENABLED},JOBDIVA_LIVE_ENABLED=${JOBDIVA_LIVE_ENABLED},PILOT_DIAGNOSTICS_ONLY=${DIAGNOSTICS_ONLY},PILOT_ACTIVE_JOBS_BY_DIVISION=${ACTIVE_JOBS_BY_DIVISION},PILOT_SIX_MONTH_JOBS=${SIX_MONTH_JOBS},PILOT_ACTIVE_JOBS_PER_DIVISION=100,PILOT_ACTIVE_JOBS_MAX_SCAN=5000,PILOT_TENANT_ID=${PILOT_TENANT_ID},PILOT_SYNC_PAGE_SIZE=50,PILOT_PROMOTION_LIMIT=100,PILOT_CANDIDATE_ENRICHMENT_LIMIT=10,PILOT_JOB_ENRICHMENT_LIMIT=10,PILOT_MATCHING_LIMIT=200,PILOT_MAX_RESUMES=2" \
             --set-secrets="DATABASE_URL=${DB_SECRET}:latest,JOBDIVA_CLIENT_ID=${CLIENT_ID_SECRET}:latest,JOBDIVA_USERNAME=${USERNAME_SECRET}:latest,JOBDIVA_PASSWORD=${PASSWORD_SECRET}:latest" \
             --max-retries=0 \
             --task-timeout=15m \

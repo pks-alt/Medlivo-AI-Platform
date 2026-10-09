@@ -244,3 +244,24 @@ async def test_historical_backfill_skips_windows_already_completed():
     assert len(completed) == 1
     assert client.calls[0][2] == start + timedelta(days=14)
     assert client.calls[0][3] == end
+
+
+@pytest.mark.asyncio
+async def test_backfill_can_capture_exact_source_ids_for_targeted_promotion():
+    store = FakeStore()
+    sink = set()
+    client = FakeClient({
+        1: [{"JOBID": 501}, {"JOBID": 502}],
+        2: [{"JOBID": 503}],
+    })
+    await run_backfill_window(
+        client,
+        store,
+        tenant_id="tenant-1",
+        stream=SyncStream.JOBS,
+        window_start=NOW - timedelta(days=14),
+        window_end=NOW,
+        page_size=2,
+        source_ids_sink=sink,
+    )
+    assert sink == {"501", "502", "503"}
