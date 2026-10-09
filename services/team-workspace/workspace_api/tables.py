@@ -121,12 +121,16 @@ job_source_records = Table(
     U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id"),
     S("source_system", nullable=False), S("source_id", nullable=False), S("source_status"),
     D("source_updated_at"), Column("raw_payload", JSON, nullable=False),
+    D("promoted_at"), S("promotion_version"), D("enriched_at"), S("enrichment_version"),
+    S("enrichment_error_code"), D("created_at"), D("updated_at"),
 )
 candidate_source_records = Table(
     "candidate_source_record", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id"),
     S("source_system", nullable=False), S("source_id", nullable=False), D("source_updated_at"),
-    Column("raw_payload", JSON, nullable=False),
+    Column("raw_payload", JSON, nullable=False), D("promoted_at"), S("promotion_version"),
+    D("enriched_at"), S("enrichment_version"), S("enrichment_error_code"),
+    D("created_at"), D("updated_at"),
 )
 matches = Table(
     "match", metadata,
