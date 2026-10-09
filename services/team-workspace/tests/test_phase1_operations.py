@@ -1336,6 +1336,7 @@ def test_intake_processing_persists_standardized_jd_readiness_and_provenance(cli
                 "State": "state",
                 "Start": "start_date",
                 "Bill Rate": "bill_rate",
+                "Hours": "hours_per_week",
                 "Description": "description"
             },
         },
@@ -1352,6 +1353,7 @@ def test_intake_processing_persists_standardized_jd_readiness_and_provenance(cli
             "State": "WA",
             "Start": "2026-11-01",
             "Bill Rate": 95,
+            "Hours": 40,
             "Description": "Treat adult patients in the client's rehabilitation setting."
         }]},
     )
