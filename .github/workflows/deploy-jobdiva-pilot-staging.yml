@@ -145,10 +145,10 @@ jobs:
         run: |
           set -euo pipefail
           gcloud logging read \
-            'resource.type="cloud_run_job" AND resource.labels.job_name="'"${JOB_NAME}"'" AND jsonPayload.pilot="diagnostic"' \
+            'resource.type="cloud_run_job" AND resource.labels.job_name="'"${JOB_NAME}"'"' \
             --project="${PROJECT_ID}" \
             --freshness=30m \
-            --limit=5 \
+            --limit=50 \
             --order=desc \
             --format=json > jobdiva-read-contract-diagnostic.json
           python3 - <<'PY'
@@ -156,13 +156,32 @@ jobs:
           from pathlib import Path
           p=Path("jobdiva-read-contract-diagnostic.json")
           rows=json.loads(p.read_text() or "[]")
-          if not rows:
-              raise SystemExit("No sanitized diagnostic event found")
-          payload=rows[0].get("jsonPayload") or {}
-          jobdiva=payload.get("jobdiva") or {}
+          found=None
+          for row in rows:
+              payload=row.get("jsonPayload")
+              if not isinstance(payload, dict):
+                  text=row.get("textPayload")
+                  if isinstance(text, str):
+                      try:
+                          candidate=json.loads(text)
+                      except Exception:
+                          candidate=None
+                      payload=candidate if isinstance(candidate, dict) else None
+              if isinstance(payload, dict) and payload.get("pilot")=="diagnostic":
+                  found=payload
+                  break
+          if not found:
+              raise SystemExit("No sanitized JobDiva diagnostic event found")
+          jobdiva=found.get("jobdiva") or {}
           status=jobdiva.get("contract_status")
           if status != "verified":
               raise SystemExit(f"JobDiva read contract is not verified: {status}")
+          safe={
+              "pilot":"diagnostic",
+              "database_schema":found.get("database_schema"),
+              "jobdiva":jobdiva,
+          }
+          p.write_text(json.dumps(safe,indent=2,sort_keys=True)+"\n")
           print("JobDiva Phase 1 read contract verified.")
           PY
 
