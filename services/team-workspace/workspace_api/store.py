@@ -2682,14 +2682,53 @@ class WorkspaceStore:
             if value.decision == "approved" and final_values is None:
                 final_values = item["normalized_job"]
 
-            # Bill rate remains explicitly unknown unless confirmed by source or approved evidence.
-            if value.bill_rate_state == "confirmed" and not final_values.get("bill_rate"):
-                raise AccessError(422, "Confirmed bill rate requires an approved bill rate value")
+            if value.decision == "approved":
+                source_id = str(final_values.get("requisition_id") or f"{batch_id}:{item['row_number']}")
+                final_review = analyze_intake_job(
+                    final_values,
+                    division=batch["division"],
+                    source_id=source_id,
+                    customer_name=batch["customer_name"],
+                )
+
+                # A manager may confirm or correct missing source facts, but the
+                # platform still re-runs canonical readiness rules before release.
+                if value.recruiting_readiness == "ready" and final_review["recruiting_readiness"] != "ready":
+                    raise AccessError(
+                        422,
+                        "Recruiting Ready requires all required job facts to be confirmed and conflict-free",
+                    )
+
+                if value.bill_rate_state == "confirmed" and not final_values.get("bill_rate"):
+                    raise AccessError(422, "Confirmed bill rate requires an approved bill rate value")
+
+                if value.commercial_readiness == "ready":
+                    if value.bill_rate_state != "confirmed" or not final_values.get("bill_rate"):
+                        raise AccessError(
+                            422,
+                            "Commercially Ready requires an approved confirmed bill rate",
+                        )
+                    if final_review["recruiting_readiness"] != "ready":
+                        raise AccessError(
+                            422,
+                            "Commercially Ready requires the job to be Recruiting Ready first",
+                        )
+
+                standardized_internal_jd = final_review["standardized_internal_jd"]
+                conflicts = final_review["conflicts"]
+                missing_fields = final_review["missing_fields"]
+            else:
+                standardized_internal_jd = item["standardized_internal_jd"]
+                conflicts = item["conflicts"]
+                missing_fields = item["missing_fields"]
 
             timestamp = now()
             new_status = "approved" if value.decision == "approved" else "rejected"
             updates = dict(
                 final_approved_values=final_values,
+                standardized_internal_jd=standardized_internal_jd,
+                conflicts=conflicts,
+                missing_fields=missing_fields,
                 bill_rate_state=value.bill_rate_state,
                 recruiting_readiness=value.recruiting_readiness,
                 commercial_readiness=value.commercial_readiness,
