@@ -1,31 +1,7 @@
-import { getJobs } from "@/lib/api";
-
-export default async function JobsPage() {
-  const jobs = await getJobs();
-
-  return (
-    <main className="page">
-      <div className="pageHead">
-        <div><small>Job intelligence</small><h1>Jobs</h1></div>
-        <a href="/">Back to Today</a>
-      </div>
-
-      <div className="jobList">
-        {jobs.map((job) => (
-          <article key={job.id} className="jobCard">
-            <div>
-              <small>{job.division} · Job {job.source_job_id}</small>
-              <h2>{job.title}</h2>
-              <p>{job.customer} · {job.location}</p>
-            </div>
-            <div className="jobStats">
-              <span><b>{job.strong_matches}</b>Strong matches</span>
-              <span><b>{job.submission_ready}</b>Submission ready</span>
-            </div>
-            <a href={`/jobs/${job.id}`}>Open job</a>
-          </article>
-        ))}
-      </div>
-    </main>
-  );
+"use client";
+import {useEffect,useState} from "react";
+async function load(){const r=await fetch("/api/team/jobs?limit=100",{cache:"no-store",credentials:"same-origin"});if(!r.ok)throw new Error("Jobs HTTP "+r.status);return r.json()}
+export default function JobsPage(){const[d,setD]=useState<any>(null);const[e,setE]=useState("");useEffect(()=>{load().then(setD).catch(x=>setE(x.message))},[]);
+ if(e)return <main className="page"><div className="adminError"><b>Jobs unavailable</b><span>{e}</span></div></main>;if(!d)return <main className="page"><div className="adminLoading">Loading jobs…</div></main>;
+ return <main className="page"><div className="pageHead"><div><small>Job intelligence</small><h1>Jobs</h1><p>Canonical recruiting jobs with JobDiva source linkage.</p></div><div className="pageActions"><a href="/">Today</a><a href="/admin">Admin</a></div></div><div className="jobList">{(d.items||[]).map((j:any)=><article key={j.id} className="jobCard"><div><small>{j.division||"Unclassified"} {j.jobdiva_job_id?"· JobDiva "+j.jobdiva_job_id:""}</small><h2>{j.title}</h2><p>{j.customer_name||"Customer"} · {[j.city,j.state].filter(Boolean).join(", ")||"Location unknown"}</p></div><div className="jobStats"><span><b>{j.priority??0}</b>Priority</span><span><b>{j.status}</b>Status</span></div><a href={"/jobs/"+j.id}>Open 360</a></article>)}</div></main>
 }
