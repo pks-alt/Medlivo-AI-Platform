@@ -179,3 +179,30 @@ Because no scheduler exists, there is no recurring execution to disable in this 
 Do not increase batch sizes or add a scheduler until multiple bounded runs complete cleanly and recruiter feedback confirms the results are useful.
 
 Do not add semantic retrieval or AI reranking until the real-data match-quality pilot provides enough evidence to justify it.
+
+
+## Six-month JobDiva job import
+
+For the initial Medlivo job history, prefer the bounded six-calendar-month job import instead of a full-history job pull.
+
+Workflow inputs:
+
+- `enable_pilot = true`
+- `confirm_read_only = READ_ONLY`
+- `diagnostics_only = false`
+- `active_jobs_by_division = false`
+- `six_month_jobs = true`
+
+Behavior:
+
+1. Calculates exactly six calendar months before execution time.
+2. Reads `NewUpdatedJobRecords` in replay-safe windows of no more than 14 days.
+3. Imports all statuses returned in that six-month history, including open, on-hold, closed/filled and cancelled jobs.
+4. Captures the exact JobDiva source IDs returned within the six-month windows.
+5. Promotes only those source IDs into the canonical job table, avoiding accidental promotion of older historical records already present in staging.
+6. Preserves JobDiva status in canonical form: open/active/opened -> open; hold -> on_hold; closed/filled -> closed; cancelled/canceled -> cancelled.
+7. Reports imported counts by canonical status and Medlivo division.
+
+Important: `NewUpdatedJobRecords` defines this historical scope by jobs changed within the six-month window. A job created earlier but updated during the window can therefore appear, which is expected for JobDiva delta-history semantics.
+
+Do not combine `six_month_jobs=true` with diagnostics-only or the 100-active-jobs-per-division sampler.
