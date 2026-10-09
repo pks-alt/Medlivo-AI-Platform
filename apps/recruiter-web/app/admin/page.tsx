@@ -15,7 +15,7 @@ export default function AdminPage(){
   const [data,setData]=useState<Json|null>(null);
   const [error,setError]=useState("");
   const [tab,setTab]=useState("overview");
-  const [period,setPeriod]=useState("This Week");
+  const [period,setPeriod]=useState("Today");
   useEffect(()=>{(async()=>{try{
     const [ops,users,teams,audit,overview,batches,mappings,pubs,quality]=await Promise.all([
       load("admin/operations"),load("admin/users"),load("admin/teams"),load("admin/audit?limit=25"),
@@ -39,7 +39,7 @@ export default function AdminPage(){
     {label:"Weekly Submissions",value:null,detail:"JobDiva submission feed not connected yet",pending:true},
     {label:"Interviews",value:null,detail:"Interview feed not connected yet",pending:true},
     {label:"Placements",value:null,detail:"Placement feed not connected yet",pending:true},
-    {label:"Active Billing",value:null,detail:"Assignment / billing feed not connected yet",pending:true},
+    {label:"Starts",value:null,detail:"Start / placement feed not connected yet",pending:true},
     {label:"Strong Matches 9+",value:canon.strong_matches??0,detail:"High-confidence matches available for review",action:"quality"},
     {label:"Overdue Actions",value:overdue,detail:overdue?String(overdue)+" recruiter actions need follow-up":"No overdue recruiter actions",action:"performance"},
     {label:"Platform Health",value:platformHealth,detail:latestFailed?String(latestFailed)+" JobDiva stream needs attention":enrichmentErrors?String(enrichmentErrors)+" records need data review":"JobDiva and Medlivo data services look healthy",action:"jobdiva"}
@@ -65,7 +65,7 @@ export default function AdminPage(){
       {tab==="overview" && <>
         <div className="overviewIntro">
           <div><small>EXECUTIVE OVERVIEW</small><h2>What needs your attention today</h2><p>Company-wide recruiting activity and operating health in plain language.</p></div>
-          <div className="periodPicker" aria-label="Reporting period">{["This Week","Last Week","This Month","Custom"].map(x=><button key={x} className={period===x?"active":""} onClick={()=>setPeriod(x)}>{x}</button>)}</div>
+          <div className="periodPicker" aria-label="Reporting period">{["Today","7 Days","15 Days","30 Days","Custom"].map(x=><button key={x} className={period===x?"active":""} onClick={()=>setPeriod(x)}>{x}</button>)}</div>
         </div>
 
         <div className="executiveMetricGrid">{cards.map((card:any)=><button key={card.label} className={"executiveMetricCard"+(card.pending?" pending":"")} onClick={()=>card.action&&setTab(card.action)} disabled={!card.action}>
@@ -96,7 +96,7 @@ export default function AdminPage(){
             ["Candidates available",String(canon.candidates??0)],
             ["Jobs enriched",String(src.jobs_enriched??0)+" / "+String(src.jobs??0)],
             ["Candidates enriched",String(src.candidates_enriched??0)+" / "+String(src.candidates??0)],
-            ["Recruiting funnel","Submissions, interviews, placements and billing pending JobDiva mapping"]
+            ["Recruiting funnel","Submissions, interviews, offers and starts pending JobDiva mapping"]
           ]}/></Panel>
         </div>
       </>}
