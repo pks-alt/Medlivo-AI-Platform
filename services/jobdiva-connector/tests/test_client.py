@@ -249,3 +249,25 @@ async def test_open_jobs_accepts_jobdiva_tabular_bi_payload():
         ]
     finally:
         await client.close()
+
+
+@pytest.mark.asyncio
+async def test_open_jobs_accepts_columns_plus_rows_payload():
+    async def handler(request):
+        return httpx.Response(200, json={
+            "columns": ["JOBID", "JOBTITLE"],
+            "rows": [
+                [123, "Synthetic RN"],
+                [456, "Synthetic PT"],
+            ],
+        })
+    client = JobDivaClient(settings(), transport=httpx.MockTransport(handler))
+    client._access_token = "synthetic-token-123"
+    try:
+        rows = await client.open_jobs()
+        assert rows == [
+            {"JOBID": 123, "JOBTITLE": "Synthetic RN"},
+            {"JOBID": 456, "JOBTITLE": "Synthetic PT"},
+        ]
+    finally:
+        await client.close()

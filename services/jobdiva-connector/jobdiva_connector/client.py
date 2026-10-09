@@ -227,30 +227,64 @@ class JobDivaClient:
             value = response.json()
         except ValueError:
             raise JobDivaError("JobDiva returned non-JSON data") from None
+
+        def tabular(rows, headers=None):
+            if not isinstance(rows, list):
+                return None
+            if not rows:
+                return []
+            dict_rows = [row for row in rows if isinstance(row, dict)]
+            if dict_rows:
+                return dict_rows
+            if not all(isinstance(row, list) for row in rows):
+                return None
+            use_headers = headers
+            data_rows = rows
+            if use_headers is None and rows and all(
+                isinstance(header, str) and header.strip() for header in rows[0]
+            ):
+                use_headers = rows[0]
+                data_rows = rows[1:]
+            if not isinstance(use_headers, list) or not all(
+                isinstance(header, str) and header.strip() for header in use_headers
+            ):
+                return None
+            return [
+                {
+                    header: row[index] if index < len(row) else None
+                    for index, header in enumerate(use_headers)
+                }
+                for row in data_rows
+            ]
+
         if isinstance(value, list):
-            return [row for row in value if isinstance(row, dict)]
+            parsed = tabular(value)
+            if parsed is not None:
+                return parsed
+
         if isinstance(value, dict):
-            for key in ("data", "records", "items", "results"):
-                rows = value.get(key)
-                if not isinstance(rows, list):
-                    continue
-                dict_rows = [row for row in rows if isinstance(row, dict)]
-                if dict_rows:
-                    return dict_rows
-                if rows and isinstance(rows[0], list):
-                    headers = rows[0]
-                    if all(isinstance(header, str) and header.strip() for header in headers):
-                        records = []
-                        for row in rows[1:]:
-                            if not isinstance(row, list):
-                                continue
-                            records.append({
-                                header: row[index] if index < len(row) else None
-                                for index, header in enumerate(headers)
-                            })
-                        return records
-                if not rows:
-                    return []
+            # Some JobDiva BI responses expose column names separately from the data rows.
+            header_keys = {"columns", "headers", "columnnames", "column_names"}
+            headers = next(
+                (item for key, item in value.items() if key.lower() in header_keys and isinstance(item, list)),
+                None,
+            )
+            preferred = {"data", "records", "items", "results", "rows"}
+            candidates = [
+                item for key, item in value.items()
+                if key.lower() in preferred and isinstance(item, list)
+            ]
+            if not candidates:
+                list_values = [item for item in value.values() if isinstance(item, list)]
+                if len(list_values) == 1:
+                    candidates = list_values
+            for rows in candidates:
+                parsed = tabular(rows, headers=headers)
+                if parsed is not None:
+                    return parsed
+            if any(key.lower() in {"jobid", "candidateid", "resumeid"} for key in value):
+                return [value]
+
         raise JobDivaError("JobDiva returned an unexpected record payload")
 
     async def open_jobs(self) -> list[dict[str, Any]]:
