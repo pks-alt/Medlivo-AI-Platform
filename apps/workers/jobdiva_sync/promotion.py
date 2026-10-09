@@ -112,7 +112,7 @@ def promote_job_payload(payload: dict[str, Any]) -> JobPromotion:
         city=_text(_first(payload, ("CITY", "city"))),
         state=_state(_first(payload, ("STATE", "state"))),
         start_date=_date(_first(payload, ("STARTDATE", "startDate"))),
-        status=_status(_first(payload, ("STATUS", "status", "JOBSTATUS", "jobStatus"))),
+        status=("open" if payload.get("_medlivo_selection_source") == "jobdiva_open_jobs" else _status(_first(payload, ("STATUS", "status", "JOBSTATUS", "jobStatus")))),
         normalized_payload=normalized,
     )
 
