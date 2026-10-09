@@ -139,6 +139,10 @@ def build_app(store, verifier):
     def admin_users(who=Depends(identity)):
         return store.admin_users(who)
 
+    @app.get(prefix + "/admin/operations")
+    def admin_operations(who=Depends(identity)):
+        return store.admin_operations_summary(who)
+
     @app.post(prefix + "/admin/users", status_code=201)
     def admin_provision_user(value: AdminUserInput, idempotency_key: UUID = Header(), who=Depends(identity)):
         return store.admin_provision_user(who, str(idempotency_key), value)
