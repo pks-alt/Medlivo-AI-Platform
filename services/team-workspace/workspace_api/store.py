@@ -2337,3 +2337,338 @@ class WorkspaceStore:
                     "nine_plus_agreement_goal": 80.0,
                 },
             }
+
+
+    def _job_for_manager(self, conn, principal, job_id):
+        job = conn.execute(select(t.jobs).where(
+            t.jobs.c.id == job_id,
+            t.jobs.c.tenant_id == principal["tenant_id"],
+        )).mappings().first()
+        if job is None:
+            raise AccessError(404, "Job not found")
+        if principal["role"] == "manager":
+            teams = conn.execute(select(t.teams.c.id).where(
+                t.teams.c.tenant_id == principal["tenant_id"],
+                t.teams.c.manager_user_id == principal["id"],
+                t.teams.c.division == job["division"],
+            ).order_by(t.teams.c.id).limit(2)).scalars().all()
+            if len(teams) != 1:
+                raise AccessError(403, "Job is outside your managed scope")
+            return job, teams[0]
+        if principal["role"] == "admin":
+            return job, None
+        raise AccessError(403, "Delivery Manager access required")
+
+    def _operational_audit(self, conn, principal, action, object_type, object_id,
+                           before_state, after_state, *, reason=None):
+        conn.execute(insert(t.operational_audit).values(
+            id=uid(),
+            tenant_id=principal["tenant_id"],
+            actor_user_id=principal["id"],
+            action=action,
+            object_type=object_type,
+            object_id=object_id,
+            before_state=clean(before_state or {}),
+            after_state=clean(after_state or {}),
+            reason=reason,
+            correlation_id=None,
+            created_at=now(),
+        ))
+
+    def get_job_operational_overlay(self, identity, job_id):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            job = conn.execute(select(t.jobs).where(
+                t.jobs.c.id == job_id,
+                t.jobs.c.tenant_id == principal["tenant_id"],
+            )).mappings().first()
+            if job is None:
+                raise AccessError(404, "Job not found")
+
+            overlay = conn.execute(select(t.job_operational_overlays).where(
+                t.job_operational_overlays.c.tenant_id == principal["tenant_id"],
+                t.job_operational_overlays.c.job_id == job_id,
+            )).mappings().first()
+
+            if principal["role"] == "manager":
+                if overlay and overlay["team_id"] is not None:
+                    if not self._team_allowed(conn, principal, overlay["team_id"]):
+                        raise AccessError(403, "Job is outside your managed scope")
+                else:
+                    self._job_for_manager(conn, principal, job_id)
+            elif principal["role"] == "recruiter":
+                if overlay and overlay["recruiter_user_id"] not in {None, principal["id"]}:
+                    raise AccessError(403, "Job is assigned to another recruiter")
+            elif principal["role"] != "admin":
+                raise AccessError(403, "Workspace access required")
+
+            return {
+                "job_id": job_id,
+                "source_status": job["status"],
+                "overlay": clean(overlay) if overlay else {
+                    "job_id": job_id,
+                    "client_priority": "normal",
+                    "job_priority": "standard",
+                    "operational_status": "active",
+                    "version": 0,
+                },
+            }
+
+    def update_job_operational_overlay(self, identity, job_id, key, value):
+        payload = {
+            "job_id": job_id,
+            "client_priority": value.client_priority,
+            "job_priority": value.job_priority,
+            "priority_reason": value.priority_reason,
+            "manager_note": value.manager_note,
+            "next_action": value.next_action,
+            "due_at": value.due_at,
+            "operational_status": value.operational_status,
+            "expected_version": value.expected_version,
+        }
+        def apply(conn, principal):
+            job, managed_team = self._job_for_manager(conn, principal, job_id)
+            existing = conn.execute(select(t.job_operational_overlays).where(
+                t.job_operational_overlays.c.tenant_id == principal["tenant_id"],
+                t.job_operational_overlays.c.job_id == job_id,
+            ).with_for_update()).mappings().first()
+
+            current_version = existing["version"] if existing else 0
+            if current_version != value.expected_version:
+                raise AccessError(409, "Job priorities changed; reload before saving")
+
+            team_id = existing["team_id"] if existing else managed_team
+            if principal["role"] == "manager" and team_id is not None and not self._team_allowed(conn, principal, team_id):
+                raise AccessError(403, "Job is outside your managed scope")
+
+            timestamp = now()
+            version = current_version + 1
+            values = dict(
+                client_priority=value.client_priority,
+                job_priority=value.job_priority,
+                priority_reason=value.priority_reason,
+                manager_note=value.manager_note,
+                next_action=value.next_action,
+                due_at=value.due_at,
+                operational_status=value.operational_status,
+                version=version,
+                updated_by=principal["id"],
+                updated_at=timestamp,
+            )
+            if existing:
+                result = conn.execute(update(t.job_operational_overlays).where(
+                    t.job_operational_overlays.c.tenant_id == principal["tenant_id"],
+                    t.job_operational_overlays.c.job_id == job_id,
+                    t.job_operational_overlays.c.version == current_version,
+                ).values(**values))
+                if result.rowcount != 1:
+                    raise AccessError(409, "Job priorities changed; reload before saving")
+                row = dict(existing, **values)
+            else:
+                row = dict(
+                    job_id=job_id,
+                    tenant_id=principal["tenant_id"],
+                    team_id=team_id,
+                    recruiter_user_id=job["owner_user_id"],
+                    assigned_by=None,
+                    assigned_at=None,
+                    created_at=timestamp,
+                    **values,
+                )
+                conn.execute(insert(t.job_operational_overlays).values(**row))
+
+            self._operational_audit(
+                conn, principal, "job.operational.updated", "job", job_id,
+                clean(existing) if existing else {},
+                row,
+                reason=value.priority_reason,
+            )
+            return row
+        return self._global_mutate(identity, key, "job.operational.updated", payload, apply)
+
+    def assign_job(self, identity, job_id, key, value):
+        payload = {
+            "job_id": job_id,
+            "team_id": str(value.team_id),
+            "recruiter_user_id": str(value.recruiter_user_id) if value.recruiter_user_id else None,
+            "reason": value.reason,
+            "expected_version": value.expected_version,
+        }
+        def apply(conn, principal):
+            job, managed_team = self._job_for_manager(conn, principal, job_id)
+            team_id = str(value.team_id)
+            if principal["role"] == "manager":
+                if managed_team != team_id or not self._team_allowed(conn, principal, team_id):
+                    raise AccessError(403, "Select a team you are authorized to manage")
+            else:
+                if not self._team_allowed(conn, principal, team_id):
+                    raise AccessError(422, "Select a valid team")
+
+            recruiter_id = str(value.recruiter_user_id) if value.recruiter_user_id else None
+            if recruiter_id is not None:
+                target = conn.execute(
+                    select(t.users.c.id)
+                    .join(t.profiles, and_(
+                        t.profiles.c.user_id == t.users.c.id,
+                        t.profiles.c.tenant_id == t.users.c.tenant_id,
+                    ))
+                    .where(
+                        t.users.c.id == recruiter_id,
+                        t.users.c.tenant_id == principal["tenant_id"],
+                        t.users.c.role == "recruiter",
+                        t.users.c.is_active.is_(True),
+                        t.profiles.c.team_id == team_id,
+                    )
+                ).first()
+                if target is None:
+                    raise AccessError(422, "Select an active recruiter in this team")
+
+            existing = conn.execute(select(t.job_operational_overlays).where(
+                t.job_operational_overlays.c.tenant_id == principal["tenant_id"],
+                t.job_operational_overlays.c.job_id == job_id,
+            ).with_for_update()).mappings().first()
+            current_version = existing["version"] if existing else 0
+            if current_version != value.expected_version:
+                raise AccessError(409, "Job ownership changed; reload before saving")
+
+            timestamp = now()
+            version = current_version + 1
+            previous_owner = existing["recruiter_user_id"] if existing else job["owner_user_id"]
+            values = dict(
+                team_id=team_id,
+                recruiter_user_id=recruiter_id,
+                assigned_by=principal["id"],
+                assigned_at=timestamp,
+                updated_by=principal["id"],
+                updated_at=timestamp,
+                version=version,
+            )
+            if existing:
+                result = conn.execute(update(t.job_operational_overlays).where(
+                    t.job_operational_overlays.c.tenant_id == principal["tenant_id"],
+                    t.job_operational_overlays.c.job_id == job_id,
+                    t.job_operational_overlays.c.version == current_version,
+                ).values(**values))
+                if result.rowcount != 1:
+                    raise AccessError(409, "Job ownership changed; reload before saving")
+                row = dict(existing, **values)
+            else:
+                row = dict(
+                    job_id=job_id,
+                    tenant_id=principal["tenant_id"],
+                    client_priority="normal",
+                    job_priority="standard",
+                    priority_reason=None,
+                    manager_note=None,
+                    next_action=None,
+                    due_at=None,
+                    operational_status="active",
+                    created_at=timestamp,
+                    **values,
+                )
+                conn.execute(insert(t.job_operational_overlays).values(**row))
+
+            if previous_owner != recruiter_id:
+                conn.execute(insert(t.job_ownership_history).values(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    job_id=job_id,
+                    previous_owner_user_id=previous_owner,
+                    new_owner_user_id=recruiter_id,
+                    changed_by=principal["id"],
+                    reason=value.reason,
+                    created_at=timestamp,
+                ))
+
+            self._operational_audit(
+                conn, principal, "job.assignment.changed", "job", job_id,
+                {"recruiter_user_id": previous_owner, "team_id": existing["team_id"] if existing else None},
+                {"recruiter_user_id": recruiter_id, "team_id": team_id, "version": version},
+                reason=value.reason,
+            )
+            return row
+        return self._global_mutate(identity, key, "job.assignment.changed", payload, apply)
+
+    def decide_job_intake_item(self, identity, batch_id, item_id, key, value):
+        payload = {
+            "batch_id": batch_id,
+            "item_id": item_id,
+            "decision": value.decision,
+            "final_approved_values": value.final_approved_values,
+            "bill_rate_state": value.bill_rate_state,
+            "recruiting_readiness": value.recruiting_readiness,
+            "commercial_readiness": value.commercial_readiness,
+            "reason": value.reason,
+        }
+        def apply(conn, principal):
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Delivery Manager access required")
+            batch = conn.execute(select(t.job_intake_batches).where(
+                t.job_intake_batches.c.tenant_id == principal["tenant_id"],
+                t.job_intake_batches.c.id == batch_id,
+            )).mappings().first()
+            if batch is None:
+                raise AccessError(404, "Job intake batch not found")
+            if batch["team_id"] is not None and not self._team_allowed(conn, principal, batch["team_id"]):
+                raise AccessError(403, "Job intake batch is outside your scope")
+
+            item = conn.execute(select(t.job_intake_items).where(
+                t.job_intake_items.c.tenant_id == principal["tenant_id"],
+                t.job_intake_items.c.batch_id == batch_id,
+                t.job_intake_items.c.id == item_id,
+            ).with_for_update()).mappings().first()
+            if item is None:
+                raise AccessError(404, "Job intake item not found")
+            if item["status"] in {"synced", "failed"}:
+                raise AccessError(409, "This intake item can no longer be reviewed")
+
+            final_values = value.final_approved_values
+            if value.decision == "approved" and final_values is None:
+                final_values = item["normalized_job"]
+
+            # Bill rate remains explicitly unknown unless confirmed by source or approved evidence.
+            if value.bill_rate_state == "confirmed" and not final_values.get("bill_rate"):
+                raise AccessError(422, "Confirmed bill rate requires an approved bill rate value")
+
+            timestamp = now()
+            new_status = "approved" if value.decision == "approved" else "rejected"
+            updates = dict(
+                final_approved_values=final_values,
+                bill_rate_state=value.bill_rate_state,
+                recruiting_readiness=value.recruiting_readiness,
+                commercial_readiness=value.commercial_readiness,
+                reviewed_by=principal["id"],
+                reviewed_at=timestamp,
+                status=new_status,
+                updated_at=timestamp,
+            )
+            conn.execute(update(t.job_intake_items).where(
+                t.job_intake_items.c.tenant_id == principal["tenant_id"],
+                t.job_intake_items.c.id == item_id,
+            ).values(**updates))
+
+            after = dict(item, **updates)
+            self._operational_audit(
+                conn, principal, "job_intake.item." + new_status, "job_intake_item", item_id,
+                clean(item), after, reason=value.reason,
+            )
+            return after
+        return self._global_mutate(identity, key, "job_intake.item.decision", payload, apply)
+
+    def list_operational_audit(self, identity, *, object_type=None, object_id=None, limit=100):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Delivery Manager access required")
+            statement = select(t.operational_audit).where(
+                t.operational_audit.c.tenant_id == principal["tenant_id"]
+            )
+            if object_type:
+                statement = statement.where(t.operational_audit.c.object_type == object_type)
+            if object_id:
+                statement = statement.where(t.operational_audit.c.object_id == object_id)
+            rows = conn.execute(statement.order_by(
+                t.operational_audit.c.created_at.desc(),
+                t.operational_audit.c.id.desc(),
+            ).limit(limit)).mappings().all()
+            return {"items": [clean(row) for row in rows]}

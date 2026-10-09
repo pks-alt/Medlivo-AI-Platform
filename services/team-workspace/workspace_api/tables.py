@@ -211,6 +211,8 @@ job_intake_batches = Table(
     U("uploaded_by", nullable=False), S("customer_name", nullable=False),
     S("division", nullable=False), S("source_filename", nullable=False),
     S("status", nullable=False), Column("mapping", JSON, nullable=False),
+    S("source_file_hash"), S("ai_processing_status", nullable=False, default="not_started"),
+    U("review_owner_user_id"), U("approved_by"), D("approved_at"), U("correlation_id"),
     Column("row_count", Integer, nullable=False), Column("ready_count", Integer, nullable=False),
     Column("review_count", Integer, nullable=False), Column("duplicate_count", Integer, nullable=False),
     D("created_at", nullable=False), D("updated_at", nullable=False),
@@ -224,7 +226,11 @@ job_intake_items = Table(
     U("id", primary_key=True), U("tenant_id", nullable=False), U("batch_id", nullable=False),
     Column("row_number", Integer, nullable=False), Column("source_row", JSON, nullable=False),
     Column("normalized_job", JSON, nullable=False), Column("validation_errors", JSON, nullable=False),
-    U("duplicate_job_id"), S("status", nullable=False), U("created_job_id"),
+    Column("extracted_values", JSON, nullable=False, default=dict), Column("ai_suggestions", JSON, nullable=False, default=list),
+    Column("conflicts", JSON, nullable=False, default=list), Column("missing_fields", JSON, nullable=False, default=list),
+    Column("final_approved_values", JSON), S("bill_rate_state", nullable=False, default="unknown"),
+    S("recruiting_readiness", nullable=False, default="review"), S("commercial_readiness", nullable=False, default="review"),
+    U("reviewed_by"), D("reviewed_at"), U("duplicate_job_id"), S("status", nullable=False), U("created_job_id"),
     D("created_at", nullable=False), D("updated_at", nullable=False),
     UniqueConstraint("tenant_id", "id"), UniqueConstraint("tenant_id", "batch_id", "row_number"),
     ForeignKeyConstraint(["tenant_id", "batch_id"], ["ws_job_intake_batch.tenant_id", "ws_job_intake_batch.id"]),
@@ -236,8 +242,9 @@ customer_job_mappings = Table(
     "ws_customer_job_mapping", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False),
     S("customer_name", nullable=False), S("division", nullable=False),
-    Column("mapping", JSON, nullable=False), U("updated_by", nullable=False),
-    D("created_at", nullable=False), D("updated_at", nullable=False),
+    Column("mapping", JSON, nullable=False), Column("mapping_version", Integer, nullable=False, default=1),
+    U("approved_by"), D("effective_from"), Column("is_active", Boolean, nullable=False, default=True),
+    U("updated_by", nullable=False), D("created_at", nullable=False), D("updated_at", nullable=False),
     UniqueConstraint("tenant_id", "id"), UniqueConstraint("tenant_id", "customer_name", "division"),
     ForeignKeyConstraint(["tenant_id", "updated_by"], ["app_user.tenant_id", "app_user.id"]),
 )
@@ -273,6 +280,95 @@ Index("idx_ws_job_intake_batch_team_created", job_intake_batches.c.tenant_id, jo
 Index("idx_ws_job_intake_item_batch_status", job_intake_items.c.tenant_id, job_intake_items.c.batch_id, job_intake_items.c.status, job_intake_items.c.row_number)
 Index("idx_ws_weekly_goal_team_week", weekly_goals.c.tenant_id, weekly_goals.c.team_id, weekly_goals.c.week_start)
 Index("idx_ws_weekly_snapshot_team_week", weekly_snapshots.c.tenant_id, weekly_snapshots.c.team_id, weekly_snapshots.c.week_start)
+
+
+job_operational_overlays = Table(
+    "ws_job_operational_overlay", metadata,
+    U("job_id", primary_key=True), U("tenant_id", nullable=False), U("team_id"),
+    U("recruiter_user_id"), S("client_priority", nullable=False), S("job_priority", nullable=False),
+    S("priority_reason"), S("manager_note"), S("next_action"), D("due_at"),
+    S("operational_status", nullable=False), Column("version", Integer, nullable=False),
+    U("assigned_by"), D("assigned_at"), U("updated_by", nullable=False),
+    D("created_at", nullable=False), D("updated_at", nullable=False),
+    UniqueConstraint("tenant_id", "job_id"),
+    CheckConstraint("client_priority IN ('high','normal','low')"),
+    CheckConstraint("job_priority IN ('hot','priority','standard','hold')"),
+    CheckConstraint("operational_status IN ('active','hold','closed')"),
+    CheckConstraint("version > 0"),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "team_id"], ["team.tenant_id", "team.id"]),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "assigned_by"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "updated_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+job_ownership_history = Table(
+    "ws_job_ownership_history", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
+    U("previous_owner_user_id"), U("new_owner_user_id"), U("changed_by", nullable=False),
+    S("reason", nullable=False), D("created_at", nullable=False),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "previous_owner_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "new_owner_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "changed_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+approval_requests = Table(
+    "ws_approval_request", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), S("approval_type", nullable=False),
+    S("object_type", nullable=False), U("object_id", nullable=False), U("requested_by", nullable=False),
+    S("required_authority", nullable=False), S("status", nullable=False), S("reason"),
+    S("decision_notes"), U("decided_by"), D("decided_at"), D("created_at", nullable=False),
+    D("updated_at", nullable=False),
+    CheckConstraint("required_authority IN ('delivery_manager','executive','system_admin')"),
+    CheckConstraint("status IN ('pending','approved','rejected','cancelled')"),
+    ForeignKeyConstraint(["tenant_id", "requested_by"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "decided_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+provenance_records = Table(
+    "ws_provenance", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), S("object_type", nullable=False),
+    U("object_id", nullable=False), S("field_path", nullable=False), S("source_type", nullable=False),
+    S("source_reference"), Column("confidence", Numeric(5,4)), Column("value_payload", JSON),
+    D("created_at", nullable=False),
+)
+
+ai_suggestions = Table(
+    "ws_ai_suggestion", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), S("object_type", nullable=False),
+    U("object_id", nullable=False), S("field_path", nullable=False), Column("suggested_value", JSON, nullable=False),
+    Column("source_basis", JSON, nullable=False), Column("confidence", Numeric(5,4)),
+    S("model_provider"), S("model_version"), S("policy_version"), S("status", nullable=False),
+    U("reviewed_by"), D("reviewed_at"), D("created_at", nullable=False),
+    CheckConstraint("status IN ('proposed','accepted','modified','rejected','expired')"),
+    ForeignKeyConstraint(["tenant_id", "reviewed_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+operational_audit = Table(
+    "ws_operational_audit", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("actor_user_id", nullable=False),
+    S("action", nullable=False), S("object_type", nullable=False), U("object_id", nullable=False),
+    Column("before_state", JSON, nullable=False), Column("after_state", JSON, nullable=False),
+    S("reason"), U("correlation_id"), D("created_at", nullable=False),
+    ForeignKeyConstraint(["tenant_id", "actor_user_id"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+Index("idx_ws_job_overlay_team_priority", job_operational_overlays.c.tenant_id,
+      job_operational_overlays.c.team_id, job_operational_overlays.c.job_priority,
+      job_operational_overlays.c.updated_at)
+Index("idx_ws_job_overlay_recruiter", job_operational_overlays.c.tenant_id,
+      job_operational_overlays.c.recruiter_user_id, job_operational_overlays.c.updated_at)
+Index("idx_ws_job_ownership_history_job_created", job_ownership_history.c.tenant_id,
+      job_ownership_history.c.job_id, job_ownership_history.c.created_at)
+Index("idx_ws_approval_request_status", approval_requests.c.tenant_id,
+      approval_requests.c.status, approval_requests.c.required_authority, approval_requests.c.created_at)
+Index("idx_ws_provenance_object", provenance_records.c.tenant_id, provenance_records.c.object_type,
+      provenance_records.c.object_id, provenance_records.c.field_path)
+Index("idx_ws_ai_suggestion_object_status", ai_suggestions.c.tenant_id, ai_suggestions.c.object_type,
+      ai_suggestions.c.object_id, ai_suggestions.c.status, ai_suggestions.c.created_at)
+Index("idx_ws_operational_audit_object_created", operational_audit.c.tenant_id,
+      operational_audit.c.object_type, operational_audit.c.object_id, operational_audit.c.created_at)
 
 
 job_publications = Table(

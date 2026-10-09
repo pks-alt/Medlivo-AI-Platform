@@ -1070,3 +1070,242 @@ def test_job_360_combines_source_requirements_matches_and_exclusions(client, hea
     assert body["preferences"][0]["canonical_key"] == "care_setting"
     assert body["best_candidates"][0]["jobdiva_candidate_id"] == "JD-CAND-300"
     assert body["exclusions"][0]["reason_code"] == "profession"
+
+
+def test_delivery_manager_sets_hot_job_and_audit(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open"
+        ))
+
+    response = client.put(
+        f"/api/v1/team/jobs/{idn(200)}/operational",
+        headers=headers("manager-a"),
+        json={
+            "client_priority": "high",
+            "job_priority": "hot",
+            "priority_reason": "Client requested immediate coverage",
+            "manager_note": "Focus today",
+            "next_action": "Submit qualified candidates",
+            "due_at": "2026-10-10T17:00:00-07:00",
+            "operational_status": "active",
+            "expected_version": 0,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job_priority"] == "hot"
+    assert body["client_priority"] == "high"
+    assert body["team_id"] == idn(30)
+    assert body["version"] == 1
+
+    audit = client.get(
+        f"/api/v1/team/manager/operational-audit?object_type=job&object_id={idn(200)}",
+        headers=headers("manager-a"),
+    )
+    assert audit.status_code == 200
+    assert audit.json()["items"][0]["action"] == "job.operational.updated"
+
+
+def test_recruiter_cannot_set_hot_job(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open"
+        ))
+    response = client.put(
+        f"/api/v1/team/jobs/{idn(200)}/operational",
+        headers=headers("recruiter-a"),
+        json={
+            "client_priority": "normal",
+            "job_priority": "hot",
+            "priority_reason": "Recruiter cannot promote priority",
+            "operational_status": "active",
+            "expected_version": 0,
+        },
+    )
+    assert response.status_code == 403
+
+
+def test_delivery_manager_assigns_job_and_preserves_ownership_history(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open"
+        ))
+
+    response = client.put(
+        f"/api/v1/team/jobs/{idn(200)}/assignment",
+        headers=headers("manager-a"),
+        json={
+            "team_id": idn(30),
+            "recruiter_user_id": idn(11),
+            "reason": "Balance priority workload across the rehab team",
+            "expected_version": 0,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["recruiter_user_id"] == idn(11)
+    assert body["team_id"] == idn(30)
+    assert body["version"] == 1
+
+    with seeded.begin() as conn:
+        history = conn.execute(select(t.job_ownership_history).where(
+            t.job_ownership_history.c.tenant_id == idn(1),
+            t.job_ownership_history.c.job_id == idn(200),
+        )).mappings().all()
+    assert len(history) == 1
+    assert history[0]["new_owner_user_id"] == idn(11)
+    assert history[0]["changed_by"] == idn(12)
+
+
+def test_delivery_manager_cannot_assign_recruiter_from_other_team(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open"
+        ))
+    response = client.put(
+        f"/api/v1/team/jobs/{idn(200)}/assignment",
+        headers=headers("manager-a"),
+        json={
+            "team_id": idn(30),
+            "recruiter_user_id": idn(15),
+            "reason": "Attempt cross-team assignment should fail",
+            "expected_version": 0,
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_operational_overlay_uses_optimistic_concurrency(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open"
+        ))
+
+    first = client.put(
+        f"/api/v1/team/jobs/{idn(200)}/operational",
+        headers=headers("manager-a"),
+        json={
+            "client_priority": "high",
+            "job_priority": "priority",
+            "priority_reason": "Priority customer",
+            "operational_status": "active",
+            "expected_version": 0,
+        },
+    )
+    assert first.status_code == 200
+
+    stale = client.put(
+        f"/api/v1/team/jobs/{idn(200)}/operational",
+        headers=headers("manager-a"),
+        json={
+            "client_priority": "high",
+            "job_priority": "hot",
+            "priority_reason": "Stale update",
+            "operational_status": "active",
+            "expected_version": 0,
+        },
+    )
+    assert stale.status_code == 409
+
+
+def test_delivery_manager_approves_direct_intake_without_inventing_bill_rate(client, headers):
+    created = client.post(
+        "/api/v1/team/job-intake/batches",
+        headers=headers("manager-a"),
+        json={
+            "customer_name": "Synthetic Rehab Customer",
+            "division": "Rehabilitation",
+            "source_filename": "direct-jobs.xlsx",
+            "mapping": {
+                "Title": "title",
+                "State": "state",
+                "Start": "start_date",
+                "Hours": "hours_per_week",
+            },
+        },
+    )
+    assert created.status_code == 201
+    batch_id = created.json()["id"]
+
+    processed = client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/rows",
+        headers=headers("manager-a"),
+        json={"rows": [{
+            "Title": "Travel Physical Therapist",
+            "State": "WA",
+            "Start": "2026-11-01",
+            "Hours": 40,
+        }]},
+    )
+    assert processed.status_code == 200
+
+    items = client.get(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items",
+        headers=headers("manager-a"),
+    ).json()["items"]
+    item_id = items[0]["id"]
+
+    approved = client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items/{item_id}/decision",
+        headers=headers("manager-a"),
+        json={
+            "decision": "approved",
+            "bill_rate_state": "unknown",
+            "recruiting_readiness": "ready",
+            "commercial_readiness": "review",
+            "reason": "Enough information to recruit; commercial rate still pending",
+        },
+    )
+    assert approved.status_code == 200
+    body = approved.json()
+    assert body["status"] == "approved"
+    assert body["bill_rate_state"] == "unknown"
+    assert body["recruiting_readiness"] == "ready"
+    assert body["commercial_readiness"] == "review"
+    assert "bill_rate" not in body["final_approved_values"]
+
+
+def test_confirmed_bill_rate_requires_approved_value(client, headers):
+    created = client.post(
+        "/api/v1/team/job-intake/batches",
+        headers=headers("manager-a"),
+        json={
+            "customer_name": "Synthetic Rehab Customer",
+            "division": "Rehabilitation",
+            "source_filename": "direct-jobs.xlsx",
+            "mapping": {
+                "Title": "title",
+                "State": "state",
+                "Start": "start_date",
+                "Hours": "hours_per_week",
+            },
+        },
+    )
+    batch_id = created.json()["id"]
+    client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/rows",
+        headers=headers("manager-a"),
+        json={"rows": [{
+            "Title": "Travel Physical Therapist",
+            "State": "WA",
+            "Start": "2026-11-01",
+            "Hours": 40,
+        }]},
+    )
+    item_id = client.get(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items",
+        headers=headers("manager-a"),
+    ).json()["items"][0]["id"]
+
+    response = client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items/{item_id}/decision",
+        headers=headers("manager-a"),
+        json={
+            "decision": "approved",
+            "bill_rate_state": "confirmed",
+            "recruiting_readiness": "ready",
+            "commercial_readiness": "ready",
+        },
+    )
+    assert response.status_code == 422
