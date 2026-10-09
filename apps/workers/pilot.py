@@ -5,6 +5,7 @@ import json
 import os
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 
 from psycopg import AsyncConnection
 
@@ -113,32 +114,118 @@ async def check_schema_readiness(connection) -> dict:
     }
 
 
-async def run_connectivity_diagnostic(client) -> dict:
-    result = {
-        "authentication": "ok",
-        "data_endpoint": "unknown",
-        "http_status": None,
-        "response_parse": "not_attempted",
-    }
-    try:
-        response = await client.request("GET", client.OPEN_JOBS_PATH)
-    except JobDivaHTTPError as exc:
-        result["data_endpoint"] = "unauthorized" if exc.status_code in {401, 403} else "http_error"
-        result["http_status"] = exc.status_code
-        return result
-    except JobDivaError:
-        result["data_endpoint"] = "connector_error"
-        return result
+def _first_source_id(records: list[dict], keys: tuple[str, ...]) -> str | None:
+    for record in records:
+        for key in keys:
+            value = record.get(key)
+            if isinstance(value, bool):
+                continue
+            if isinstance(value, (str, int)) and str(value).strip():
+                return str(value).strip()
+    return None
 
-    result["data_endpoint"] = "ok"
-    result["http_status"] = response.status_code
+
+async def _diagnostic_read(name: str, call) -> tuple[dict, list[dict]]:
     try:
-        client._json_records(response)
+        records = await call()
+    except JobDivaHTTPError as exc:
+        return {
+            "status": "unauthorized" if exc.status_code in {401, 403} else "http_error",
+            "http_status": exc.status_code,
+            "records": None,
+        }, []
     except JobDivaError:
-        result["response_parse"] = "unexpected_payload"
+        return {"status": "connector_error", "http_status": None, "records": None}, []
+    return {"status": "ok", "http_status": 200, "records": len(records)}, records
+
+
+async def run_full_read_diagnostic(client, *, now: datetime | None = None) -> dict:
+    """Verify the enabled Phase 1 JobDiva read contract without persisting payload data."""
+    current = now or datetime.now()
+    start = current - timedelta(days=14)
+    endpoints: dict[str, dict] = {}
+
+    endpoints["open_jobs"], open_jobs = await _diagnostic_read("open_jobs", client.open_jobs)
+    endpoints["updated_jobs"], updated_jobs = await _diagnostic_read(
+        "updated_jobs",
+        lambda: client.updated_jobs(
+            from_date=start, to_date=current, page_number=1, page_size=5
+        ),
+    )
+    endpoints["updated_candidates"], updated_candidates = await _diagnostic_read(
+        "updated_candidates",
+        lambda: client.updated_candidates(
+            from_date=start, to_date=current, page_number=1, page_size=5
+        ),
+    )
+
+    job_id = _first_source_id(
+        open_jobs + updated_jobs, ("JOBID", "jobId", "jobID", "id", "ID")
+    )
+    if job_id:
+        endpoints["job_detail"], _ = await _diagnostic_read(
+            "job_detail", lambda: client.job_detail(job_id)
+        )
     else:
-        result["response_parse"] = "ok"
-    return result
+        endpoints["job_detail"] = {
+            "status": "not_tested_no_sample", "http_status": None, "records": None
+        }
+
+    candidate_id = _first_source_id(
+        updated_candidates,
+        ("CANDIDATEID", "candidateId", "candidateID", "id", "ID"),
+    )
+    if candidate_id:
+        endpoints["candidate_profile"], _ = await _diagnostic_read(
+            "candidate_profile", lambda: client.candidate_profile(candidate_id)
+        )
+        endpoints["candidate_licenses"], _ = await _diagnostic_read(
+            "candidate_licenses", lambda: client.candidate_licenses(candidate_id)
+        )
+        endpoints["candidate_certifications"], _ = await _diagnostic_read(
+            "candidate_certifications", lambda: client.candidate_certifications(candidate_id)
+        )
+        endpoints["candidate_resumes"], resumes = await _diagnostic_read(
+            "candidate_resumes", lambda: client.candidate_resumes(candidate_id)
+        )
+        resume_id = _first_source_id(
+            resumes, ("RESUMEID", "resumeId", "resumeID", "id", "ID")
+        )
+        if resume_id:
+            endpoints["resume_text"], _ = await _diagnostic_read(
+                "resume_text", lambda: client.resume_text(resume_id)
+            )
+        else:
+            endpoints["resume_text"] = {
+                "status": "not_tested_no_sample", "http_status": None, "records": None
+            }
+    else:
+        for name in (
+            "candidate_profile",
+            "candidate_licenses",
+            "candidate_certifications",
+            "candidate_resumes",
+            "resume_text",
+        ):
+            endpoints[name] = {
+                "status": "not_tested_no_sample", "http_status": None, "records": None
+            }
+
+    statuses = [item["status"] for item in endpoints.values()]
+    if any(status in {"unauthorized", "http_error", "connector_error"} for status in statuses):
+        contract_status = "failed"
+    elif any(status == "not_tested_no_sample" for status in statuses):
+        contract_status = "partial"
+    else:
+        contract_status = "verified"
+
+    return {
+        "authentication": "ok",
+        "contract_status": contract_status,
+        "window_days": 14,
+        "page_size": 5,
+        "endpoints": endpoints,
+    }
 
 
 async def run_pilot_once(
@@ -245,14 +332,14 @@ async def main() -> int:
         async with JobDivaClient(settings) as client:
             await client.authenticate()
             if diagnostics_only():
-                diagnostic = await run_connectivity_diagnostic(client)
+                diagnostic = await run_full_read_diagnostic(client)
                 emit_event({
                     "pilot": "diagnostic",
                     "tenant_id": tenant_id,
                     "database_schema": "ready",
                     "jobdiva": diagnostic,
                 })
-                return 0 if diagnostic["data_endpoint"] == "ok" else 3
+                return 0 if diagnostic["contract_status"] == "verified" else 3
 
             result = await run_pilot_once(
                 connection=connection,
