@@ -71,9 +71,11 @@ The active JobDiva integration remains GET-only. Write paths stay disabled until
 
 A public, synthetic recruiter-workspace preview is available for product familiarization:
 
-[Open the browser preview](https://pks-alt.github.io/Medlivo-AI-Platform/workspace-preview/)
+[Open the recruiter browser preview](https://pks-alt.github.io/Medlivo-AI-Platform/workspace-preview/)
 
-The preview is sample-only and is not connected to JobDiva, Cloud Run, email, SMS, or production candidate data.
+[Open the Admin browser preview](https://pks-alt.github.io/Medlivo-AI-Platform/admin-preview/)
+
+Both previews are sample-only and are not connected to JobDiva, Cloud Run, email, SMS, or production candidate data. The production Admin console is separately wired to the private team API and canonical JobDiva-backed database.
 
 ## Source of truth
 

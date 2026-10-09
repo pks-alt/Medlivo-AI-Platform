@@ -134,6 +134,119 @@ class WorkspaceStore:
                 items.append(item)
             return {"items": items, "truncated": len(rows) > 500}
 
+
+    def admin_operations_summary(self, identity):
+        """Administrator-only operational view over canonical JobDiva-backed data."""
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "admin":
+                raise AccessError(403, "Administrator access required")
+            tenant_id = principal["tenant_id"]
+
+            def scalar(sql, **params):
+                row = conn.execute(text(sql), {"tenant_id": tenant_id, **params}).first()
+                return int(row[0] or 0) if row else 0
+
+            checkpoints = conn.execute(text("""
+                SELECT stream, watermark, last_success_at, last_error_code, updated_at
+                FROM integration_sync_checkpoint
+                WHERE tenant_id=:tenant_id AND source_system='jobdiva'
+                ORDER BY stream
+            """), {"tenant_id": tenant_id}).mappings().all()
+
+            latest_runs = conn.execute(text("""
+                SELECT DISTINCT ON (stream)
+                    stream, status, window_start, window_end, pages_processed,
+                    records_seen, records_upserted, error_code, started_at, finished_at
+                FROM integration_sync_run
+                WHERE tenant_id=:tenant_id AND source_system='jobdiva'
+                ORDER BY stream, started_at DESC
+            """), {"tenant_id": tenant_id}).mappings().all() if conn.dialect.name == "postgresql" else []
+
+            source_counts = {
+                "jobs": scalar("""
+                    SELECT count(*) FROM job_source_record
+                    WHERE tenant_id=:tenant_id AND source_system='jobdiva'
+                """),
+                "candidates": scalar("""
+                    SELECT count(*) FROM candidate_source_record
+                    WHERE tenant_id=:tenant_id AND source_system='jobdiva'
+                """),
+                "jobs_enriched": scalar("""
+                    SELECT count(*) FROM job_source_record
+                    WHERE tenant_id=:tenant_id AND source_system='jobdiva'
+                      AND enriched_at IS NOT NULL
+                """),
+                "candidates_enriched": scalar("""
+                    SELECT count(*) FROM candidate_source_record
+                    WHERE tenant_id=:tenant_id AND source_system='jobdiva'
+                      AND enriched_at IS NOT NULL
+                """),
+                "job_enrichment_errors": scalar("""
+                    SELECT count(*) FROM job_source_record
+                    WHERE tenant_id=:tenant_id AND source_system='jobdiva'
+                      AND enrichment_error_code IS NOT NULL
+                """),
+                "candidate_enrichment_errors": scalar("""
+                    SELECT count(*) FROM candidate_source_record
+                    WHERE tenant_id=:tenant_id AND source_system='jobdiva'
+                      AND enrichment_error_code IS NOT NULL
+                """),
+            }
+
+            canonical = {
+                "jobs": scalar("SELECT count(*) FROM job WHERE tenant_id=:tenant_id"),
+                "open_jobs": scalar("""
+                    SELECT count(*) FROM job
+                    WHERE tenant_id=:tenant_id AND status IN ('open','active')
+                """),
+                "candidates": scalar("SELECT count(*) FROM candidate WHERE tenant_id=:tenant_id"),
+                "matches": scalar("SELECT count(*) FROM match WHERE tenant_id=:tenant_id"),
+                "strong_matches": scalar("""
+                    SELECT count(*) FROM match
+                    WHERE tenant_id=:tenant_id AND overall_score >= 9
+                """),
+                "good_matches": scalar("""
+                    SELECT count(*) FROM match
+                    WHERE tenant_id=:tenant_id AND overall_score >= 8 AND overall_score < 9
+                """),
+                "excluded_matches": scalar("""
+                    SELECT count(*) FROM match
+                    WHERE tenant_id=:tenant_id AND status='excluded'
+                """),
+            }
+
+            division_rows = conn.execute(text("""
+                SELECT COALESCE(NULLIF(division,''),'Unclassified') AS division,
+                       count(*) AS jobs,
+                       count(*) FILTER (WHERE status IN ('open','active')) AS open_jobs
+                FROM job
+                WHERE tenant_id=:tenant_id
+                GROUP BY COALESCE(NULLIF(division,''),'Unclassified')
+                ORDER BY division
+            """), {"tenant_id": tenant_id}).mappings().all() if conn.dialect.name == "postgresql" else []
+
+            recent_failures = conn.execute(text("""
+                SELECT stream, status, error_code, started_at, finished_at
+                FROM integration_sync_run
+                WHERE tenant_id=:tenant_id AND source_system='jobdiva'
+                  AND status='failed'
+                ORDER BY started_at DESC
+                LIMIT 10
+            """), {"tenant_id": tenant_id}).mappings().all()
+
+            return clean({
+                "source_system": "jobdiva",
+                "read_only": True,
+                "generated_at": now(),
+                "checkpoints": checkpoints,
+                "latest_runs": latest_runs,
+                "source_counts": source_counts,
+                "canonical": canonical,
+                "divisions": division_rows,
+                "recent_failures": recent_failures,
+            })
+
     def _admin_mutate(self, identity, key, action, payload, callback):
         fingerprint = hashlib.sha256(json.dumps({"action": action, "payload": payload},
             sort_keys=True, separators=(",", ":"), default=json_value).encode()).hexdigest()
