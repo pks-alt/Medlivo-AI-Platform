@@ -1,0 +1,87 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+type Json = any;
+const sections=[["overview","Overview"],["jobdiva","JobDiva Data"],["users","Users & Access"],["teams","Teams"],["intake","Job Intake"],["mappings","Mappings"],["approvals","Job Approvals"],["performance","Recruiter Performance"],["quality","Match Quality"],["audit","Audit"]];
+
+async function load(path:string){
+  const r=await fetch("/api/team/"+path,{cache:"no-store",credentials:"same-origin"});
+  if(!r.ok) throw new Error(path+" HTTP "+r.status);
+  return r.json();
+}
+
+export default function AdminPage(){
+  const [data,setData]=useState<Json|null>(null);
+  const [error,setError]=useState("");
+  const [tab,setTab]=useState("overview");
+  useEffect(()=>{(async()=>{try{
+    const [ops,users,teams,audit,overview,batches,mappings,pubs,quality]=await Promise.all([
+      load("admin/operations"),load("admin/users"),load("admin/teams"),load("admin/audit?limit=25"),
+      load("manager/overview"),load("job-intake/batches?limit=25"),load("job-intake/mappings"),
+      load("job-publications?limit=25"),load("manager/match-quality")
+    ]);
+    setData({ops,users,teams,audit,overview,batches,mappings,pubs,quality});
+  }catch(e:any){setError(e?.message||"Admin data could not be loaded");}})()},[]);
+
+  if(error)return <main className="adminShell"><div className="adminError"><b>Admin console unavailable</b><span>{error}</span><p>Sign in with a provisioned Medlivo administrator account and confirm the private team API is reachable.</p></div></main>;
+  if(!data)return <main className="adminShell"><div className="adminLoading">Loading Medlivo Admin…</div></main>;
+
+  const o=data.ops||{},canon=o.canonical||{},src=o.source_counts||{},totals=data.overview?.totals||{};
+  const cards=[
+    ["Open jobs",canon.open_jobs??0,"Canonical jobs available to recruiting"],
+    ["Candidates",canon.candidates??0,"Canonical candidate profiles"],
+    ["Strong matches",canon.strong_matches??0,"Deterministic score 9+"],
+    ["Active recruiters",totals.active_recruiters??0,"Across managed teams"],
+    ["Open follow-ups",totals.open_followups??0,"Recruiter actions still open"],
+    ["JobDiva source records",(src.jobs??0)+(src.candidates??0),"Read-only records landed"]
+  ];
+
+  return <main className="adminShell">
+    <aside className="adminNav">
+      <div className="adminBrand"><b>medlivo</b><span>ADMIN</span></div>
+      {sections.map(([id,label])=><button key={id} className={tab===id?"active":""} onClick={()=>setTab(id)}>{label}</button>)}
+      <a href="/">Recruiter workspace</a>
+    </aside>
+    <section className="adminMain">
+      <header className="adminHead"><div><small>MEDLIVO AI PLATFORM</small><h1>Administration</h1><p>Operational control, JobDiva visibility, teams, intake, quality and governance.</p></div><span className="readOnly">JOBDIVA READ-ONLY</span></header>
+
+      {tab==="overview" && <>
+        <div className="adminMetricGrid">{cards.map(c=><article key={String(c[0])}><strong>{c[1]}</strong><b>{c[0]}</b><span>{c[2]}</span></article>)}</div>
+        <div className="adminTwo">
+          <Panel title="JobDiva integration"><Rows rows={[
+            ["Source","JobDiva"],["Mode","Read-only"],["Jobs enriched",String(src.jobs_enriched??0)+" / "+String(src.jobs??0)],
+            ["Candidates enriched",String(src.candidates_enriched??0)+" / "+String(src.candidates??0)],
+            ["Enrichment errors",String((src.job_enrichment_errors??0)+(src.candidate_enrichment_errors??0))]
+          ]}/></Panel>
+          <Panel title="Division inventory">{(o.divisions||[]).length?<table className="adminTable"><thead><tr><th>Division</th><th>Jobs</th><th>Open</th></tr></thead><tbody>{o.divisions.map((x:any)=><tr key={x.division}><td>{x.division}</td><td>{x.jobs}</td><td>{x.open_jobs}</td></tr>)}</tbody></table>:<Empty/>}</Panel>
+        </div>
+      </>}
+
+      {tab==="jobdiva" && <>
+        <div className="adminMetricGrid">{[
+          ["Job records",src.jobs??0,"Landed from JobDiva"],["Candidate records",src.candidates??0,"Landed from JobDiva"],
+          ["Jobs enriched",src.jobs_enriched??0,"JobsDetail completed"],["Candidates enriched",src.candidates_enriched??0,"Profile/credentials/resume completed"],
+          ["Matches",canon.matches??0,"Persisted match records"],["Excluded",canon.excluded_matches??0,"Hard-gate exclusions"]
+        ].map(c=><article key={String(c[0])}><strong>{c[1]}</strong><b>{c[0]}</b><span>{c[2]}</span></article>)}</div>
+        <Panel title="Latest sync by stream"><table className="adminTable"><thead><tr><th>Stream</th><th>Status</th><th>Seen</th><th>Upserted</th><th>Started</th></tr></thead><tbody>{(o.latest_runs||[]).map((x:any)=><tr key={x.stream}><td>{x.stream}</td><td><Badge v={x.status}/></td><td>{x.records_seen}</td><td>{x.records_upserted}</td><td>{fmt(x.started_at)}</td></tr>)}</tbody></table></Panel>
+        <Panel title="Recent failures">{(o.recent_failures||[]).length?<table className="adminTable"><tbody>{o.recent_failures.map((x:any,i:number)=><tr key={i}><td>{x.stream}</td><td>{x.error_code||"Unknown"}</td><td>{fmt(x.started_at)}</td></tr>)}</tbody></table>:<div className="goodState">No recent JobDiva sync failures.</div>}</Panel>
+      </>}
+
+      {tab==="users" && <Panel title="Users & access"><table className="adminTable"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Team</th><th>Google identity</th><th>Status</th></tr></thead><tbody>{(data.users.items||[]).map((x:any)=><tr key={x.id}><td>{x.display_name||"—"}</td><td>{x.email}</td><td>{x.role}</td><td>{x.team_id||"—"}</td><td>{x.identity_bound?"Bound":"Not bound"}</td><td><Badge v={x.is_active?"active":"inactive"}/></td></tr>)}</tbody></table></Panel>}
+      {tab==="teams" && <><Panel title="Teams"><table className="adminTable"><thead><tr><th>Team</th><th>Division</th><th>Manager</th></tr></thead><tbody>{(data.teams.items||[]).map((x:any)=><tr key={x.id}><td>{x.name}</td><td>{x.division}</td><td>{x.manager_user_id||"Unassigned"}</td></tr>)}</tbody></table></Panel><Panel title="Recruiter workload"><table className="adminTable"><thead><tr><th>Recruiter</th><th>Work</th><th>Open follow-ups</th><th>Overdue</th></tr></thead><tbody>{(data.overview.recruiters||[]).map((x:any)=><tr key={x.id}><td>{x.display_name}</td><td>{x.work_items}</td><td>{x.open_followups}</td><td>{x.overdue_followups}</td></tr>)}</tbody></table></Panel></>}
+      {tab==="intake" && <Panel title="Direct customer job intake"><table className="adminTable"><thead><tr><th>Customer</th><th>Division</th><th>File</th><th>Rows</th><th>Ready</th><th>Review</th><th>Duplicate</th><th>Status</th></tr></thead><tbody>{(data.batches.items||[]).map((x:any)=><tr key={x.id}><td>{x.customer_name}</td><td>{x.division}</td><td>{x.source_filename}</td><td>{x.row_count}</td><td>{x.ready_count}</td><td>{x.review_count}</td><td>{x.duplicate_count}</td><td><Badge v={x.status}/></td></tr>)}</tbody></table></Panel>}
+      {tab==="mappings" && <Panel title="Customer mappings">{(data.mappings.items||[]).length?(data.mappings.items||[]).map((x:any)=><div className="mappingCard" key={x.id}><b>{x.customer_name}</b><span>{x.division}</span><pre>{JSON.stringify(x.mapping,null,2)}</pre></div>):<Empty/>}</Panel>}
+      {tab==="approvals" && <Panel title="Job approval / publication"><table className="adminTable"><thead><tr><th>Readiness</th><th>Recruiting</th><th>Website</th><th>Updated</th></tr></thead><tbody>{(data.pubs.items||[]).map((x:any)=><tr key={x.id}><td>{x.readiness}</td><td><Badge v={x.recruiting_status}/></td><td><Badge v={x.website_status}/></td><td>{fmt(x.updated_at)}</td></tr>)}</tbody></table></Panel>}
+      {tab==="performance" && <Panel title="Recruiter operations"><table className="adminTable"><thead><tr><th>Recruiter</th><th>Work items</th><th>Open</th><th>Overdue</th></tr></thead><tbody>{(data.overview.recruiters||[]).map((x:any)=><tr key={x.id}><td>{x.display_name}</td><td>{x.work_items}</td><td>{x.open_followups}</td><td>{x.overdue_followups}</td></tr>)}</tbody></table></Panel>}
+      {tab==="quality" && <Panel title="Match quality"><pre className="jsonBlock">{JSON.stringify(data.quality,null,2)}</pre></Panel>}
+      {tab==="audit" && <Panel title="Administrator audit"><table className="adminTable"><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th></tr></thead><tbody>{(data.audit.items||[]).map((x:any)=><tr key={x.id}><td>{fmt(x.created_at)}</td><td>{x.actor_display_name}</td><td>{x.action}</td><td>{x.target_display_name||x.target_email}</td></tr>)}</tbody></table></Panel>}
+    </section>
+  </main>
+}
+
+function Panel({title,children}:{title:string,children:any}){return <section className="adminPanel"><h2>{title}</h2>{children}</section>}
+function Rows({rows}:{rows:any[]}){return <div className="adminRows">{rows.map((r:any)=><div key={r[0]}><span>{r[0]}</span><b>{r[1]}</b></div>)}</div>}
+function Badge({v}:{v:any}){return <span className={"statusBadge "+String(v).toLowerCase().replaceAll(" ","-")}>{String(v)}</span>}
+function Empty(){return <div className="emptyState">No records yet.</div>}
+function fmt(v:any){if(!v)return "—";try{return new Date(v).toLocaleString()}catch{return String(v)}}
