@@ -1149,6 +1149,76 @@ class WorkspaceStore:
             }
 
 
+    def _persist_intake_items(self, conn, principal, *, batch_id, division,
+                              customer_name, processed, timestamp):
+        statuses = []
+        for item in processed:
+            item_id = uid()
+            source_id = str(
+                item["normalized_job"].get("requisition_id")
+                or f"{batch_id}:{item['row_number']}"
+            )
+            intelligence = analyze_intake_job(
+                item["normalized_job"],
+                division=division,
+                source_id=source_id,
+                customer_name=customer_name,
+            )
+            conflicts = intelligence["conflicts"]
+            missing_fields = intelligence["missing_fields"]
+
+            status = item["status"]
+            if status != "duplicate" and (conflicts or missing_fields):
+                status = "review"
+            statuses.append(status)
+
+            conn.execute(insert(t.job_intake_items).values(
+                id=item_id,
+                tenant_id=principal["tenant_id"],
+                batch_id=batch_id,
+                duplicate_job_id=None,
+                created_job_id=None,
+                created_at=timestamp,
+                updated_at=timestamp,
+                row_number=item["row_number"],
+                source_row=item["source_row"],
+                normalized_job=item["normalized_job"],
+                validation_errors=item["validation_errors"],
+                status=status,
+                extracted_values=intelligence["extracted_values"],
+                ai_suggestions=intelligence["ai_suggestions"],
+                conflicts=conflicts,
+                missing_fields=missing_fields,
+                final_approved_values=None,
+                standardized_internal_jd=intelligence["standardized_internal_jd"],
+                bill_rate_state=intelligence["bill_rate_state"],
+                recruiting_readiness=intelligence["recruiting_readiness"],
+                commercial_readiness=intelligence["commercial_readiness"],
+                reviewed_by=None,
+                reviewed_at=None,
+            ))
+            for provenance in intelligence["provenance"]:
+                conn.execute(insert(t.provenance_records).values(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    object_type="job_intake_item",
+                    object_id=item_id,
+                    field_path=provenance["field"],
+                    source_type=provenance["source_type"],
+                    source_reference=provenance["source_reference"],
+                    confidence=provenance["confidence"],
+                    value_payload={
+                        "value": item["normalized_job"].get(provenance["field"])
+                    },
+                    created_at=timestamp,
+                ))
+
+        return {
+            "ready_count": sum(1 for status in statuses if status == "ready"),
+            "review_count": sum(1 for status in statuses if status == "review"),
+            "duplicate_count": sum(1 for status in statuses if status == "duplicate"),
+        }
+
     def ingest_job_intake_rows(self, identity, batch_id, key, value):
         payload = {"batch_id": batch_id, "rows": value.rows, "mapping": value.mapping}
         def apply(conn, principal):
@@ -1175,70 +1245,18 @@ class WorkspaceStore:
                 t.job_intake_items.c.batch_id == batch_id,
             ))
             timestamp = now()
-            for item in processed:
-                item_id = uid()
-                source_id = str(item["normalized_job"].get("requisition_id") or f"{batch_id}:{item['row_number']}")
-                intelligence = analyze_intake_job(
-                    item["normalized_job"],
-                    division=batch["division"],
-                    source_id=source_id,
-                    customer_name=batch["customer_name"],
-                )
-                conflicts = intelligence["conflicts"]
-                missing_fields = intelligence["missing_fields"]
-
-                # Intake validation and Job Intelligence both contribute to review
-                # status. Neither AI nor normalization can silently make an
-                # incomplete/conflicting row authoritative.
-                status = item["status"]
-                if status != "duplicate" and (conflicts or missing_fields):
-                    status = "review"
-
-                conn.execute(insert(t.job_intake_items).values(
-                    id=item_id,
-                    tenant_id=principal["tenant_id"],
-                    batch_id=batch_id,
-                    duplicate_job_id=None,
-                    created_job_id=None,
-                    created_at=timestamp,
-                    updated_at=timestamp,
-                    row_number=item["row_number"],
-                    source_row=item["source_row"],
-                    normalized_job=item["normalized_job"],
-                    validation_errors=item["validation_errors"],
-                    status=status,
-                    extracted_values=intelligence["extracted_values"],
-                    ai_suggestions=intelligence["ai_suggestions"],
-                    conflicts=conflicts,
-                    missing_fields=missing_fields,
-                    final_approved_values=None,
-                    standardized_internal_jd=intelligence["standardized_internal_jd"],
-                    bill_rate_state=intelligence["bill_rate_state"],
-                    recruiting_readiness=intelligence["recruiting_readiness"],
-                    commercial_readiness=intelligence["commercial_readiness"],
-                    reviewed_by=None,
-                    reviewed_at=None,
-                ))
-                for provenance in intelligence["provenance"]:
-                    conn.execute(insert(t.provenance_records).values(
-                        id=uid(),
-                        tenant_id=principal["tenant_id"],
-                        object_type="job_intake_item",
-                        object_id=item_id,
-                        field_path=provenance["field"],
-                        source_type=provenance["source_type"],
-                        source_reference=provenance["source_reference"],
-                        confidence=provenance["confidence"],
-                        value_payload={"value": item["normalized_job"].get(provenance["field"])},
-                        created_at=timestamp,
-                    ))
-            persisted_statuses = conn.execute(select(t.job_intake_items.c.status).where(
-                t.job_intake_items.c.tenant_id == principal["tenant_id"],
-                t.job_intake_items.c.batch_id == batch_id,
-            )).scalars().all()
-            ready_count = sum(1 for status in persisted_statuses if status == "ready")
-            review_count = sum(1 for status in persisted_statuses if status == "review")
-            duplicate_count = sum(1 for status in persisted_statuses if status == "duplicate")
+            counts = self._persist_intake_items(
+                conn,
+                principal,
+                batch_id=batch_id,
+                division=batch["division"],
+                customer_name=batch["customer_name"],
+                processed=processed,
+                timestamp=timestamp,
+            )
+            ready_count = counts["ready_count"]
+            review_count = counts["review_count"]
+            duplicate_count = counts["duplicate_count"]
             conn.execute(update(t.job_intake_batches).where(
                 t.job_intake_batches.c.id == batch_id,
                 t.job_intake_batches.c.tenant_id == principal["tenant_id"],
