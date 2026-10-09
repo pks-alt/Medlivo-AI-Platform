@@ -121,6 +121,8 @@ The diagnostic reports:
 
 Do not proceed to persistence-enabled pilot execution until the read contract is `verified`.
 
+When `diagnostics_only=true`, the staging deploy workflow now executes the diagnostics-only Cloud Run Job automatically and uploads a sanitized `jobdiva-read-contract-diagnostic` artifact. This auto-execution applies only to diagnostics. Persistence-enabled pilot execution remains manual.
+
 ## First real-data execution
 
 After database migrations 002 through 007 are applied to the staging canonical database and secret/IAM checks are complete:
