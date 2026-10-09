@@ -48,10 +48,13 @@ def test_title_profession_conflict_is_detected():
 def test_standardized_internal_jd_is_created_without_inventing_bill_rate():
     result = analyze_job(make_job())
     jd = result.standardized_internal_jd
-    assert jd["title"].startswith("Travel Physical Therapist")
-    assert jd["sections"]
+    assert jd["job_title"].startswith("Travel Physical Therapist")
+    assert jd["source_description"] is None
     serialized = str(jd).lower()
-    assert "bill_rate" not in serialized
+    assert "what you'll do" not in serialized
+    assert "patient-centered" not in serialized
+    assert jd["commercial"]["bill_rate_state"] == "unknown"
+    assert "bill_rate" not in jd["commercial"]
     assert "$" not in serialized
 
 
