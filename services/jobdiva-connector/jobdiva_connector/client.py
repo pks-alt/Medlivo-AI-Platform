@@ -281,13 +281,13 @@ class JobDivaClient:
         return self._json_records(await self.request("GET", self.CANDIDATE_PROFILE_PATH, params={"candidateIds": candidate_id}))
 
     async def candidate_licenses(self, candidate_id: str | int) -> list[dict[str, Any]]:
-        return self._json_records(await self.request("GET", self.CANDIDATE_LICENSES_PATH, params={"candidateId": candidate_id}))
+        return self._json_records(await self.request("GET", self.CANDIDATE_LICENSES_PATH, params={"candidateIds": candidate_id}))
 
     async def candidate_certifications(self, candidate_id: str | int) -> list[dict[str, Any]]:
-        return self._json_records(await self.request("GET", self.CANDIDATE_CERTIFICATIONS_PATH, params={"candidateId": candidate_id}))
+        return self._json_records(await self.request("GET", self.CANDIDATE_CERTIFICATIONS_PATH, params={"candidateIds": candidate_id}))
 
     async def candidate_resumes(self, candidate_id: str | int) -> list[dict[str, Any]]:
-        return self._json_records(await self.request("GET", self.CANDIDATE_RESUMES_PATH, params={"candidateId": candidate_id}))
+        return self._json_records(await self.request("GET", self.CANDIDATE_RESUMES_PATH, params={"candidateIds": candidate_id}))
 
     async def resume_text(self, resume_id: str | int) -> list[dict[str, Any]]:
         return self._json_records(await self.request("GET", self.RESUME_TEXT_PATH, params={"resumeIds": resume_id}))
