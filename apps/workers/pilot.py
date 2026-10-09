@@ -23,7 +23,8 @@ from jobdiva_sync import (
     enrich_pending_candidates,
     enrich_pending_jobs,
     run_delta_sync,
-    run_historical_backfill,
+    backfill_windows,
+    run_backfill_window,
     persist_active_job_sample,
 )
 
@@ -97,20 +98,36 @@ async def import_six_month_jobs(connection, client, *, tenant_id: str, page_size
     sync_store = PostgresSyncStore(connection)
     promoter = CanonicalPromoter(connection)
 
-    runs = await run_historical_backfill(
-        client,
-        sync_store,
-        tenant_id=tenant_id,
-        stream=SyncStream.JOBS,
-        start=start,
-        end=end,
-        page_size=page_size,
-        source_ids_sink=source_ids,
-    )
+    runs = []
+    for window_start, window_end in backfill_windows(start, end):
+        runs.append(await run_backfill_window(
+            client,
+            sync_store,
+            tenant_id=tenant_id,
+            stream=SyncStream.JOBS,
+            window_start=window_start,
+            window_end=window_end,
+            page_size=page_size,
+            source_ids_sink=source_ids,
+        ))
+
+    if not source_ids:
+        return {
+            "window_start": start.isoformat(),
+            "window_end": end.isoformat(),
+            "windows_completed": len(runs),
+            "source_jobs": 0,
+            "promotion": {"promoted": 0, "skipped": 0, "failed": 0},
+            "status_counts": {},
+            "division_counts": {},
+            "includes_closed": True,
+            "historical_scope": "last_six_calendar_months",
+        }
+
     promotion = await promoter.promote_unlinked(
         tenant_id=tenant_id,
         stream=SyncStream.JOBS,
-        limit=max(1, len(source_ids)),
+        limit=len(source_ids),
         source_ids=sorted(source_ids),
     )
 
