@@ -30,7 +30,7 @@ async def test_authenticate_uses_documented_query_parameters_and_hides_token():
     try:
         token = await client.authenticate()
         assert token == "synthetic-token-123"
-        assert seen["path"] == "/apiv2/authenticate"
+        assert seen["path"] == "/apiv2/v2/authenticate"
         assert seen["params"]["clientid"] == "2781"
         assert seen["params"]["username"] == "api-user@example.test"
         assert seen["params"]["password"] == "not-a-real-secret"
