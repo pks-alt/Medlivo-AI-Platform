@@ -72,3 +72,12 @@ def test_ambiguous_job_division_is_not_guessed():
         "PROFESSION": "Healthcare",
     })
     assert job.division is None
+
+
+def test_filled_and_closed_jobdiva_statuses_are_preserved_as_closed():
+    assert normalize_job({"JOBID": 20, "JOBTITLE": "Synthetic RN", "STATUS": "Filled"}).status == "closed"
+    assert normalize_job({"JOBID": 21, "JOBTITLE": "Synthetic PT", "STATUS": "Closed"}).status == "closed"
+
+
+def test_cancelled_jobdiva_status_is_preserved():
+    assert normalize_job({"JOBID": 22, "JOBTITLE": "Synthetic Locum", "STATUS": "Cancelled"}).status == "cancelled"
