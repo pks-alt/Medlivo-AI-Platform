@@ -19,7 +19,7 @@ class CanonicalPromoter:
     def __init__(self, connection: AsyncConnection):
         self.connection = connection
 
-    async def promote_unlinked(self, *, tenant_id: str, stream: SyncStream, limit: int = 500) -> dict[str, int | str]:
+    async def promote_unlinked(self, *, tenant_id: str, stream: SyncStream, limit: int = 500,\n                               source_ids: list[str] | None = None) -> dict[str, int | str]:
         if limit < 1 or limit > 5000:
             raise ValueError("limit must be between 1 and 5000")
 
@@ -42,22 +42,41 @@ class CanonicalPromoter:
         promoted = skipped = failed = seen = 0
         try:
             async with self.connection.cursor() as cur:
-                await cur.execute(
-                    f"""
-                    SELECT id, source_id, raw_payload
-                    FROM {source_table}
-                    WHERE tenant_id=%s
-                      AND source_system=%s
-                      AND (
-                        promoted_at IS NULL
-                        OR promoted_at < updated_at
-                        OR promotion_version IS DISTINCT FROM %s
-                      )
-                    ORDER BY updated_at, id
-                    LIMIT %s
-                    """,
-                    (tenant_id, source_system, promotion_version, limit),
-                )
+                if source_ids is None:
+                    await cur.execute(
+                        f"""
+                        SELECT id, source_id, raw_payload
+                        FROM {source_table}
+                        WHERE tenant_id=%s
+                          AND source_system=%s
+                          AND (
+                            promoted_at IS NULL
+                            OR promoted_at < updated_at
+                            OR promotion_version IS DISTINCT FROM %s
+                          )
+                        ORDER BY updated_at, id
+                        LIMIT %s
+                        """,
+                        (tenant_id, source_system, promotion_version, limit),
+                    )
+                else:
+                    await cur.execute(
+                        f"""
+                        SELECT id, source_id, raw_payload
+                        FROM {source_table}
+                        WHERE tenant_id=%s
+                          AND source_system=%s
+                          AND source_id = ANY(%s)
+                          AND (
+                            promoted_at IS NULL
+                            OR promoted_at < updated_at
+                            OR promotion_version IS DISTINCT FROM %s
+                          )
+                        ORDER BY source_id
+                        LIMIT %s
+                        """,
+                        (tenant_id, source_system, source_ids, promotion_version, limit),
+                    )
                 rows = await cur.fetchall()
 
             for source_record_id, source_id, payload in rows:
