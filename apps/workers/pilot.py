@@ -255,6 +255,15 @@ async def run_full_read_diagnostic(client, *, now: datetime | None = None) -> di
     endpoints: dict[str, dict] = {}
 
     endpoints["open_jobs"], open_jobs = await _diagnostic_read("open_jobs", client.open_jobs)
+    open_jobs_shape = None
+    if endpoints["open_jobs"]["status"] == "connector_error":
+        try:
+            open_jobs_shape = await client.open_jobs_response_shape()
+        except JobDivaHTTPError as exc:
+            open_jobs_shape = {"probe_status": "http_error", "http_status": exc.status_code}
+        except JobDivaError:
+            open_jobs_shape = {"probe_status": "connector_error"}
+
     endpoints["updated_jobs"], updated_jobs = await _diagnostic_read(
         "updated_jobs",
         lambda: client.updated_jobs(
@@ -333,6 +342,7 @@ async def run_full_read_diagnostic(client, *, now: datetime | None = None) -> di
         "contract_status": contract_status,
         "window_days": 14,
         "page_size": 5,
+        "open_jobs_shape": open_jobs_shape,
         "endpoints": endpoints,
     }
 
