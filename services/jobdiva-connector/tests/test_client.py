@@ -110,11 +110,11 @@ async def test_candidate_intelligence_reads_use_candidate_and_resume_ids():
         await client.resume_text(456)
 
         assert seen == [
-            ("/apiv2/bi/CandidatesProfileDetail", {"candidateId": "123"}),
-            ("/apiv2/bi/CandidatesLicensesDetail", {"candidateId": "123"}),
-            ("/apiv2/bi/CandidatesCertificationsDetails", {"candidateId": "123"}),
-            ("/apiv2/bi/CandidatesResumesDetail", {"candidateId": "123"}),
-            ("/apiv2/bi/ResumesTextDetail", {"resumeId": "456"}),
+            ("/apiv2/bi/CandidatesProfileDetail", {"candidateIds": "123"}),
+            ("/apiv2/bi/CandidatesLicensesDetail", {"candidateIds": "123"}),
+            ("/apiv2/bi/CandidatesCertificationsDetails", {"candidateIds": "123"}),
+            ("/apiv2/bi/CandidatesResumesDetail", {"candidateIds": "123"}),
+            ("/apiv2/bi/ResumesTextDetail", {"resumeIds": "456"}),
         ]
     finally:
         await client.close()
@@ -224,6 +224,28 @@ async def test_job_detail_uses_read_only_job_id_query():
         rows = await client.job_detail(123)
         assert rows[0]["JOBID"] == 123
         assert seen["path"] == "/apiv2/bi/JobsDetail"
-        assert seen["params"] == {"jobId": "123"}
+        assert seen["params"] == {"jobIds": "123"}
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+async def test_open_jobs_accepts_jobdiva_tabular_bi_payload():
+    async def handler(request):
+        return httpx.Response(200, json={
+            "data": [
+                ["JOBID", "JOBTITLE"],
+                [123, "Synthetic RN"],
+                [456, "Synthetic PT"],
+            ]
+        })
+    client = JobDivaClient(settings(), transport=httpx.MockTransport(handler))
+    client._access_token = "synthetic-token-123"
+    try:
+        rows = await client.open_jobs()
+        assert rows == [
+            {"JOBID": 123, "JOBTITLE": "Synthetic RN"},
+            {"JOBID": 456, "JOBTITLE": "Synthetic PT"},
+        ]
     finally:
         await client.close()
