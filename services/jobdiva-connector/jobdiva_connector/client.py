@@ -287,6 +287,46 @@ class JobDivaClient:
 
         raise JobDivaError("JobDiva returned an unexpected record payload")
 
+    async def open_jobs_response_shape(self) -> dict[str, Any]:
+        """Return sanitized structural metadata for OpenJobsList without exposing record values."""
+        response = await self.request("GET", self.OPEN_JOBS_PATH)
+        shape: dict[str, Any] = {
+            "content_type": (response.headers.get("content-type") or "").split(";", 1)[0][:80],
+            "content_length": len(response.content),
+        }
+        try:
+            value = response.json()
+        except ValueError:
+            shape["json_type"] = "non_json"
+            return shape
+
+        shape["json_type"] = type(value).__name__
+        if isinstance(value, dict):
+            keys = sorted(str(key) for key in value.keys())[:30]
+            shape["top_level_keys"] = keys
+            list_fields = {}
+            for key, item in value.items():
+                if isinstance(item, list):
+                    field = {"length": len(item)}
+                    if item:
+                        field["first_item_type"] = type(item[0]).__name__
+                        if isinstance(item[0], list):
+                            field["first_row_length"] = len(item[0])
+                        elif isinstance(item[0], dict):
+                            field["first_item_keys"] = sorted(str(k) for k in item[0].keys())[:30]
+                    list_fields[str(key)] = field
+            if list_fields:
+                shape["list_fields"] = list_fields
+        elif isinstance(value, list):
+            shape["length"] = len(value)
+            if value:
+                shape["first_item_type"] = type(value[0]).__name__
+                if isinstance(value[0], list):
+                    shape["first_row_length"] = len(value[0])
+                elif isinstance(value[0], dict):
+                    shape["first_item_keys"] = sorted(str(k) for k in value[0].keys())[:30]
+        return shape
+
     async def open_jobs(self) -> list[dict[str, Any]]:
         return self._json_records(await self.request("GET", self.OPEN_JOBS_PATH))
 
