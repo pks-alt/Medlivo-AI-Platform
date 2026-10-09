@@ -19,7 +19,8 @@ class CanonicalPromoter:
     def __init__(self, connection: AsyncConnection):
         self.connection = connection
 
-    async def promote_unlinked(self, *, tenant_id: str, stream: SyncStream, limit: int = 500,\n                               source_ids: list[str] | None = None) -> dict[str, int | str]:
+    async def promote_unlinked(self, *, tenant_id: str, stream: SyncStream, limit: int = 500,
+                               source_ids: list[str] | None = None) -> dict[str, int | str]:
         if limit < 1 or limit > 5000:
             raise ValueError("limit must be between 1 and 5000")
 
