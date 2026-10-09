@@ -228,7 +228,7 @@ job_intake_items = Table(
     Column("normalized_job", JSON, nullable=False), Column("validation_errors", JSON, nullable=False),
     Column("extracted_values", JSON, nullable=False, default=dict), Column("ai_suggestions", JSON, nullable=False, default=list),
     Column("conflicts", JSON, nullable=False, default=list), Column("missing_fields", JSON, nullable=False, default=list),
-    Column("final_approved_values", JSON), S("bill_rate_state", nullable=False, default="unknown"),
+    Column("final_approved_values", JSON), Column("standardized_internal_jd", JSON, nullable=False, default=dict), S("bill_rate_state", nullable=False, default="unknown"),
     S("recruiting_readiness", nullable=False, default="review"), S("commercial_readiness", nullable=False, default="review"),
     U("reviewed_by"), D("reviewed_at"), U("duplicate_job_id"), S("status", nullable=False), U("created_job_id"),
     D("created_at", nullable=False), D("updated_at", nullable=False),
