@@ -131,9 +131,53 @@ jobs:
             --region="${REGION}" \
             --format='yaml(metadata.name,spec.template.template.spec.taskCount,spec.template.template.spec.template.spec.timeoutSeconds,spec.template.template.spec.template.spec.serviceAccountName)'
 
-      - name: Do not auto-execute
+      - name: Execute diagnostics-only read-contract check
+        if: inputs.diagnostics_only == 'true'
+        run: |
+          set -euo pipefail
+          gcloud run jobs execute "${JOB_NAME}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --wait
+
+      - name: Capture sanitized diagnostic evidence
+        if: inputs.diagnostics_only == 'true'
+        run: |
+          set -euo pipefail
+          gcloud logging read \
+            'resource.type="cloud_run_job" AND resource.labels.job_name="'"${JOB_NAME}"'" AND jsonPayload.pilot="diagnostic"' \
+            --project="${PROJECT_ID}" \
+            --freshness=30m \
+            --limit=5 \
+            --order=desc \
+            --format=json > jobdiva-read-contract-diagnostic.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path("jobdiva-read-contract-diagnostic.json")
+          rows=json.loads(p.read_text() or "[]")
+          if not rows:
+              raise SystemExit("No sanitized diagnostic event found")
+          payload=rows[0].get("jsonPayload") or {}
+          jobdiva=payload.get("jobdiva") or {}
+          status=jobdiva.get("contract_status")
+          if status != "verified":
+              raise SystemExit(f"JobDiva read contract is not verified: {status}")
+          print("JobDiva Phase 1 read contract verified.")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.diagnostics_only == 'true' && always()
+        with:
+          name: jobdiva-read-contract-diagnostic
+          path: jobdiva-read-contract-diagnostic.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Keep persistence-enabled pilot manual
+        if: inputs.diagnostics_only != 'true'
         run: |
           echo "Pilot job deployed."
-          echo "This workflow intentionally does NOT execute the Cloud Run Job."
+          echo "Persistence-enabled pilot execution remains manual."
           echo "An authorized operator must inspect configuration and explicitly run:"
           echo "gcloud run jobs execute ${JOB_NAME} --project=${PROJECT_ID} --region=${REGION} --wait"
