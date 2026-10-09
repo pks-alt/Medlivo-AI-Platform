@@ -1334,26 +1334,57 @@ class WorkspaceStore:
             processed = process_rows(rows, mapping, division)
             timestamp = now()
             batch_id = uid()
-            ready_count = sum(1 for item in processed if item["status"] == "ready")
-            review_count = sum(1 for item in processed if item["status"] == "review")
-            duplicate_count = sum(1 for item in processed if item["status"] == "duplicate")
+            file_hash = hashlib.sha256(content).hexdigest()
             batch = dict(
-                id=batch_id, tenant_id=principal["tenant_id"], team_id=resolved_team_id,
-                uploaded_by=principal["id"], customer_name=customer_name,
-                division=division, source_filename=source_filename,
-                status="review", mapping=mapping, row_count=len(processed),
-                ready_count=ready_count, review_count=review_count,
-                duplicate_count=duplicate_count, created_at=timestamp, updated_at=timestamp,
+                id=batch_id,
+                tenant_id=principal["tenant_id"],
+                team_id=resolved_team_id,
+                uploaded_by=principal["id"],
+                customer_name=customer_name,
+                division=division,
+                source_filename=source_filename,
+                status="review",
+                mapping=mapping,
+                source_file_hash=file_hash,
+                ai_processing_status="not_started",
+                row_count=len(processed),
+                ready_count=0,
+                review_count=0,
+                duplicate_count=0,
+                created_at=timestamp,
+                updated_at=timestamp,
             )
             conn.execute(insert(t.job_intake_batches).values(**batch))
-            for item in processed:
-                conn.execute(insert(t.job_intake_items).values(
-                    id=uid(), tenant_id=principal["tenant_id"], batch_id=batch_id,
-                    duplicate_job_id=None, created_job_id=None,
-                    created_at=timestamp, updated_at=timestamp, **item,
-                ))
+
+            counts = self._persist_intake_items(
+                conn,
+                principal,
+                batch_id=batch_id,
+                division=division,
+                customer_name=customer_name,
+                processed=processed,
+                timestamp=timestamp,
+            )
+            ready_count = counts["ready_count"]
+            review_count = counts["review_count"]
+            duplicate_count = counts["duplicate_count"]
+
+            conn.execute(update(t.job_intake_batches).where(
+                t.job_intake_batches.c.tenant_id == principal["tenant_id"],
+                t.job_intake_batches.c.id == batch_id,
+            ).values(
+                ai_processing_status="rules_analyzed",
+                ready_count=ready_count,
+                review_count=review_count,
+                duplicate_count=duplicate_count,
+                updated_at=timestamp,
+            ))
             return {
                 **batch,
+                "ai_processing_status": "rules_analyzed",
+                "ready_count": ready_count,
+                "review_count": review_count,
+                "duplicate_count": duplicate_count,
                 "headers": headers,
                 "mapping_source": "saved" if saved else "suggested",
                 "recognized_columns": len(mapping),
