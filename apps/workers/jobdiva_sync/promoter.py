@@ -156,9 +156,9 @@ class CanonicalPromoter:
                     await cur.execute(
                         """
                         INSERT INTO job
-                          (tenant_id, title, profession, specialty, city, state, start_date,
+                          (tenant_id, title, profession, specialty, division, city, state, start_date,
                            status, normalized_payload, created_at, updated_at)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,now(),now())
                         RETURNING id
                         """,
                         (
@@ -166,6 +166,7 @@ class CanonicalPromoter:
                             value.title,
                             value.profession,
                             value.specialty,
+                            value.division,
                             value.city,
                             value.state,
                             value.start_date,
@@ -181,6 +182,7 @@ class CanonicalPromoter:
                         SET title=%s,
                             profession=COALESCE(%s, profession),
                             specialty=COALESCE(%s, specialty),
+                            division=COALESCE(%s, division),
                             city=COALESCE(%s, city),
                             state=COALESCE(%s, state),
                             start_date=COALESCE(%s, start_date),
@@ -193,6 +195,7 @@ class CanonicalPromoter:
                             value.title,
                             value.profession,
                             value.specialty,
+                            value.division,
                             value.city,
                             value.state,
                             value.start_date,
