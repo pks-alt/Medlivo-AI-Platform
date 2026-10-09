@@ -15,6 +15,7 @@ export default function AdminPage(){
   const [data,setData]=useState<Json|null>(null);
   const [error,setError]=useState("");
   const [tab,setTab]=useState("overview");
+  const [period,setPeriod]=useState("This Week");
   useEffect(()=>{(async()=>{try{
     const [ops,users,teams,audit,overview,batches,mappings,pubs,quality]=await Promise.all([
       load("admin/operations"),load("admin/users"),load("admin/teams"),load("admin/audit?limit=25"),
@@ -28,14 +29,29 @@ export default function AdminPage(){
   if(!data)return <main className="adminShell"><div className="adminLoading">Loading Medlivo Admin…</div></main>;
 
   const o=data.ops||{},canon=o.canonical||{},src=o.source_counts||{},totals=data.overview?.totals||{};
+  const latestRuns=o.latest_runs||[];
+  const latestFailed=latestRuns.filter((x:any)=>x.status==="failed").length;
+  const enrichmentErrors=(src.job_enrichment_errors??0)+(src.candidate_enrichment_errors??0);
+  const overdue=totals.overdue_followups??0;
+  const platformHealth=latestFailed>0||enrichmentErrors>0?"Needs attention":"Healthy";
   const cards=[
-    ["Open jobs",canon.open_jobs??0,"Canonical jobs available to recruiting"],
-    ["Candidates",canon.candidates??0,"Canonical candidate profiles"],
-    ["Strong matches",canon.strong_matches??0,"Deterministic score 9+"],
-    ["Active recruiters",totals.active_recruiters??0,"Across managed teams"],
-    ["Open follow-ups",totals.open_followups??0,"Recruiter actions still open"],
-    ["JobDiva source records",(src.jobs??0)+(src.candidates??0),"Read-only records landed"]
+    {label:"Active Jobs",value:canon.open_jobs??0,detail:"Jobs currently open for recruiting",action:"jobdiva"},
+    {label:"Weekly Submissions",value:null,detail:"JobDiva submission feed not connected yet",pending:true},
+    {label:"Interviews",value:null,detail:"Interview feed not connected yet",pending:true},
+    {label:"Placements",value:null,detail:"Placement feed not connected yet",pending:true},
+    {label:"Active Billing",value:null,detail:"Assignment / billing feed not connected yet",pending:true},
+    {label:"Strong Matches 9+",value:canon.strong_matches??0,detail:"High-confidence matches available for review",action:"quality"},
+    {label:"Overdue Actions",value:overdue,detail:overdue?String(overdue)+" recruiter actions need follow-up":"No overdue recruiter actions",action:"performance"},
+    {label:"Platform Health",value:platformHealth,detail:latestFailed?String(latestFailed)+" JobDiva stream needs attention":enrichmentErrors?String(enrichmentErrors)+" records need data review":"JobDiva and Medlivo data services look healthy",action:"jobdiva"}
   ];
+
+  const briefItems:any[]=[];
+  if(latestFailed>0)briefItems.push({level:"critical",title:"Job data needs attention",body:String(latestFailed)+" JobDiva data stream"+(latestFailed===1?" is":"s are")+" not healthy. Existing data remains available.",action:"Review data health",tab:"jobdiva"});
+  if(overdue>0)briefItems.push({level:"high",title:"Recruiter follow-up is overdue",body:String(overdue)+" recruiter action"+(overdue===1?" is":"s are")+" overdue and should be reviewed.",action:"Review overdue work",tab:"performance"});
+  if(enrichmentErrors>0)briefItems.push({level:"high",title:"Some profiles need data review",body:String(enrichmentErrors)+" JobDiva record"+(enrichmentErrors===1?" has":"s have")+" incomplete enrichment, which can affect matching quality.",action:"Review data issues",tab:"jobdiva"});
+  const unclassified=(o.divisions||[]).find((x:any)=>x.division==="Unclassified");
+  if((unclassified?.jobs??0)>0)briefItems.push({level:"medium",title:"Some jobs are not classified",body:String(unclassified.jobs)+" job"+(unclassified.jobs===1?" is":"s are")+" missing a Medlivo division and should be reviewed.",action:"Review jobs",tab:"jobdiva"});
+  if(!briefItems.length)briefItems.push({level:"good",title:"No immediate operational exceptions",body:"Current JobDiva-backed jobs, matching and recruiter follow-up signals do not show an urgent issue.",action:"View platform health",tab:"jobdiva"});
 
   return <main className="adminShell">
     <aside className="adminNav">
@@ -47,14 +63,41 @@ export default function AdminPage(){
       <header className="adminHead"><div><small>MEDLIVO AI PLATFORM</small><h1>Administration</h1><p>Operational control, JobDiva visibility, teams, intake, quality and governance.</p></div><span className="readOnly">JOBDIVA READ-ONLY</span></header>
 
       {tab==="overview" && <>
-        <div className="adminMetricGrid">{cards.map(c=><article key={String(c[0])}><strong>{c[1]}</strong><b>{c[0]}</b><span>{c[2]}</span></article>)}</div>
+        <div className="overviewIntro">
+          <div><small>EXECUTIVE OVERVIEW</small><h2>What needs your attention today</h2><p>Company-wide recruiting activity and operating health in plain language.</p></div>
+          <div className="periodPicker" aria-label="Reporting period">{["This Week","Last Week","This Month","Custom"].map(x=><button key={x} className={period===x?"active":""} onClick={()=>setPeriod(x)}>{x}</button>)}</div>
+        </div>
+
+        <div className="executiveMetricGrid">{cards.map((card:any)=><button key={card.label} className={"executiveMetricCard"+(card.pending?" pending":"")} onClick={()=>card.action&&setTab(card.action)} disabled={!card.action}>
+          <div className="metricTop"><b>{card.label}</b>{card.pending?<span className="dataPending">DATA PENDING</span>:null}</div>
+          <strong>{card.pending?"—":card.value}</strong>
+          <span>{card.detail}</span>
+          {card.action?<em>View details →</em>:<em>Available after JobDiva funnel mapping</em>}
+        </button>)}</div>
+
+        <section className="aiBrief">
+          <div className="aiBriefHead"><div><small>MEDLIVO AI OPERATIONAL BRIEF</small><h2>Management focus</h2></div><span>Based only on current Medlivo data</span></div>
+          <div className="aiBriefQuestionGrid">
+            <article><small>WHAT CHANGED?</small><b>{canon.open_jobs??0} active jobs and {canon.strong_matches??0} strong matches are currently visible.</b><p>Weekly submission, interview and placement trends will appear here once those JobDiva feeds are connected.</p></article>
+            <article><small>WHAT NEEDS ATTENTION?</small><b>{briefItems[0]?.title}</b><p>{briefItems[0]?.body}</p></article>
+            <article><small>WHAT SHOULD MANAGEMENT DO NEXT?</small><b>{briefItems[0]?.action}</b><p>Start with the highest-impact exception, then work down the list below.</p></article>
+          </div>
+          <div className="attentionList">{briefItems.map((item:any,i:number)=><button key={i} className={"attentionItem "+item.level} onClick={()=>setTab(item.tab)}>
+            <span className="attentionLevel">{item.level==="good"?"ALL CLEAR":item.level.toUpperCase()}</span>
+            <div><b>{item.title}</b><p>{item.body}</p></div>
+            <strong>{item.action} →</strong>
+          </button>)}</div>
+        </section>
+
         <div className="adminTwo">
-          <Panel title="JobDiva integration"><Rows rows={[
-            ["Source","JobDiva"],["Mode","Read-only"],["Jobs enriched",String(src.jobs_enriched??0)+" / "+String(src.jobs??0)],
+          <Panel title="Division snapshot">{(o.divisions||[]).length?<table className="adminTable"><thead><tr><th>Division</th><th>Jobs</th><th>Open</th></tr></thead><tbody>{o.divisions.map((x:any)=><tr key={x.division}><td>{x.division}</td><td>{x.jobs}</td><td>{x.open_jobs}</td></tr>)}</tbody></table>:<Empty/>}</Panel>
+          <Panel title="Data readiness"><Rows rows={[
+            ["Jobs available",String(canon.jobs??0)],
+            ["Candidates available",String(canon.candidates??0)],
+            ["Jobs enriched",String(src.jobs_enriched??0)+" / "+String(src.jobs??0)],
             ["Candidates enriched",String(src.candidates_enriched??0)+" / "+String(src.candidates??0)],
-            ["Enrichment errors",String((src.job_enrichment_errors??0)+(src.candidate_enrichment_errors??0))]
+            ["Recruiting funnel","Submissions, interviews, placements and billing pending JobDiva mapping"]
           ]}/></Panel>
-          <Panel title="Division inventory">{(o.divisions||[]).length?<table className="adminTable"><thead><tr><th>Division</th><th>Jobs</th><th>Open</th></tr></thead><tbody>{o.divisions.map((x:any)=><tr key={x.division}><td>{x.division}</td><td>{x.jobs}</td><td>{x.open_jobs}</td></tr>)}</tbody></table>:<Empty/>}</Panel>
         </div>
       </>}
 
