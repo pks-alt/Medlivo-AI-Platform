@@ -138,3 +138,54 @@ class MatchFeedbackInput(StrictInput):
         if self.feedback_code in {"weak_match", "not_a_match"} and self.reason_code is None:
             raise ValueError("A reason is required for weak or not-a-match feedback")
         return self
+
+
+class JobOperationalUpdate(StrictInput):
+    client_priority: Literal["high", "normal", "low"] = "normal"
+    job_priority: Literal["hot", "priority", "standard", "hold"] = "standard"
+    priority_reason: str | None = Field(default=None, max_length=1000)
+    manager_note: str | None = Field(default=None, max_length=2000)
+    next_action: str | None = Field(default=None, max_length=500)
+    due_at: datetime | None = None
+    operational_status: Literal["active", "hold", "closed"] = "active"
+    expected_version: int = Field(ge=0)
+
+    @field_validator("due_at")
+    @classmethod
+    def operational_due_requires_zone(cls, value):
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("A timezone-aware deadline is required")
+        return value
+
+
+class JobAssignmentInput(StrictInput):
+    recruiter_user_id: UUID | None = None
+    team_id: UUID
+    reason: str = Field(min_length=5, max_length=1000)
+    expected_version: int = Field(ge=0)
+
+
+class JobIntakeItemDecision(StrictInput):
+    decision: Literal["approved", "rejected"]
+    final_approved_values: dict | None = None
+    bill_rate_state: Literal["confirmed", "suggested", "unknown"] = "unknown"
+    recruiting_readiness: Literal["not_ready", "review", "ready"] = "review"
+    commercial_readiness: Literal["not_ready", "review", "ready"] = "review"
+    reason: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def intake_rejection_requires_reason(self):
+        if self.decision == "rejected" and not self.reason:
+            raise ValueError("A rejection reason is required")
+        return self
+
+
+class ApprovalDecisionInput(StrictInput):
+    decision: Literal["approved", "rejected", "cancelled"]
+    notes: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def approval_rejection_requires_notes(self):
+        if self.decision == "rejected" and not self.notes:
+            raise ValueError("A rejection reason is required")
+        return self
