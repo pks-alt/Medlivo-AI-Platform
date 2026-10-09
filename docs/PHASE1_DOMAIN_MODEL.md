@@ -4,6 +4,8 @@
 **Repository:** `pks-alt/Medlivo-AI-Platform`  
 **Parent architecture:** `docs/ENTERPRISE_ARCHITECTURE_PHASE1.md`
 
+**Margin & Cost Engine business specification:** `docs/PHASE1_MARGIN_COST_ENGINE.md`
+
 This document defines the canonical business entities, ownership boundaries, relationships, lifecycle states, provenance, and implementation ownership for Phase 1.
 
 It is intentionally aligned to the current repository and existing models/migrations. New implementation must extend these domains rather than create parallel records.

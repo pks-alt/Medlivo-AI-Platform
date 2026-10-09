@@ -6,6 +6,8 @@
 
 **Canonical Phase 1 domain model:** `docs/PHASE1_DOMAIN_MODEL.md`
 
+**Finalized Margin & Cost Engine specification:** `docs/PHASE1_MARGIN_COST_ENGINE.md`
+
 ---
 
 ## 1. Architecture principles
