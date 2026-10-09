@@ -232,8 +232,25 @@ class JobDivaClient:
         if isinstance(value, dict):
             for key in ("data", "records", "items", "results"):
                 rows = value.get(key)
-                if isinstance(rows, list):
-                    return [row for row in rows if isinstance(row, dict)]
+                if not isinstance(rows, list):
+                    continue
+                dict_rows = [row for row in rows if isinstance(row, dict)]
+                if dict_rows:
+                    return dict_rows
+                if rows and isinstance(rows[0], list):
+                    headers = rows[0]
+                    if all(isinstance(header, str) and header.strip() for header in headers):
+                        records = []
+                        for row in rows[1:]:
+                            if not isinstance(row, list):
+                                continue
+                            records.append({
+                                header: row[index] if index < len(row) else None
+                                for index, header in enumerate(headers)
+                            })
+                        return records
+                if not rows:
+                    return []
         raise JobDivaError("JobDiva returned an unexpected record payload")
 
     async def open_jobs(self) -> list[dict[str, Any]]:
@@ -241,7 +258,7 @@ class JobDivaClient:
 
     async def job_detail(self, job_id: str | int) -> list[dict[str, Any]]:
         return self._json_records(await self.request(
-            "GET", self.JOB_DETAIL_PATH, params={"jobId": job_id}
+            "GET", self.JOB_DETAIL_PATH, params={"jobIds": job_id}
         ))
 
     async def updated_jobs(self, *, from_date: datetime, to_date: datetime, page_number: int = 1, page_size: int = 25) -> list[dict[str, Any]]:
@@ -261,7 +278,7 @@ class JobDivaClient:
         }))
 
     async def candidate_profile(self, candidate_id: str | int) -> list[dict[str, Any]]:
-        return self._json_records(await self.request("GET", self.CANDIDATE_PROFILE_PATH, params={"candidateId": candidate_id}))
+        return self._json_records(await self.request("GET", self.CANDIDATE_PROFILE_PATH, params={"candidateIds": candidate_id}))
 
     async def candidate_licenses(self, candidate_id: str | int) -> list[dict[str, Any]]:
         return self._json_records(await self.request("GET", self.CANDIDATE_LICENSES_PATH, params={"candidateId": candidate_id}))
@@ -273,4 +290,4 @@ class JobDivaClient:
         return self._json_records(await self.request("GET", self.CANDIDATE_RESUMES_PATH, params={"candidateId": candidate_id}))
 
     async def resume_text(self, resume_id: str | int) -> list[dict[str, Any]]:
-        return self._json_records(await self.request("GET", self.RESUME_TEXT_PATH, params={"resumeId": resume_id}))
+        return self._json_records(await self.request("GET", self.RESUME_TEXT_PATH, params={"resumeIds": resume_id}))
