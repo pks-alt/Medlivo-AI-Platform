@@ -12,6 +12,7 @@ from .job_intelligence_store import JobIntelligenceStore
 from .matching_adapter import candidate_match_input, job_match_input
 from .matching_runner import activate_matching
 from .matching_store import MatchingStore
+from .active_job_sample import ActiveJobDivisionSample, collect_active_jobs_by_division, persist_active_job_sample
 
 __all__ = [
     "PostgresSyncStore",
@@ -40,4 +41,7 @@ __all__ = [
     "run_backfill_window",
     "run_delta_sync",
     "run_historical_backfill",
+    "ActiveJobDivisionSample",
+    "collect_active_jobs_by_division",
+    "persist_active_job_sample",
 ]

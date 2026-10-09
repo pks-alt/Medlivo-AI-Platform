@@ -54,3 +54,21 @@ def test_bad_optional_values_do_not_corrupt_record():
     assert job.bill_rate is None
     assert job.start_date is None
     assert job.state is None
+
+
+@pytest.mark.parametrize(("payload","expected"), [
+    ({"JOBID": 10, "JOBTITLE": "Travel RN - ICU", "PROFESSION": "Registered Nurse"}, "nursing_allied"),
+    ({"JOBID": 11, "JOBTITLE": "Physical Therapist", "PROFESSION": "Physical Therapist"}, "rehabilitation"),
+    ({"JOBID": 12, "JOBTITLE": "Locum Urologist", "PROFESSION": "Physician", "SPECIALTY": "Urology"}, "locum_tenens"),
+])
+def test_job_division_is_classified_from_explicit_healthcare_fields(payload, expected):
+    assert normalize_job(payload).division == expected
+
+
+def test_ambiguous_job_division_is_not_guessed():
+    job = normalize_job({
+        "JOBID": 13,
+        "JOBTITLE": "Clinical Program Manager",
+        "PROFESSION": "Healthcare",
+    })
+    assert job.division is None

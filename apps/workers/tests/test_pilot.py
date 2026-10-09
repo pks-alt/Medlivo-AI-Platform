@@ -289,3 +289,73 @@ def test_emit_event_writes_structured_json_to_stderr(capsys):
     assert '"data_endpoint": "unauthorized"' in captured.err
     assert '"http_status": 401' in captured.err
     assert "secret" not in captured.err.lower()
+
+
+def test_active_jobs_by_division_mode_disabled_by_default(monkeypatch):
+    monkeypatch.delenv("PILOT_ACTIVE_JOBS_BY_DIVISION", raising=False)
+    assert pilot.active_jobs_by_division_mode() is False
+
+
+@pytest.mark.asyncio
+async def test_main_runs_only_active_job_division_sample_when_enabled(monkeypatch):
+    monkeypatch.setenv("PILOT_ENABLED", "true")
+    monkeypatch.setenv("PILOT_ACTIVE_JOBS_BY_DIVISION", "true")
+    monkeypatch.setenv("PILOT_ACTIVE_JOBS_PER_DIVISION", "100")
+    monkeypatch.setenv("PILOT_ACTIVE_JOBS_MAX_SCAN", "5000")
+    monkeypatch.setenv("PILOT_TENANT_ID", "tenant-1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost/db")
+    monkeypatch.setenv("JOBDIVA_LIVE_ENABLED", "true")
+    monkeypatch.setenv("JOBDIVA_CLIENT_ID", "1")
+    monkeypatch.setenv("JOBDIVA_USERNAME", "user@example.com")
+    monkeypatch.setenv("JOBDIVA_PASSWORD", "secret")
+
+    calls = []
+
+    class FakeConnection:
+        async def close(self):
+            calls.append("close")
+
+    class FakeAsyncConnection:
+        @staticmethod
+        async def connect(url):
+            calls.append(("connect", url))
+            return FakeConnection()
+
+    class FakeClient:
+        def __init__(self, settings):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *args):
+            return None
+        async def authenticate(self):
+            calls.append("authenticate")
+
+    async def fake_schema(connection):
+        return {"status": "ready", "missing_tables": [], "missing_columns": {}}
+
+    async def fake_sample(client, sync_store, promoter, **kwargs):
+        calls.append(("sample", kwargs["per_division"], kwargs["max_scan"]))
+        return {
+            "requested_per_division": 100,
+            "selected_counts": {
+                "nursing_allied": 100,
+                "rehabilitation": 100,
+                "locum_tenens": 100,
+            },
+            "complete": True,
+            "scanned": 420,
+            "unclassified": 12,
+            "duplicate_source_ids": 0,
+            "records_upserted": 300,
+            "promotion": {"promoted": 300},
+        }
+
+    monkeypatch.setattr(pilot, "AsyncConnection", FakeAsyncConnection)
+    monkeypatch.setattr(pilot, "JobDivaClient", FakeClient)
+    monkeypatch.setattr(pilot, "check_schema_readiness", fake_schema)
+    monkeypatch.setattr(pilot, "persist_active_job_sample", fake_sample)
+
+    result = await pilot.main()
+    assert result == 0
+    assert ("sample", 100, 5000) in calls
