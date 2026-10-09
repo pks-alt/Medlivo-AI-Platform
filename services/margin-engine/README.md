@@ -1,0 +1,1 @@
+# Medlivo Margin Engine\n\nPhase 1 versioned calculation service for projected staffing economics. See `docs/PHASE1_MARGIN_COST_ENGINE.md`.\n
