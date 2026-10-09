@@ -199,40 +199,77 @@ async def test_schema_preflight_reports_missing_tables_and_columns():
 
 
 @pytest.mark.asyncio
-async def test_connectivity_diagnostic_surfaces_endpoint_401_without_secrets():
-    class Client:
-        OPEN_JOBS_PATH = "/apiv2/bi/OpenJobsList"
-        async def request(self, method, path):
-            raise pilot.JobDivaHTTPError(401)
+async def test_full_read_diagnostic_verifies_all_enabled_endpoints():
+    calls = []
 
-    result = await pilot.run_connectivity_diagnostic(Client())
-    assert result == {
-        "authentication": "ok",
-        "data_endpoint": "unauthorized",
-        "http_status": 401,
-        "response_parse": "not_attempted",
-    }
+    class Client:
+        async def open_jobs(self):
+            calls.append("open_jobs")
+            return [{"JOBID": 101}]
+        async def updated_jobs(self, **kwargs):
+            calls.append(("updated_jobs", kwargs["page_size"]))
+            return []
+        async def updated_candidates(self, **kwargs):
+            calls.append(("updated_candidates", kwargs["page_size"]))
+            return [{"CANDIDATEID": 202}]
+        async def job_detail(self, job_id):
+            calls.append(("job_detail", job_id))
+            return [{"JOBID": job_id}]
+        async def candidate_profile(self, candidate_id):
+            calls.append(("candidate_profile", candidate_id))
+            return [{"CANDIDATEID": candidate_id}]
+        async def candidate_licenses(self, candidate_id):
+            calls.append(("candidate_licenses", candidate_id))
+            return []
+        async def candidate_certifications(self, candidate_id):
+            calls.append(("candidate_certifications", candidate_id))
+            return []
+        async def candidate_resumes(self, candidate_id):
+            calls.append(("candidate_resumes", candidate_id))
+            return [{"RESUMEID": 303}]
+        async def resume_text(self, resume_id):
+            calls.append(("resume_text", resume_id))
+            return [{"RESUMEID": resume_id}]
+
+    result = await pilot.run_full_read_diagnostic(
+        Client(), now=pilot.datetime(2026, 10, 8, 12, 0, 0)
+    )
+    assert result["contract_status"] == "verified"
+    assert all(item["status"] == "ok" for item in result["endpoints"].values())
+    assert ("job_detail", "101") in calls
+    assert ("candidate_profile", "202") in calls
+    assert ("resume_text", "303") in calls
 
 
 @pytest.mark.asyncio
-async def test_connectivity_diagnostic_distinguishes_http_success_from_payload_shape():
-    class Response:
-        status_code = 200
-
+async def test_full_read_diagnostic_is_partial_when_no_candidate_sample_exists():
     class Client:
-        OPEN_JOBS_PATH = "/apiv2/bi/OpenJobsList"
-        async def request(self, method, path):
-            return Response()
-        def _json_records(self, response):
-            raise pilot.JobDivaError("unexpected payload")
+        async def open_jobs(self): return [{"JOBID": 101}]
+        async def updated_jobs(self, **kwargs): return []
+        async def updated_candidates(self, **kwargs): return []
+        async def job_detail(self, job_id): return [{"JOBID": job_id}]
 
-    result = await pilot.run_connectivity_diagnostic(Client())
-    assert result == {
-        "authentication": "ok",
-        "data_endpoint": "ok",
-        "http_status": 200,
-        "response_parse": "unexpected_payload",
+    result = await pilot.run_full_read_diagnostic(Client())
+    assert result["contract_status"] == "partial"
+    assert result["endpoints"]["job_detail"]["status"] == "ok"
+    assert result["endpoints"]["candidate_profile"]["status"] == "not_tested_no_sample"
+    assert result["endpoints"]["resume_text"]["status"] == "not_tested_no_sample"
+
+
+@pytest.mark.asyncio
+async def test_full_read_diagnostic_surfaces_permission_failure_without_payloads():
+    class Client:
+        async def open_jobs(self):
+            raise pilot.JobDivaHTTPError(403)
+        async def updated_jobs(self, **kwargs): return []
+        async def updated_candidates(self, **kwargs): return []
+
+    result = await pilot.run_full_read_diagnostic(Client())
+    assert result["contract_status"] == "failed"
+    assert result["endpoints"]["open_jobs"] == {
+        "status": "unauthorized", "http_status": 403, "records": None
     }
+
 
 
 def test_emit_event_writes_structured_json_to_stderr(capsys):
