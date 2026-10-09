@@ -433,8 +433,22 @@ class WorkspaceStore:
     def list_candidates(self, identity, *, after=None, limit=50):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            statement = select(t.candidates.c.id, t.candidates.c.canonical_name).where(
-                t.candidates.c.tenant_id == principal["tenant_id"]
+            source = t.candidate_source_records.alias("candidate_source")
+            statement = (
+                select(
+                    t.candidates.c.id, t.candidates.c.canonical_name,
+                    t.candidates.c.profession, t.candidates.c.specialty,
+                    t.candidates.c.city, t.candidates.c.state,
+                    t.candidates.c.lifecycle_status, t.candidates.c.profile_freshness,
+                    source.c.source_id.label("jobdiva_candidate_id"),
+                    source.c.enriched_at,
+                )
+                .outerjoin(source, and_(
+                    source.c.candidate_id == t.candidates.c.id,
+                    source.c.tenant_id == t.candidates.c.tenant_id,
+                    source.c.source_system == "jobdiva",
+                ))
+                .where(t.candidates.c.tenant_id == principal["tenant_id"])
             )
             if after:
                 statement = statement.where(t.candidates.c.id > after)
@@ -444,21 +458,153 @@ class WorkspaceStore:
     def get_candidate(self, identity, candidate_id):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            row = conn.execute(
-                select(t.candidates.c.id, t.candidates.c.canonical_name).where(
+            candidate = conn.execute(
+                select(t.candidates).where(
                     t.candidates.c.id == candidate_id,
                     t.candidates.c.tenant_id == principal["tenant_id"],
                 )
             ).mappings().first()
-            if row is None:
+            if candidate is None:
                 raise AccessError(404, "Candidate not found")
-            return clean(row)
+
+            source = conn.execute(
+                select(t.candidate_source_records.c.source_id,
+                       t.candidate_source_records.c.source_updated_at,
+                       t.candidate_source_records.c.enriched_at,
+                       t.candidate_source_records.c.enrichment_version,
+                       t.candidate_source_records.c.enrichment_error_code)
+                .where(
+                    t.candidate_source_records.c.tenant_id == principal["tenant_id"],
+                    t.candidate_source_records.c.candidate_id == candidate_id,
+                    t.candidate_source_records.c.source_system == "jobdiva",
+                )
+                .order_by(t.candidate_source_records.c.source_updated_at.desc())
+                .limit(1)
+            ).mappings().first()
+
+            licenses = conn.execute(
+                select(t.candidate_licenses).where(
+                    t.candidate_licenses.c.tenant_id == principal["tenant_id"],
+                    t.candidate_licenses.c.candidate_id == candidate_id,
+                ).order_by(t.candidate_licenses.c.state, t.candidate_licenses.c.license_type)
+            ).mappings().all()
+            certifications = conn.execute(
+                select(t.candidate_certifications).where(
+                    t.candidate_certifications.c.tenant_id == principal["tenant_id"],
+                    t.candidate_certifications.c.candidate_id == candidate_id,
+                ).order_by(t.candidate_certifications.c.certification_name)
+            ).mappings().all()
+            evidence = conn.execute(
+                select(t.candidate_evidence).where(
+                    t.candidate_evidence.c.tenant_id == principal["tenant_id"],
+                    t.candidate_evidence.c.candidate_id == candidate_id,
+                ).order_by(t.candidate_evidence.c.created_at.desc()).limit(100)
+            ).mappings().all()
+            resumes = conn.execute(
+                select(
+                    t.resume_versions.c.id, t.resume_versions.c.source_resume_id,
+                    t.resume_versions.c.is_primary, t.resume_versions.c.resume_date,
+                    t.resume_versions.c.parsed_payload, t.resume_versions.c.updated_at,
+                ).where(
+                    t.resume_versions.c.tenant_id == principal["tenant_id"],
+                    t.resume_versions.c.candidate_id == candidate_id,
+                ).order_by(t.resume_versions.c.is_primary.desc(), t.resume_versions.c.resume_date.desc())
+            ).mappings().all()
+            availability = conn.execute(
+                select(t.candidate_availability).where(
+                    t.candidate_availability.c.tenant_id == principal["tenant_id"],
+                    t.candidate_availability.c.candidate_id == candidate_id,
+                ).order_by(t.candidate_availability.c.created_at.desc()).limit(10)
+            ).mappings().all()
+            preference = conn.execute(
+                select(t.candidate_preferences).where(
+                    t.candidate_preferences.c.tenant_id == principal["tenant_id"],
+                    t.candidate_preferences.c.candidate_id == candidate_id,
+                )
+            ).mappings().first()
+            qualification = conn.execute(
+                select(t.qualifications).where(
+                    t.qualifications.c.tenant_id == principal["tenant_id"],
+                    t.qualifications.c.candidate_id == candidate_id,
+                ).order_by(t.qualifications.c.created_at.desc()).limit(1)
+            ).mappings().first()
+            answers = []
+            if qualification is not None:
+                answers = conn.execute(
+                    select(t.qualification_answers).where(
+                        t.qualification_answers.c.tenant_id == principal["tenant_id"],
+                        t.qualification_answers.c.qualification_id == qualification["id"],
+                    ).order_by(t.qualification_answers.c.created_at)
+                ).mappings().all()
+
+            best_jobs = conn.execute(
+                select(
+                    t.matches.c.id.label("match_id"), t.matches.c.overall_score,
+                    t.matches.c.status.label("match_status"), t.matches.c.explanation,
+                    t.jobs.c.id.label("job_id"), t.jobs.c.title, t.jobs.c.division,
+                    t.jobs.c.city, t.jobs.c.state, t.jobs.c.start_date,
+                    t.job_source_records.c.source_id.label("jobdiva_job_id"),
+                )
+                .join(t.jobs, and_(
+                    t.jobs.c.id == t.matches.c.job_id,
+                    t.jobs.c.tenant_id == t.matches.c.tenant_id,
+                ))
+                .outerjoin(t.job_source_records, and_(
+                    t.job_source_records.c.job_id == t.jobs.c.id,
+                    t.job_source_records.c.tenant_id == t.jobs.c.tenant_id,
+                    t.job_source_records.c.source_system == "jobdiva",
+                ))
+                .where(
+                    t.matches.c.tenant_id == principal["tenant_id"],
+                    t.matches.c.candidate_id == candidate_id,
+                )
+                .order_by(t.matches.c.overall_score.desc(), t.matches.c.updated_at.desc())
+                .limit(20)
+            ).mappings().all()
+
+            payload = dict(candidate)
+            payload.update({
+                "source": dict(source) if source else None,
+                "licenses": [dict(x) for x in licenses],
+                "certifications": [dict(x) for x in certifications],
+                "evidence": [dict(x) for x in evidence],
+                "resumes": [dict(x) for x in resumes],
+                "availability": [dict(x) for x in availability],
+                "preference": dict(preference) if preference else None,
+                "validation": {
+                    "status": qualification["status"] if qualification else "not_screened",
+                    "summary": qualification["summary"] if qualification else None,
+                    "job_id": qualification["job_id"] if qualification else None,
+                    "completed_at": qualification["completed_at"] if qualification else None,
+                    "answers": [dict(x) for x in answers],
+                },
+                "best_jobs": [dict(x) for x in best_jobs],
+            })
+            return clean(payload)
 
     def list_jobs(self, identity, *, after=None, limit=50):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            statement = select(t.jobs.c.id, t.jobs.c.title).where(
-                t.jobs.c.tenant_id == principal["tenant_id"]
+            source = t.job_source_records.alias("job_source")
+            customer = t.customers.alias("job_customer")
+            statement = (
+                select(
+                    t.jobs.c.id, t.jobs.c.title, t.jobs.c.profession, t.jobs.c.specialty,
+                    t.jobs.c.division, t.jobs.c.city, t.jobs.c.state, t.jobs.c.start_date,
+                    t.jobs.c.status, t.jobs.c.priority, t.jobs.c.owner_user_id,
+                    source.c.source_id.label("jobdiva_job_id"), source.c.enriched_at,
+                    customer.c.name.label("customer_name"),
+                )
+                .outerjoin(source, and_(
+                    source.c.job_id == t.jobs.c.id,
+                    source.c.tenant_id == t.jobs.c.tenant_id,
+                    source.c.source_system == "jobdiva",
+                ))
+                .outerjoin(customer, and_(
+                    customer.c.id == t.jobs.c.customer_id,
+                    customer.c.tenant_id == t.jobs.c.tenant_id,
+                ))
+                .where(t.jobs.c.tenant_id == principal["tenant_id"])
             )
             if after:
                 statement = statement.where(t.jobs.c.id > after)
@@ -468,15 +614,85 @@ class WorkspaceStore:
     def get_job(self, identity, job_id):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            row = conn.execute(
-                select(t.jobs.c.id, t.jobs.c.title).where(
+            customer = t.customers.alias("job_customer")
+            job = conn.execute(
+                select(t.jobs, customer.c.name.label("customer_name"))
+                .outerjoin(customer, and_(
+                    customer.c.id == t.jobs.c.customer_id,
+                    customer.c.tenant_id == t.jobs.c.tenant_id,
+                ))
+                .where(
                     t.jobs.c.id == job_id,
                     t.jobs.c.tenant_id == principal["tenant_id"],
                 )
             ).mappings().first()
-            if row is None:
+            if job is None:
                 raise AccessError(404, "Job not found")
-            return clean(row)
+
+            source = conn.execute(
+                select(t.job_source_records.c.source_id, t.job_source_records.c.source_status,
+                       t.job_source_records.c.source_updated_at, t.job_source_records.c.enriched_at,
+                       t.job_source_records.c.enrichment_version, t.job_source_records.c.enrichment_error_code)
+                .where(
+                    t.job_source_records.c.tenant_id == principal["tenant_id"],
+                    t.job_source_records.c.job_id == job_id,
+                    t.job_source_records.c.source_system == "jobdiva",
+                )
+                .order_by(t.job_source_records.c.source_updated_at.desc()).limit(1)
+            ).mappings().first()
+            requirements = conn.execute(
+                select(t.job_requirements).where(
+                    t.job_requirements.c.tenant_id == principal["tenant_id"],
+                    t.job_requirements.c.job_id == job_id,
+                ).order_by(t.job_requirements.c.is_hard_gate.desc(), t.job_requirements.c.canonical_key)
+            ).mappings().all()
+            matches = conn.execute(
+                select(
+                    t.matches.c.id.label("match_id"), t.matches.c.overall_score,
+                    t.matches.c.status.label("match_status"), t.matches.c.explanation,
+                    t.candidates.c.id.label("candidate_id"), t.candidates.c.canonical_name,
+                    t.candidates.c.profession, t.candidates.c.specialty,
+                    t.candidates.c.city, t.candidates.c.state,
+                    t.candidate_source_records.c.source_id.label("jobdiva_candidate_id"),
+                )
+                .join(t.candidates, and_(
+                    t.candidates.c.id == t.matches.c.candidate_id,
+                    t.candidates.c.tenant_id == t.matches.c.tenant_id,
+                ))
+                .outerjoin(t.candidate_source_records, and_(
+                    t.candidate_source_records.c.candidate_id == t.candidates.c.id,
+                    t.candidate_source_records.c.tenant_id == t.candidates.c.tenant_id,
+                    t.candidate_source_records.c.source_system == "jobdiva",
+                ))
+                .where(t.matches.c.tenant_id == principal["tenant_id"], t.matches.c.job_id == job_id)
+                .order_by(t.matches.c.overall_score.desc(), t.matches.c.updated_at.desc()).limit(50)
+            ).mappings().all()
+            exclusions = conn.execute(
+                select(
+                    t.match_exclusions.c.candidate_id, t.match_exclusions.c.reason_code,
+                    t.match_exclusions.c.reason_detail, t.match_exclusions.c.overridden,
+                    t.candidates.c.canonical_name,
+                )
+                .join(t.candidates, and_(
+                    t.candidates.c.id == t.match_exclusions.c.candidate_id,
+                    t.candidates.c.tenant_id == t.match_exclusions.c.tenant_id,
+                ))
+                .where(
+                    t.match_exclusions.c.tenant_id == principal["tenant_id"],
+                    t.match_exclusions.c.job_id == job_id,
+                ).order_by(t.match_exclusions.c.created_at.desc()).limit(50)
+            ).mappings().all()
+
+            payload = dict(job)
+            payload.update({
+                "source": dict(source) if source else None,
+                "requirements": [dict(x) for x in requirements],
+                "hard_gates": [dict(x) for x in requirements if x["is_hard_gate"]],
+                "preferences": [dict(x) for x in requirements if not x["is_hard_gate"]],
+                "best_candidates": [dict(x) for x in matches],
+                "exclusions": [dict(x) for x in exclusions],
+            })
+            return clean(payload)
 
     def list_cases(self, identity, *, after=None, limit=50):
         with self.engine.begin() as conn:

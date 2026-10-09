@@ -41,17 +41,96 @@ candidates = Table(
     D("created_at"), D("updated_at"),
     UniqueConstraint("tenant_id", "id"),
 )
+
+customers = Table(
+    "customer", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), S("name", nullable=False),
+    S("status"), Column("metadata", JSON, nullable=False, default=dict), D("created_at"), D("updated_at"),
+)
+job_requirements = Table(
+    "job_requirement", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
+    S("requirement_type", nullable=False), S("canonical_key", nullable=False),
+    Column("value", JSON, nullable=False), Column("is_hard_gate", Boolean, nullable=False, default=False),
+    Column("weight", Numeric(8, 4)), Column("source_evidence", JSON, nullable=False, default=dict),
+    S("rules_version"), D("created_at"),
+)
+resume_versions = Table(
+    "resume_version", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
+    U("source_record_id"), S("source_resume_id"), S("storage_uri"), S("text_content"),
+    Column("parsed_payload", JSON, nullable=False, default=dict), Column("is_primary", Boolean, nullable=False, default=False),
+    D("resume_date"), D("created_at"), D("updated_at"),
+)
+candidate_availability = Table(
+    "candidate_availability", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
+    Column("available_from", Date), Column("available_until", Date), S("status"), D("confirmed_at"),
+    S("source_type"), S("source_reference"), D("created_at"),
+)
+candidate_preferences = Table(
+    "candidate_preference", metadata,
+    U("candidate_id", primary_key=True), U("tenant_id", nullable=False), S("travel_local"),
+    Column("preferred_locations", JSON, nullable=False, default=list),
+    Column("shift_preferences", JSON, nullable=False, default=list),
+    Column("compensation_expectations", JSON, nullable=False, default=dict),
+    Column("best_contact_windows", JSON, nullable=False, default=list), D("updated_at"),
+)
+candidate_licenses = Table(
+    "candidate_license", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
+    S("license_type", nullable=False), S("state"), S("license_number"), S("status"),
+    Column("issued_at", Date), Column("expires_at", Date), S("verification_status"), D("verified_at"),
+    S("verification_source"), S("source_system"), S("source_reference"),
+    Column("raw_payload", JSON, nullable=False, default=dict), D("created_at"), D("updated_at"),
+)
+candidate_certifications = Table(
+    "candidate_certification", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
+    S("certification_key", nullable=False), S("certification_name", nullable=False), S("status"),
+    Column("expires_at", Date), S("verification_status"), D("verified_at"),
+    S("verification_source"), S("source_system"), S("source_reference"),
+    Column("raw_payload", JSON, nullable=False, default=dict), D("created_at"), D("updated_at"),
+)
+candidate_evidence = Table(
+    "candidate_evidence", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
+    S("fact_key", nullable=False), Column("fact_value", JSON, nullable=False), S("source_type", nullable=False),
+    S("source_reference"), Column("confidence", Numeric(5, 2)), Column("is_verified", Boolean, nullable=False, default=False),
+    D("created_at"), D("updated_at"),
+)
+match_exclusions = Table(
+    "match_exclusion", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
+    U("candidate_id", nullable=False), S("reason_code", nullable=False), S("reason_detail"),
+    Column("overridden", Boolean, nullable=False, default=False), U("overridden_by"), D("overridden_at"), D("created_at"),
+)
+qualifications = Table(
+    "qualification", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
+    U("job_id"), U("conversation_id"), S("status", nullable=False), S("summary"), D("completed_at"), D("created_at"),
+)
+qualification_answers = Table(
+    "qualification_answer", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("qualification_id", nullable=False),
+    S("question_key", nullable=False), Column("answer", JSON, nullable=False), U("source_message_id"),
+    Column("confirmed", Boolean, nullable=False, default=False), D("created_at"),
+)
 job_source_records = Table(
     "job_source_record", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id"),
     S("source_system", nullable=False), S("source_id", nullable=False), S("source_status"),
     D("source_updated_at"), Column("raw_payload", JSON, nullable=False),
+    D("promoted_at"), S("promotion_version"), D("enriched_at"), S("enrichment_version"),
+    S("enrichment_error_code"), D("created_at"), D("updated_at"),
 )
 candidate_source_records = Table(
     "candidate_source_record", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id"),
     S("source_system", nullable=False), S("source_id", nullable=False), D("source_updated_at"),
-    Column("raw_payload", JSON, nullable=False),
+    Column("raw_payload", JSON, nullable=False), D("promoted_at"), S("promotion_version"),
+    D("enriched_at"), S("enrichment_version"), S("enrichment_error_code"),
+    D("created_at"), D("updated_at"),
 )
 matches = Table(
     "match", metadata,

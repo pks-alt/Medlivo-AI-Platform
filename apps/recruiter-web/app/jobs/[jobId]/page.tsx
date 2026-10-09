@@ -1,42 +1,15 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-
-export default async function JobDetailPage({ params }: { params: Promise<{ jobId: string }> }) {
-  const { jobId } = await params;
-  const response = await fetch(`${API_URL}/api/v1/jobs/${jobId}`, { cache: "no-store" });
-  if (!response.ok) throw new Error("Failed to load job");
-  const job = await response.json();
-
-  return (
-    <main className="page">
-      <div className="pageHead">
-        <div><small>{job.division} · Job {job.source_job_id}</small><h1>{job.title}</h1><p>{job.customer} · {job.location}</p></div>
-        <a href="/jobs">Back to Jobs</a>
-      </div>
-
-      <section className="detailGrid">
-        <div className="panelBox">
-          <small>Requirements that drive matching</small>
-          <div className="requirements">
-            {Object.entries(job.requirements).map(([key, value]) => (
-              <div key={key}><span>{key}</span><b>{String(value)}</b></div>
-            ))}
-          </div>
-          <h3>Hard gates</h3>
-          <div className="chips">{job.hard_gates.map((gate: string) => <span key={gate}>{gate}</span>)}</div>
-        </div>
-
-        <div className="panelBox">
-          <small>Best candidates to work now</small>
-          {job.candidate_matches.map((candidate: any) => (
-            <article className="matchCard" key={candidate.id}>
-              <div><b>{candidate.name}</b><span>{candidate.specialty} · {candidate.location}</span></div>
-              <strong>{candidate.overall_score}</strong>
-              <p>{candidate.why_matched}</p>
-              <a href={`/candidates/${candidate.id}`}>Open candidate</a>
-            </article>
-          ))}
-        </div>
-      </section>
-    </main>
-  );
+"use client";
+import {useEffect,useState} from "react";
+async function load(id:string){const r=await fetch("/api/team/jobs/"+id,{cache:"no-store",credentials:"same-origin"});if(!r.ok)throw new Error("Job HTTP "+r.status);return r.json()}
+function band(v:number){return v>=9?"Strong":v>=8?"Good":v>0?"Needs Review":"Excluded"}
+export default function JobPage({params}:{params:Promise<{jobId:string}>}){const[j,setJ]=useState<any>(null);const[e,setE]=useState("");useEffect(()=>{params.then(p=>load(p.jobId)).then(setJ).catch(x=>setE(x.message))},[params]);
+ if(e)return <main className="page"><div className="adminError"><b>Job unavailable</b><span>{e}</span></div></main>;if(!j)return <main className="page"><div className="adminLoading">Loading Job 360…</div></main>;
+ return <main className="page"><div className="pageHead"><div><small>{j.division||"Job"} {j.source?.source_id?"· JobDiva "+j.source.source_id:""}</small><h1>{j.title}</h1><p>{j.customer_name||"Customer"} · {[j.city,j.state].filter(Boolean).join(", ")||"Location unknown"} · Start {j.start_date||"Unknown"}</p></div><div className="pageActions"><a href="/jobs">Jobs</a><a href="/admin">Admin</a></div></div>
+ <div className="profileStrip"><span><b>{j.status}</b>Status</span><span><b>{j.priority??0}</b>Priority</span><span><b>{j.profession||"—"}</b>Profession</span><span><b>{j.specialty||"—"}</b>Specialty</span><span><b>{j.source?.enriched_at?"Yes":"Not yet"}</b>JobDiva enriched</span></div>
+ <section className="detailGrid">
+  <div className="panelBox"><small>Requirements that drive matching</small><div className="requirementList">{(j.requirements||[]).map((r:any)=><article key={r.id} className={r.is_hard_gate?"hardReq":"softReq"}><div><b>{r.canonical_key}</b><span>{r.requirement_type}</span></div><strong>{typeof r.value==="string"?r.value:JSON.stringify(r.value)}</strong><em>{r.is_hard_gate?"HARD GATE":"SOFT / PREFERENCE"}</em></article>)}</div>{!(j.requirements||[]).length&&<div className="emptyState">Normalized requirements will appear after JobDiva job enrichment.</div>}</div>
+  <div className="panelBox"><small>Best Candidates</small>{(j.best_candidates||[]).map((c:any)=><article className="matchCard" key={c.match_id}><div><b>{c.canonical_name||"Candidate"}</b><span>{c.profession||""}{c.specialty?" · "+c.specialty:""} · {[c.city,c.state].filter(Boolean).join(", ")}</span></div><strong>{Number(c.overall_score).toFixed(1)}</strong><p><b>{band(Number(c.overall_score))}</b> · {((c.explanation||{}).strengths||[]).join(" · ")||"Explainable match evidence available."}</p><a href={"/candidates/"+c.candidate_id}>Open candidate</a></article>)}</div>
+  <div className="panelBox"><small>Hard-gate exclusions</small>{(j.exclusions||[]).length?<table className="adminTable"><thead><tr><th>Candidate</th><th>Reason</th><th>Detail</th><th>Override</th></tr></thead><tbody>{j.exclusions.map((x:any,i:number)=><tr key={i}><td>{x.canonical_name||x.candidate_id}</td><td>{x.reason_code}</td><td>{x.reason_detail||"—"}</td><td>{x.overridden?"Yes":"No"}</td></tr>)}</tbody></table>:<div className="goodState">No stored hard-gate exclusions for this job.</div>}</div>
+  <div className="panelBox"><small>Job provenance</small><div className="adminRows"><div><span>Source system</span><b>{j.source?"JobDiva":"Canonical / Direct Intake"}</b></div><div><span>Source ID</span><b>{j.source?.source_id||"—"}</b></div><div><span>Source updated</span><b>{j.source?.source_updated_at||"—"}</b></div><div><span>Enrichment version</span><b>{j.source?.enrichment_version||"—"}</b></div></div></div>
+ </section></main>
 }

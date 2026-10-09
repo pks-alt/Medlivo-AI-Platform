@@ -969,3 +969,104 @@ def test_manager_cannot_use_recruiter_followups(client, headers):
         headers=headers("manager-a"),
     )
     assert response.status_code == 403
+
+
+def test_candidate_360_combines_jobdiva_credentials_evidence_validation_and_best_jobs(client, headers, seeded):
+    seed_candidate_best_jobs(seeded)
+    with seeded.begin() as conn:
+        conn.execute(update(t.candidate_source_records).where(
+            t.candidate_source_records.c.id == idn(961)
+        ).values(enriched_at=now(), enrichment_version="candidate-intelligence-v1"))
+        conn.execute(insert(t.candidate_licenses).values(
+            id=idn(1100), tenant_id=idn(1), candidate_id=idn(300),
+            license_type="PT", state="CA", license_number="SYNTHETIC",
+            status="active", verification_status="verified", source_system="jobdiva",
+            source_reference="LIC-1", raw_payload={}, created_at=now(), updated_at=now(),
+        ))
+        conn.execute(insert(t.candidate_certifications).values(
+            id=idn(1101), tenant_id=idn(1), candidate_id=idn(300),
+            certification_key="bls", certification_name="BLS", status="active",
+            verification_status="verified", source_system="jobdiva",
+            source_reference="CERT-1", raw_payload={}, created_at=now(), updated_at=now(),
+        ))
+        conn.execute(insert(t.candidate_evidence).values(
+            id=idn(1102), tenant_id=idn(1), candidate_id=idn(300),
+            fact_key="care_setting", fact_value=["skilled_nursing"], source_type="resume",
+            source_reference="resume-line-12", confidence=95, is_verified=False,
+            created_at=now(), updated_at=now(),
+        ))
+        conn.execute(insert(t.resume_versions).values(
+            id=idn(1103), tenant_id=idn(1), candidate_id=idn(300),
+            source_record_id=idn(961), source_resume_id="RESUME-1",
+            parsed_payload={"experience_years": 6}, is_primary=True,
+            created_at=now(), updated_at=now(),
+        ))
+        conn.execute(insert(t.qualifications).values(
+            id=idn(1104), tenant_id=idn(1), candidate_id=idn(300), job_id=idn(200),
+            status="information_missing", summary="Confirm travel availability",
+            created_at=now(),
+        ))
+        conn.execute(insert(t.qualification_answers).values(
+            id=idn(1105), tenant_id=idn(1), qualification_id=idn(1104),
+            question_key="travel_willingness", answer={"value": "unknown"},
+            confirmed=False, created_at=now(),
+        ))
+
+    response = client.get(
+        f"/api/v1/team/candidates/{idn(300)}",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"]["source_id"] == "JD-CAND-300"
+    assert body["source"]["enrichment_version"] == "candidate-intelligence-v1"
+    assert body["licenses"][0]["license_type"] == "PT"
+    assert body["certifications"][0]["certification_key"] == "bls"
+    assert body["evidence"][0]["fact_key"] == "care_setting"
+    assert body["resumes"][0]["source_resume_id"] == "RESUME-1"
+    assert body["validation"]["status"] == "information_missing"
+    assert body["validation"]["answers"][0]["question_key"] == "travel_willingness"
+    assert body["best_jobs"][0]["jobdiva_job_id"] == "JD-PT-200"
+
+
+def test_job_360_combines_source_requirements_matches_and_exclusions(client, headers, seeded):
+    seed_candidate_best_jobs(seeded)
+    with seeded.begin() as conn:
+        conn.execute(update(t.job_source_records).where(
+            t.job_source_records.c.id == idn(960)
+        ).values(enriched_at=now(), enrichment_version="job-intelligence-v1"))
+        conn.execute(insert(t.job_requirements), [
+            {
+                "id": idn(1110), "tenant_id": idn(1), "job_id": idn(200),
+                "requirement_type": "profession", "canonical_key": "profession",
+                "value": {"value": "Physical Therapist"}, "is_hard_gate": True,
+                "source_evidence": {"provenance": "source_confirmed"},
+                "rules_version": "phase1-v1", "created_at": now(),
+            },
+            {
+                "id": idn(1111), "tenant_id": idn(1), "job_id": idn(200),
+                "requirement_type": "care_setting", "canonical_key": "care_setting",
+                "value": {"value": "skilled_nursing"}, "is_hard_gate": False,
+                "weight": 1.25, "source_evidence": {"provenance": "source_confirmed"},
+                "rules_version": "phase1-v1", "created_at": now(),
+            },
+        ])
+        conn.execute(insert(t.match_exclusions).values(
+            id=idn(1112), tenant_id=idn(1), job_id=idn(200), candidate_id=idn(302),
+            reason_code="profession", reason_detail="Requires Physical Therapist",
+            overridden=False, created_at=now(),
+        ))
+
+    response = client.get(
+        f"/api/v1/team/jobs/{idn(200)}",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["source"]["source_id"] == "JD-PT-200"
+    assert body["source"]["enrichment_version"] == "job-intelligence-v1"
+    assert len(body["requirements"]) == 2
+    assert body["hard_gates"][0]["canonical_key"] == "profession"
+    assert body["preferences"][0]["canonical_key"] == "care_setting"
+    assert body["best_candidates"][0]["jobdiva_candidate_id"] == "JD-CAND-300"
+    assert body["exclusions"][0]["reason_code"] == "profession"

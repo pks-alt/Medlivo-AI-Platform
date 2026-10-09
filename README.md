@@ -73,9 +73,9 @@ A public, synthetic recruiter-workspace preview is available for product familia
 
 [Open the recruiter browser preview](https://pks-alt.github.io/Medlivo-AI-Platform/workspace-preview/)
 
-[Open the Admin browser preview](https://pks-alt.github.io/Medlivo-AI-Platform/admin-preview/)
+[Open the Admin + Phase 1 browser preview](https://pks-alt.github.io/Medlivo-AI-Platform/admin-preview/)
 
-Both previews are sample-only and are not connected to JobDiva, Cloud Run, email, SMS, or production candidate data. The production Admin console is separately wired to the private team API and canonical JobDiva-backed database.
+Both previews are sample-only and are not connected to JobDiva, Cloud Run, email, SMS, or production candidate data. The Admin + Phase 1 preview includes Admin, JobDiva, Job 360, Candidate 360, Candidate Validation, Manager, Matching, Intake, Approvals, Performance and Audit examples. Production recruiter/admin/manager views are separately wired to the private team API and canonical JobDiva-backed database.
 
 ## Source of truth
 
