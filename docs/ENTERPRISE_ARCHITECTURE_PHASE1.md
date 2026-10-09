@@ -4,6 +4,8 @@
 **Repository:** `pks-alt/Medlivo-AI-Platform`  
 **Purpose:** Define the enterprise platform boundary, systems of record, services, workflows, data ownership, AI governance, RBAC, APIs, auditability, and implementation rules before additional UI work.
 
+**Canonical Phase 1 domain model:** `docs/PHASE1_DOMAIN_MODEL.md`
+
 ---
 
 ## 1. Architecture principles
