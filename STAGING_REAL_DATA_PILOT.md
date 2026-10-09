@@ -91,6 +91,36 @@ Inspect:
 
 Do not execute the job while disabled.
 
+## Full read-contract diagnostic
+
+Before the first persistence-enabled pilot run, enable diagnostics-only mode:
+
+- `PILOT_ENABLED=true`
+- `JOBDIVA_LIVE_ENABLED=true`
+- `PILOT_DIAGNOSTICS_ONLY=true`
+
+The diagnostic authenticates and verifies the enabled Phase 1 read contract without persisting JobDiva payloads. It checks:
+
+- OpenJobsList
+- NewUpdatedJobRecords
+- NewUpdatedCandidateRecords
+- JobsDetail when a sample job is available
+- CandidatesProfileDetail when a sample candidate is available
+- CandidatesLicensesDetail
+- CandidatesCertificationsDetails
+- CandidatesResumesDetail
+- ResumesTextDetail when a sample resume is available
+
+Only endpoint status and record counts are emitted. Candidate/job payloads, credentials, tokens and resume text are not logged.
+
+The diagnostic reports:
+
+- `verified` when every enabled read path was exercised successfully
+- `partial` when no safe sample record was available for one or more detail endpoints
+- `failed` when an enabled endpoint returns authorization/HTTP/connector failure
+
+Do not proceed to persistence-enabled pilot execution until the read contract is `verified`.
+
 ## First real-data execution
 
 After database migrations 002 through 007 are applied to the staging canonical database and secret/IAM checks are complete:
