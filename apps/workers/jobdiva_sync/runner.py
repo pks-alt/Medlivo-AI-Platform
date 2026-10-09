@@ -174,6 +174,7 @@ async def run_backfill_window(
     window_end: datetime,
     page_size: int = 100,
     max_pages: int = 1000,
+    source_ids_sink: set[str] | None = None,
 ) -> SyncRunSummary:
     """Run one explicit historical window without changing the live delta checkpoint."""
     if window_start.tzinfo is None or window_start.utcoffset() is None:
@@ -222,6 +223,8 @@ async def run_backfill_window(
             validate_page(stream, records)
             if not records:
                 break
+            if source_ids_sink is not None:
+                source_ids_sink.update(source_id(stream, record) for record in records)
 
             page_upserted = await store.upsert_page(
                 tenant_id=tenant_id,
@@ -298,6 +301,7 @@ async def run_historical_backfill(
     max_window: timedelta = timedelta(days=14),
     page_size: int = 100,
     max_pages: int = 1000,
+    source_ids_sink: set[str] | None = None,
 ) -> list[SyncRunSummary]:
     """Run only incomplete historical windows in chronological order."""
     completed: list[SyncRunSummary] = []
@@ -320,5 +324,6 @@ async def run_historical_backfill(
             window_end=window_end,
             page_size=page_size,
             max_pages=max_pages,
+            source_ids_sink=source_ids_sink,
         ))
     return completed
