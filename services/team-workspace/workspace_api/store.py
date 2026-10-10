@@ -10,7 +10,7 @@ from . import tables as t
 from .auth import Identity
 from .job_intake import process_rows, parse_xlsx, suggest_mapping
 from .intake_intelligence import analyze_intake_job
-from margin_engine import CostAssumptionSet, MarginInput, calculate_margin, seed_assumptions
+from margin_engine import CostAssumptionSet, MarginInput, calculate_margin
 
 
 class AccessError(Exception):
@@ -2870,6 +2870,14 @@ class WorkspaceStore:
             timestamp = now()
             row_id = uid()
 
+            exact = conn.execute(select(t.cost_assumption_sets.c.id).where(
+                t.cost_assumption_sets.c.tenant_id == principal["tenant_id"],
+                t.cost_assumption_sets.c.profile == value.profile,
+                t.cost_assumption_sets.c.effective_from == effective_from,
+            )).first()
+            if exact is not None:
+                raise AccessError(409, "Another assumption version already starts at this effective date")
+
             overlapping = conn.execute(select(t.cost_assumption_sets).where(
                 t.cost_assumption_sets.c.tenant_id == principal["tenant_id"],
                 t.cost_assumption_sets.c.profile == value.profile,
@@ -2944,6 +2952,15 @@ class WorkspaceStore:
             effective_from = value.effective_from
             timestamp = now()
             row_id = uid()
+            exact = conn.execute(select(t.customer_economic_rules.c.id).where(
+                t.customer_economic_rules.c.tenant_id == principal["tenant_id"],
+                t.customer_economic_rules.c.customer_id == customer_id,
+                t.customer_economic_rules.c.calculation_profile == value.calculation_profile,
+                t.customer_economic_rules.c.effective_from == effective_from,
+            )).first()
+            if exact is not None:
+                raise AccessError(409, "Another customer rule already starts at this effective date")
+
             overlapping = conn.execute(select(t.customer_economic_rules).where(
                 t.customer_economic_rules.c.tenant_id == principal["tenant_id"],
                 t.customer_economic_rules.c.customer_id == customer_id,
