@@ -244,7 +244,12 @@ export function createGateway({config, store, verifyIdToken, api, fetcher = fetc
       stage = 'workspace';
       const member = await api(tokens.id_token, '/me', {method:'GET'});
       if (member.status === 403) return redirect('/team?error=access', [clearLogin]);
-      if (member.status !== 200) throw new Error();
+      if (member.status !== 200) {
+        const workspaceStage = member.status === 401 ? 'workspace_auth' :
+          member.status === 503 ? 'workspace_storage' :
+          member.status === 404 ? 'workspace_route' : 'workspace_other';
+        return redirect('/team?error=login&stage='+workspaceStage, [clearLogin]);
+      }
       stage = 'session';
       const old = cookie(request, SESSION_COOKIE); if (old) await store.removeSession(hash(old));
       const raw = randomSecret(), sid = hash(raw), csrf = randomSecret();
