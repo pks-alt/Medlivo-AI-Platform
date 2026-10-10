@@ -35,6 +35,8 @@ class DocumentResolver(Protocol):
 def safe_filename(value: str, fallback: str = "document") -> str:
     value = re.sub(r"[^A-Za-z0-9._ -]+", "", value or "").strip()
     value = re.sub(r"\s+", "_", value)
+    while ".." in value:
+        value = value.replace("..", ".")
     value = value.strip("._")
     return (value or fallback)[:160]
 
@@ -97,10 +99,10 @@ class SubmissionPacketGenerator:
             title=title,
         )
         styles = getSampleStyleSheet()
-        story = [Paragraph(title, styles["Title"]), Spacer(1, 14)]
+        story = [Paragraph(escape(title), styles["Title"]), Spacer(1, 14)]
         for heading, body in sections:
             if heading:
-                story.extend([Paragraph(heading, styles["Heading2"]), Spacer(1, 5)])
+                story.extend([Paragraph(escape(heading), styles["Heading2"]), Spacer(1, 5)])
             for paragraph in str(body or "").split("\n"):
                 text = paragraph.strip()
                 if not text:
