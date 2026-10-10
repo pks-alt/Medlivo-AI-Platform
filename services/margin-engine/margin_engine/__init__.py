@@ -1,7 +1,7 @@
 from .assumptions import seed_assumptions
 from .calculator import calculate_margin
 from .models import (
-    ApprovalBands,
+    GuidelineBands,
     CostAssumptionSet,
     CostComponent,
     MarginInput,
@@ -9,7 +9,7 @@ from .models import (
 )
 
 __all__ = [
-    "ApprovalBands",
+    "GuidelineBands",
     "CostAssumptionSet",
     "CostComponent",
     "MarginInput",
