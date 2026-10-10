@@ -170,7 +170,10 @@ export default function SubmissionStudioPage({params}:{params:Promise<{jobId:str
     <div><b>{pack.readiness_status==="ready"?"Package is ready for recruiter final review.":"Resolve the remaining items before finalizing."}</b><span>Finalizing locks this package version. It does not submit anything to JobDiva or the MSP/VMS.</span></div>
     <button disabled={busy||pack.readiness_status!=="ready"} onClick={finalize}>{busy?"Working…":"Finalize Submission Package"}</button>
    </section>}
-   {pack.status==="finalized"&&<div className="goodState">Submission package finalized and locked for this version.</div>}
+   {pack.status==="finalized"&&<section className="submissionDownload">
+    <div><b>Submission package finalized.</b><span>This version is locked. Download the combined PDF, separate supporting files, and manifest as one ZIP.</span></div>
+    {me.submission_packet_download_enabled?<a href={"/api/team/submission-studio/packages/"+pack.id+"/download"}>Download Submission Package</a>:<span className="downloadDisabled">Download generation is not enabled in this environment.</span>}
+   </section>}
 
    <section className="panelBox"><small>PACKAGE VERSION</small><div className="adminRows">
     <div><span>Template</span><b>{pack.template?.name||"Configured template"}</b></div>
