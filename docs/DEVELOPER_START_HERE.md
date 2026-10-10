@@ -1,5 +1,20 @@
 # Developer Start Here
 
+## 0. Mandatory control layer
+
+Before reading historical specs or changing code, read these four files in order:
+
+1. `docs/ENGINEERING_OPERATING_MODEL.md`
+2. `docs/CURRENT_PLATFORM_STATE.md`
+3. `docs/PHASE1_COMPLETION_MATRIX.md`
+4. `docs/NEXT_DEVELOPMENT_SLICE.md`
+
+These are the operational entry point for current development.
+
+**Always start from the latest green `main`.** Historical PRs, old branches, static previews, and old deployment paths are reference material only.
+
+If a requested change conflicts with the engineering operating model or an accepted ADR, stop and resolve the conflict explicitly before implementation.
+
 ## Purpose
 
 This guide is the entry point for engineers joining the Medlivo AI Platform.
@@ -343,10 +358,16 @@ Questions or perceived gaps should be reviewed before architecture is changed.
 
 ## 11. Current next technical milestone
 
-The next milestone is not a new dashboard or a new AI feature.
+Do not infer the next milestone from this historical onboarding guide.
 
-It is:
+The authoritative next slice is always:
 
-**Validate the complete JobDiva Phase 1 read contract → run a bounded real-data pilot → inspect real Nursing & Allied / Rehab / Locums data → measure match quality with recruiters → tune only where evidence shows a problem.**
+- `docs/NEXT_DEVELOPMENT_SLICE.md`
 
-That keeps implementation aligned with the product and prevents premature redesign.
+When a slice is completed, update that file together with:
+
+- `docs/CURRENT_PLATFORM_STATE.md`
+- `docs/PHASE1_COMPLETION_MATRIX.md`
+- `RELEASE_STATE.json`
+
+This prevents development from drifting backward into old assumptions.
