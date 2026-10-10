@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from io import BytesIO
+from html import escape
 import json
 import re
 from typing import Protocol
@@ -106,12 +107,12 @@ class SubmissionPacketGenerator:
                     story.append(Spacer(1, 6))
                     continue
                 if text.startswith("#"):
-                    clean = text.lstrip("#").strip()
+                    clean = escape(text.lstrip("#").strip())
                     story.append(Paragraph(clean, styles["Heading2"]))
                 elif text.startswith(("- ", "* ")):
-                    story.append(Paragraph("• " + text[2:].strip(), styles["BodyText"]))
+                    story.append(Paragraph("• " + escape(text[2:].strip()), styles["BodyText"]))
                 else:
-                    story.append(Paragraph(text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"), styles["BodyText"]))
+                    story.append(Paragraph(escape(text), styles["BodyText"]))
                 story.append(Spacer(1, 4))
         doc.build(story)
         return out.getvalue()
@@ -197,7 +198,7 @@ class SubmissionPacketGenerator:
             if "." in document.filename:
                 suffix = "." + document.filename.rsplit(".", 1)[-1].lower()
             filename = f"{index:02d}_{safe_filename(item.get('label') or document.filename)}{suffix}"
-            source_files.append((filename, document))
+            source_files.append((filename, document, item))
             if document.content_type == "application/pdf" or suffix == ".pdf":
                 pdf_parts.append(document.content)
             elif document.content_type in {"image/jpeg", "image/png", "image/webp"} or suffix in {".jpg", ".jpeg", ".png", ".webp"}:
@@ -218,7 +219,7 @@ class SubmissionPacketGenerator:
             "package_version": package.get("version"),
             "documents": [
                 {"filename": name, "label": item.get("label")}
-                for (name, _), item in zip(source_files, context.get("supporting_documents") or [])
+                for name, _, item in source_files
             ],
             "warnings": warnings,
             "generated_by": "Medlivo Submission Studio",
@@ -229,7 +230,7 @@ class SubmissionPacketGenerator:
             archive.writestr(f"{base}_Combined.pdf", combined_pdf)
             archive.writestr("00_Candidate_Presentation.pdf", presentation_pdf)
             archive.writestr("01_Resume.pdf", resume_pdf)
-            for filename, document in source_files:
+            for filename, document, _ in source_files:
                 archive.writestr(filename, document.content)
             archive.writestr("manifest.json", json.dumps(manifest, indent=2, default=str))
         content = out.getvalue()
