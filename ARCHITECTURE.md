@@ -1,5 +1,7 @@
 # Medlivo AI Platform — Architecture
 
+> Permanent engineering operating model: `docs/ENGINEERING_OPERATING_MODEL.md`  
+> Current platform state: `docs/CURRENT_PLATFORM_STATE.md`  
 > Phase 1 governing enterprise blueprint: `docs/ENTERPRISE_ARCHITECTURE_PHASE1.md`
 
 ## Product boundary
