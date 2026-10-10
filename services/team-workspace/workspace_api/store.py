@@ -10,6 +10,7 @@ from . import tables as t
 from .auth import Identity
 from .job_intake import process_rows, parse_xlsx, suggest_mapping
 from .intake_intelligence import analyze_intake_job
+from margin_engine import CostAssumptionSet, MarginInput, calculate_margin, seed_assumptions
 
 
 class AccessError(Exception):
@@ -2848,3 +2849,348 @@ class WorkspaceStore:
                 t.operational_audit.c.id.desc(),
             ).limit(limit)).mappings().all()
             return {"items": [clean(row) for row in rows]}
+
+
+    def create_margin_snapshot(self, identity, key, value):
+        payload = value.model_dump(mode="json")
+
+        def apply(conn, principal):
+            if principal["business_role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            recruiter_id = str(value.recruiter_user_id)
+            if recruiter_id != principal["id"]:
+                raise AccessError(403, "Recruiters may only finalize their own rate packages")
+
+            job_id = str(value.job_id)
+            candidate_id = str(value.candidate_id)
+            job = conn.execute(select(t.jobs.c.id).where(
+                t.jobs.c.tenant_id == principal["tenant_id"],
+                t.jobs.c.id == job_id,
+            )).first()
+            candidate = conn.execute(select(t.candidates.c.id).where(
+                t.candidates.c.tenant_id == principal["tenant_id"],
+                t.candidates.c.id == candidate_id,
+            )).first()
+            if job is None or candidate is None:
+                raise AccessError(404, "Job or candidate not found")
+
+            assumptions = seed_assumptions(value.profile)
+            assumption_row = conn.execute(select(t.cost_assumption_sets).where(
+                t.cost_assumption_sets.c.tenant_id == principal["tenant_id"],
+                t.cost_assumption_sets.c.profile == value.profile,
+                t.cost_assumption_sets.c.version == assumptions.version,
+                t.cost_assumption_sets.c.status == "active",
+            )).mappings().first()
+
+            timestamp = now()
+            if assumption_row is None:
+                assumption_id = uid()
+                assumption_payload = assumptions.model_dump(mode="json")
+                conn.execute(insert(t.cost_assumption_sets).values(
+                    id=assumption_id,
+                    tenant_id=principal["tenant_id"],
+                    profile=value.profile,
+                    version=assumptions.version,
+                    assumption_payload=assumption_payload,
+                    status="active",
+                    effective_from=timestamp,
+                    effective_to=None,
+                    created_by=principal["id"],
+                    created_at=timestamp,
+                ))
+            else:
+                assumption_id = assumption_row["id"]
+                assumption_payload = assumption_row["assumption_payload"]
+                assumptions = CostAssumptionSet.model_validate(assumption_payload)
+
+            margin_input = MarginInput.model_validate({
+                key: val for key, val in value.model_dump().items()
+                if key not in {"job_id", "candidate_id", "recruiter_user_id"}
+            })
+            result = calculate_margin(margin_input, assumptions)
+
+            next_version = conn.execute(select(func.coalesce(func.max(
+                t.margin_snapshots.c.version
+            ), 0) + 1).where(
+                t.margin_snapshots.c.tenant_id == principal["tenant_id"],
+                t.margin_snapshots.c.job_id == job_id,
+                t.margin_snapshots.c.candidate_id == candidate_id,
+            )).scalar_one()
+
+            snapshot_id = uid()
+            lifecycle = (
+                "hard_exception_required"
+                if result.guideline_status == "negative_gm"
+                else "draft"
+            )
+            result_payload = result.model_dump(mode="json")
+            input_payload = margin_input.model_dump(mode="json")
+            row = dict(
+                id=snapshot_id,
+                tenant_id=principal["tenant_id"],
+                job_id=job_id,
+                candidate_id=candidate_id,
+                recruiter_user_id=recruiter_id,
+                calculation_profile=value.profile,
+                assumption_set_id=assumption_id,
+                assumption_version=assumptions.version,
+                version=int(next_version),
+                input_payload=input_payload,
+                result_payload=result_payload,
+                guideline_status=result.guideline_status,
+                lifecycle_status=lifecycle,
+                created_by=principal["id"],
+                created_at=timestamp,
+                finalized_by=None,
+                finalized_at=None,
+            )
+            conn.execute(insert(t.margin_snapshots).values(**row))
+
+            for component in result.cost_components:
+                conn.execute(insert(t.margin_cost_components).values(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    snapshot_id=snapshot_id,
+                    component_key=component.key,
+                    label=component.label,
+                    category=component.category,
+                    per_week=component.per_week,
+                    assignment_total=component.assignment_total,
+                    created_at=timestamp,
+                ))
+
+            conn.execute(insert(t.commission_projections).values(
+                id=uid(),
+                tenant_id=principal["tenant_id"],
+                snapshot_id=snapshot_id,
+                recruiter_user_id=recruiter_id,
+                commissionable_net_profit=result.commissionable_net_profit,
+                commission_rate=assumptions.commission_rate,
+                projected_amount=result.projected_recruiter_commission,
+                status="projected",
+                created_at=timestamp,
+            ))
+
+            if result.guideline_status == "negative_gm":
+                conn.execute(insert(t.approval_requests).values(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    approval_type="negative_margin_exception",
+                    object_type="margin_snapshot",
+                    object_id=snapshot_id,
+                    requested_by=principal["id"],
+                    required_authority="executive",
+                    status="pending",
+                    reason="Negative GM requires explicit leadership exception",
+                    decision_notes=None,
+                    decided_by=None,
+                    decided_at=None,
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                ))
+
+            self._operational_audit(
+                conn,
+                principal,
+                "margin.snapshot.created",
+                "margin_snapshot",
+                snapshot_id,
+                {},
+                {
+                    "version": int(next_version),
+                    "guideline_status": result.guideline_status,
+                    "assumption_version": assumptions.version,
+                },
+            )
+            return row
+
+        return self._global_mutate(
+            identity, key, "margin.snapshot.created", payload, apply
+        )
+
+    def get_margin_snapshot(self, identity, snapshot_id):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            row = conn.execute(select(t.margin_snapshots).where(
+                t.margin_snapshots.c.tenant_id == principal["tenant_id"],
+                t.margin_snapshots.c.id == snapshot_id,
+            )).mappings().first()
+            if row is None:
+                raise AccessError(404, "Margin snapshot not found")
+            if (
+                principal["business_role"] == "recruiter"
+                and row["recruiter_user_id"] != principal["id"]
+            ):
+                raise AccessError(404, "Margin snapshot not found")
+            components = conn.execute(select(t.margin_cost_components).where(
+                t.margin_cost_components.c.tenant_id == principal["tenant_id"],
+                t.margin_cost_components.c.snapshot_id == snapshot_id,
+            ).order_by(t.margin_cost_components.c.component_key)).mappings().all()
+            discussions = conn.execute(select(t.margin_discussions).where(
+                t.margin_discussions.c.tenant_id == principal["tenant_id"],
+                t.margin_discussions.c.snapshot_id == snapshot_id,
+            ).order_by(t.margin_discussions.c.created_at)).mappings().all()
+            commission = conn.execute(select(t.commission_projections).where(
+                t.commission_projections.c.tenant_id == principal["tenant_id"],
+                t.commission_projections.c.snapshot_id == snapshot_id,
+            )).mappings().first()
+            return {
+                **clean(row),
+                "cost_components": [clean(x) for x in components],
+                "discussions": [clean(x) for x in discussions],
+                "commission_projection": clean(commission) if commission else None,
+            }
+
+    def add_margin_discussion(self, identity, snapshot_id, key, value):
+        payload = {
+            "snapshot_id": snapshot_id,
+            **value.model_dump(mode="json"),
+        }
+
+        def apply(conn, principal):
+            snapshot = conn.execute(select(t.margin_snapshots).where(
+                t.margin_snapshots.c.tenant_id == principal["tenant_id"],
+                t.margin_snapshots.c.id == snapshot_id,
+            )).mappings().first()
+            if snapshot is None:
+                raise AccessError(404, "Margin snapshot not found")
+
+            role = principal["business_role"]
+            if role == "recruiter":
+                if snapshot["recruiter_user_id"] != principal["id"]:
+                    raise AccessError(404, "Margin snapshot not found")
+            elif role not in {"delivery_manager", "executive"}:
+                raise AccessError(403, "Rate discussion access required")
+
+            participant_user_id = (
+                str(value.participant_user_id) if value.participant_user_id else None
+            )
+            if participant_user_id:
+                participant = conn.execute(
+                    select(t.access_profiles.c.business_role)
+                    .where(
+                        t.access_profiles.c.tenant_id == principal["tenant_id"],
+                        t.access_profiles.c.user_id == participant_user_id,
+                    )
+                ).scalar_one_or_none()
+                if participant is None:
+                    raise AccessError(422, "Discussion participant not found")
+                valid = {
+                    "delivery_manager": {"delivery_manager"},
+                    "executive": {"executive"},
+                    "designated_leadership": {"executive", "delivery_manager"},
+                }[value.participant_role]
+                if participant not in valid:
+                    raise AccessError(422, "Participant role does not match the selected discussion role")
+
+            timestamp = now()
+            row = dict(
+                id=uid(),
+                tenant_id=principal["tenant_id"],
+                snapshot_id=snapshot_id,
+                recorded_by=principal["id"],
+                participant_user_id=participant_user_id,
+                participant_role=value.participant_role,
+                discussion_type=value.discussion_type,
+                notes=value.notes,
+                created_at=timestamp,
+            )
+            conn.execute(insert(t.margin_discussions).values(**row))
+            self._operational_audit(
+                conn,
+                principal,
+                "margin.discussion.recorded",
+                "margin_snapshot",
+                snapshot_id,
+                {},
+                {
+                    "participant_role": value.participant_role,
+                    "discussion_type": value.discussion_type,
+                },
+                reason=value.notes,
+            )
+            return row
+
+        return self._global_mutate(
+            identity, key, "margin.discussion.recorded", payload, apply
+        )
+
+    def finalize_margin_snapshot(self, identity, snapshot_id, key, value):
+        payload = {
+            "snapshot_id": snapshot_id,
+            "expected_version": value.expected_version,
+        }
+
+        def apply(conn, principal):
+            if principal["business_role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            snapshot = conn.execute(select(t.margin_snapshots).where(
+                t.margin_snapshots.c.tenant_id == principal["tenant_id"],
+                t.margin_snapshots.c.id == snapshot_id,
+            ).with_for_update()).mappings().first()
+            if snapshot is None or snapshot["recruiter_user_id"] != principal["id"]:
+                raise AccessError(404, "Margin snapshot not found")
+            if snapshot["version"] != value.expected_version:
+                raise AccessError(409, "Rate package changed; reload before finalizing")
+            if snapshot["lifecycle_status"] == "finalized":
+                raise AccessError(409, "Rate package is already finalized")
+
+            status = snapshot["guideline_status"]
+            if status == "policy_unconfigured":
+                raise AccessError(422, "Margin guideline is not configured for this profile")
+
+            discussions = conn.execute(select(t.margin_discussions.c.participant_role).where(
+                t.margin_discussions.c.tenant_id == principal["tenant_id"],
+                t.margin_discussions.c.snapshot_id == snapshot_id,
+            )).scalars().all()
+            discussion_roles = set(discussions)
+
+            if status == "discuss_delivery_manager" and not (
+                discussion_roles & {"delivery_manager", "executive", "designated_leadership"}
+            ):
+                raise AccessError(422, "Record the Delivery Manager or leadership discussion before finalizing")
+
+            if status == "discuss_leadership" and not (
+                discussion_roles & {"executive", "designated_leadership"}
+            ):
+                raise AccessError(422, "Record the leadership discussion before finalizing")
+
+            if status == "negative_gm":
+                exception = conn.execute(select(t.approval_requests.c.status).where(
+                    t.approval_requests.c.tenant_id == principal["tenant_id"],
+                    t.approval_requests.c.object_type == "margin_snapshot",
+                    t.approval_requests.c.object_id == snapshot_id,
+                    t.approval_requests.c.approval_type == "negative_margin_exception",
+                ).order_by(t.approval_requests.c.created_at.desc())).scalar_one_or_none()
+                if exception != "approved":
+                    raise AccessError(422, "Negative GM requires an approved leadership exception")
+
+            timestamp = now()
+            conn.execute(update(t.margin_snapshots).where(
+                t.margin_snapshots.c.tenant_id == principal["tenant_id"],
+                t.margin_snapshots.c.id == snapshot_id,
+            ).values(
+                lifecycle_status="finalized",
+                finalized_by=principal["id"],
+                finalized_at=timestamp,
+            ))
+            after = dict(snapshot)
+            after.update({
+                "lifecycle_status": "finalized",
+                "finalized_by": principal["id"],
+                "finalized_at": timestamp,
+            })
+            self._operational_audit(
+                conn,
+                principal,
+                "margin.snapshot.finalized",
+                "margin_snapshot",
+                snapshot_id,
+                clean(snapshot),
+                after,
+            )
+            return after
+
+        return self._global_mutate(
+            identity, key, "margin.snapshot.finalized", payload, apply
+        )
