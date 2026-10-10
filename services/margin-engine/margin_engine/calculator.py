@@ -54,23 +54,24 @@ def _benefit_cost_per_week(value: MarginInput, assumptions: CostAssumptionSet) -
     return monthly * MONTHS_PER_YEAR / WEEKS_PER_YEAR * assumptions.employer_benefit_contribution
 
 
-def _approval_status(gm_percent: Decimal, assumptions: CostAssumptionSet) -> str:
+def _guideline_status(gm_percent: Decimal, assumptions: CostAssumptionSet) -> str:
     if gm_percent < 0:
         return "negative_gm"
 
-    bands = assumptions.approval_bands
-    if bands.manager_min_margin is not None and gm_percent < bands.manager_min_margin:
-        if bands.recruiter_min_margin is not None and gm_percent >= bands.recruiter_min_margin:
-            return "manager_approval_required"
-        return "executive_approval_required"
+    bands = assumptions.guideline_bands
+    recruiter_floor = bands.recruiter_guideline_min_margin
+    manager_discussion_floor = bands.delivery_manager_discussion_min_margin
 
-    if bands.recruiter_min_margin is not None and gm_percent < bands.recruiter_min_margin:
-        return "manager_approval_required"
-
-    if bands.manager_min_margin is None and bands.recruiter_min_margin is None:
+    if recruiter_floor is None and manager_discussion_floor is None:
         return "policy_unconfigured"
 
-    return "healthy"
+    if manager_discussion_floor is not None and gm_percent < manager_discussion_floor:
+        return "discuss_leadership"
+
+    if recruiter_floor is not None and gm_percent < recruiter_floor:
+        return "discuss_delivery_manager"
+
+    return "within_guideline"
 
 
 def calculate_margin(value: MarginInput, assumptions: CostAssumptionSet) -> MarginResult:
@@ -232,6 +233,6 @@ def calculate_margin(value: MarginInput, assumptions: CostAssumptionSet) -> Marg
         ),
         commissionable_net_profit=_money(commissionable),
         projected_recruiter_commission=_money(commission),
-        approval_status=_approval_status(gm_percent, assumptions),
+        guideline_status=_guideline_status(gm_percent, assumptions),
         cost_components=components,
     )
