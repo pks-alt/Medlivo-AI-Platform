@@ -160,3 +160,58 @@ def test_manager_cannot_see_other_team_negative_margin_in_history(client, header
     )
     assert response.status_code == 200
     assert response.json()["items"] == []
+
+
+def test_system_admin_customer_economics_lists_names_and_rules(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(insert(t.customers).values(
+            id=idn(1700),
+            tenant_id=idn(1),
+            name="Synthetic Economic Customer",
+            status="active",
+            metadata={},
+            created_at=now(),
+            updated_at=now(),
+        ))
+
+    customers = client.get(
+        "/api/v1/team/economic-config/customers",
+        headers=headers("admin-a"),
+    )
+    assert customers.status_code == 200
+    assert any(x["name"] == "Synthetic Economic Customer" for x in customers.json()["items"])
+
+    rule = client.post(
+        "/api/v1/team/economic-config/customers",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(9703)},
+        json={
+            "customer_id": idn(1700),
+            "calculation_profile": "nursing_allied_national_w2",
+            "version": "synthetic-customer-rule-v1",
+            "rule_payload": {"msp_fee_rate": 0.07, "overhead_rate": 0.04},
+            "effective_from": (now() - timedelta(minutes=1)).isoformat(),
+        },
+    )
+    assert rule.status_code == 201
+
+    rules = client.get(
+        "/api/v1/team/economic-config/customer-rules",
+        headers=headers("admin-a"),
+    )
+    assert rules.status_code == 200
+    item = next(x for x in rules.json()["items"] if x["version"] == "synthetic-customer-rule-v1")
+    assert item["customer_name"] == "Synthetic Economic Customer"
+    assert float(item["rule_payload"]["msp_fee_rate"]) == 0.07
+
+
+def test_recruiter_cannot_view_company_customer_economic_rules(client, headers):
+    customers = client.get(
+        "/api/v1/team/economic-config/customers",
+        headers=headers("recruiter-a"),
+    )
+    assert customers.status_code == 403
+    rules = client.get(
+        "/api/v1/team/economic-config/customer-rules",
+        headers=headers("recruiter-a"),
+    )
+    assert rules.status_code == 403
