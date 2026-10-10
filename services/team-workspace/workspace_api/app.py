@@ -16,6 +16,7 @@ from .schemas import (
     JobIntakeBatchInput, CustomerJobMappingInput, WeeklyGoalInput, JobIntakeRowsInput,
     JobPublicationDraftInput, JobPublicationDecision, MatchFeedbackInput,
     JobOperationalUpdate, JobAssignmentInput, JobIntakeItemDecision,
+    MarginCalculationInput, MarginDiscussionInput, MarginFinalizeInput,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -321,6 +322,29 @@ def build_app(store, verifier):
                                idempotency_key: UUID = Header(), who=Depends(identity)):
         return store.decide_job_intake_item(
             who, str(batch_id), str(item_id), str(idempotency_key), value
+        )
+
+    @app.post(prefix + "/margin/snapshots", status_code=201)
+    def create_margin_snapshot(value: MarginCalculationInput,
+                               idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.create_margin_snapshot(who, str(idempotency_key), value)
+
+    @app.get(prefix + "/margin/snapshots/{snapshot_id}")
+    def margin_snapshot(snapshot_id: UUID, who=Depends(identity)):
+        return store.get_margin_snapshot(who, str(snapshot_id))
+
+    @app.post(prefix + "/margin/snapshots/{snapshot_id}/discussions", status_code=201)
+    def add_margin_discussion(snapshot_id: UUID, value: MarginDiscussionInput,
+                              idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.add_margin_discussion(
+            who, str(snapshot_id), str(idempotency_key), value
+        )
+
+    @app.post(prefix + "/margin/snapshots/{snapshot_id}/finalize")
+    def finalize_margin_snapshot(snapshot_id: UUID, value: MarginFinalizeInput,
+                                 idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.finalize_margin_snapshot(
+            who, str(snapshot_id), str(idempotency_key), value
         )
 
     @app.get(prefix + "/manager/operational-audit")
