@@ -20,10 +20,10 @@ const statusLabel=(s:string)=>({
 
 export default function PayPackagePage({params}:{params:Promise<{jobId:string,candidateId:string}>}){
  const[job,setJob]=useState<any>(null),[candidate,setCandidate]=useState<any>(null),[me,setMe]=useState<any>(null);
- const[result,setResult]=useState<any>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false);
+ const[result,setResult]=useState<any>(null),[history,setHistory]=useState<any[]>([]),[error,setError]=useState(""),[busy,setBusy]=useState(false);
  const[ids,setIds]=useState<{jobId:string,candidateId:string}|null>(null);
  const[workerClass,setWorkerClass]=useState("1099");
- useEffect(()=>{params.then(async p=>{setIds(p);const[m,j,c]=await Promise.all([api("me"),api("jobs/"+p.jobId),api("candidates/"+p.candidateId)]);setMe(m);setJob(j);setCandidate(c)}).catch(e=>setError(e.message))},[params]);
+ useEffect(()=>{params.then(async p=>{setIds(p);const[m,j,c,h]=await Promise.all([api("me"),api("jobs/"+p.jobId),api("candidates/"+p.candidateId),api("margin/history?job_id="+p.jobId+"&candidate_id="+p.candidateId+"&limit=25")]);setMe(m);setJob(j);setCandidate(c);setHistory(h.items||[])}).catch(e=>setError(e.message))},[params]);
  const isLocums=job?.division==="Locum Tenens";
  const isCalifornia=["CA","CALIFORNIA"].includes(String(job?.state||"").toUpperCase());
  const title=useMemo(()=>job&&candidate?(candidate.canonical_name||"Candidate")+" · "+(job.title||"Job"):"Pay Package",[job,candidate]);
@@ -80,6 +80,8 @@ export default function PayPackagePage({params}:{params:Promise<{jobId:string,ca
    }
    const created=await api(endpoint,{method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)});
    setResult(await api("margin/snapshots/"+created.id));
+   const h=await api("margin/history?job_id="+ids.jobId+"&candidate_id="+ids.candidateId+"&limit=25");
+   setHistory(h.items||[]);
   }catch(err:any){setError(err.message)}finally{setBusy(false)}
  }
 
@@ -133,6 +135,7 @@ export default function PayPackagePage({params}:{params:Promise<{jobId:string,ca
     {!result?<div className="emptyMargin"><b>Ready to calculate</b><p>Complete the package. Medlivo will apply the correct division calculator, customer rules, costs and margin guideline.</p></div>:<MarginResult data={result} onUpdate={setResult}/>}
    </aside>
   </form>
+  <section className="payHistory panelBox"><small>RATE PACKAGE HISTORY</small>{history.length?<table className="adminTable"><thead><tr><th>Version</th><th>GM</th><th>Status</th><th>Lifecycle</th><th>Created</th></tr></thead><tbody>{history.map((x:any)=><tr key={x.id}><td>v{x.version}</td><td>{pct(x.result_payload?.gross_margin_percent)}</td><td>{statusLabel(x.guideline_status)}</td><td>{String(x.lifecycle_status||"").replaceAll("_"," ")}</td><td>{x.created_at?new Date(x.created_at).toLocaleString():"—"}</td></tr>)}</tbody></table>:<div className="emptyState">No rate package versions yet.</div>}</section>
  </main>
 }
 
