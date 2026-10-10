@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-10-10",
+  "canonical_repository": "pks-alt/Medlivo-AI-Platform",
+  "canonical_branch": "main",
+  "baseline_main_sha": "2fbfe8a5bdfd5674a94b7b2627073ea177daa80b",
+  "governing_documents": {
+    "engineering_operating_model": "docs/ENGINEERING_OPERATING_MODEL.md",
+    "current_platform_state": "docs/CURRENT_PLATFORM_STATE.md",
+    "phase1_completion_matrix": "docs/PHASE1_COMPLETION_MATRIX.md",
+    "next_development_slice": "docs/NEXT_DEVELOPMENT_SLICE.md"
+  },
+  "schema_state": {
+    "team_workspace_latest_named_migration": "013_submission_studio.sql"
+  },
+  "major_capabilities": {
+    "jobdiva_read_connector": "active_read_only",
+    "job_intelligence": "active",
+    "candidate_intelligence": "active",
+    "matching_engine": "active",
+    "recruiter_workspace": "active",
+    "manager_workspace": "active",
+    "pay_package_margin": "active",
+    "submission_studio": "active",
+    "submission_ai_composer": "implemented_config_gated",
+    "submission_packet_download": "implemented_config_gated",
+    "submission_to_start_funnel": "active",
+    "start_readiness": "active",
+    "jobdiva_writeback": "disabled",
+    "autonomous_outreach": "disabled"
+  },
+  "staging": {
+    "project": "medlivo-ai-platform",
+    "region": "us-west1",
+    "web_service": "medlivo-team-web-staging",
+    "api_service": "medlivo-team-api-staging",
+    "web_revision": "medlivo-team-web-staging-00015-pgc",
+    "api_revision": "medlivo-team-api-staging-00013-ss8",
+    "web_origin": "https://medlivo-team-web-staging-brgq5tymca-uw.a.run.app",
+    "api_origin": "https://medlivo-team-api-staging-brgq5tymca-uw.a.run.app",
+    "workspace_enabled": true,
+    "full_recruiter_app_image": true,
+    "browser_acceptance": "pending_auth_gate_pr_80"
+  },
+  "in_progress": [
+    {
+      "pull_request": 80,
+      "capability": "full_app_authentication_gate",
+      "status": "ci_rerun_after_browser_wait_fix"
+    }
+  ],
+  "source_of_truth_policy": {
+    "jobdiva_is_ats": true,
+    "phase1_jobdiva_writeback_allowed": false,
+    "medlivo_second_ats_allowed": false
+  },
+  "notes": [
+    "Feature configuration values that are intentionally secret or not independently verified are not recorded here.",
+    "Update this file after meaningful capability merges or staging/release changes."
+  ]
+}

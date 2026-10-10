@@ -6,13 +6,19 @@
 
 **Default / production branch:** `main`
 
-**Current consolidation branch:** `feat/phase1-job-intake-weekly-review-20261007`
+**Current development baseline:** latest green `main`
 
-**Current consolidation PR:** #4
+All new AI Platform work must start from the latest green `main`.
 
-Until PR #4 is merged, all new AI Platform work must be made only on the consolidation branch above. Do not start new product features from older feature branches.
+Historical feature branches and pull requests are reference material only. Do not start new product development from them.
 
-After PR #4 is merged, `main` becomes the only canonical starting point for all work.
+For current implementation status and the next slice, read:
+
+- `docs/ENGINEERING_OPERATING_MODEL.md`
+- `docs/CURRENT_PLATFORM_STATE.md`
+- `docs/PHASE1_COMPLETION_MATRIX.md`
+- `docs/NEXT_DEVELOPMENT_SLICE.md`
+- `RELEASE_STATE.json`
 
 ## Architecture boundary
 
@@ -70,32 +76,15 @@ Do not introduce:
 
 Temporary secure file staging is allowed only when technically required for transfer into JobDiva and must have explicit retention/deletion controls.
 
-## Branch / PR consolidation
+## Historical consolidation note
 
-### PR #4
-**CANONICAL CONSOLIDATION PR.**
+Earlier consolidation PRs are historical context only. They are not development baselines.
 
-It contains the private team workspace plus current Phase 1 intelligence and recruiter workflow work. It should target `main`.
+Current work follows the permanent rule:
 
-### PR #3
-**MERGED INTO `main`.** The private team workspace foundation is now part of the canonical base.
+`latest green main → short-lived feature branch → coherent PR → tests → staging/browser validation as applicable → merge to main → update platform control files`
 
-### PR #1
-**CLOSED / SUPERSEDED.** Its Cloud Run service-to-service authentication safeguards have been reconciled into PR #4.
-
-### PR #2
-**CLOSED / SUPERSEDED.** Its relevant read-only JobDiva safety controls have been reconciled into the active connector in PR #4.
-
-## Required before merging PR #4 to main
-
-1. Run all current CI suites.
-2. Confirm no parallel ATS application/resume persistence remains.
-3. Confirm JobDiva write paths remain disabled.
-4. Confirm recruiter/manager RBAC and tenant isolation.
-5. Confirm public Career API exposes approved public fields only.
-6. Update this document if any component changes status.
-
-## Development rule after consolidation
+## Permanent development rule
 
 Every new feature must follow:
 
