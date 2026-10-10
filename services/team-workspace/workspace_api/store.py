@@ -3,6 +3,7 @@ from datetime import datetime, date, timezone, timedelta
 from decimal import Decimal
 import hashlib
 import json
+import re
 from uuid import UUID, uuid4
 from sqlalchemy import select, insert, update, and_, true, text, func, or_
 from sqlalchemy.exc import IntegrityError
@@ -3564,6 +3565,9 @@ class WorkspaceStore:
                 for key_name in safe_profile_keys if key_name in raw_profile
             }
 
+            resume_text = (resume.get("text_content") or "")[:60000] if resume else ""
+            resume_text = re.sub(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", "[email removed]", resume_text, flags=re.I)
+            resume_text = re.sub(r"(?<!\d)(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}(?!\d)", "[phone removed]", resume_text)
             source = {
                 "candidate": {
                     "name": candidate.get("canonical_name"),
@@ -3581,10 +3585,9 @@ class WorkspaceStore:
                     "city": job.get("city"),
                     "state": job.get("state"),
                     "start_date": clean({"value": job.get("start_date")})["value"],
-                    "normalized_payload": clean(job.get("normalized_payload") or {}),
                 },
                 "resume": {
-                    "text": (resume.get("text_content") or "")[:60000] if resume else "",
+                    "text": resume_text,
                     "parsed_payload": clean(resume.get("parsed_payload") or {}) if resume else {},
                 },
                 "licenses": [clean({
@@ -3605,7 +3608,7 @@ class WorkspaceStore:
                 "candidate.name", "candidate.profession", "candidate.specialty",
                 "candidate.city", "candidate.state", "candidate.profile",
                 "job.title", "job.division", "job.profession", "job.specialty",
-                "job.city", "job.state", "job.start_date", "job.normalized_payload",
+                "job.city", "job.state", "job.start_date",
                 "resume.text", "resume.parsed_payload", "availability",
             }
             source_keys.update("license." + str(row["id"]) for row in licenses)
