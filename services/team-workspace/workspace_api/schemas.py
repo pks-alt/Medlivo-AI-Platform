@@ -399,3 +399,39 @@ class LocumsPayPackageSnapshotInput(StrictInput):
     sign_on_bonus: float = Field(default=0, ge=0)
     completion_bonus: float = Field(default=0, ge=0)
     other_one_time_cost: float = Field(default=0, ge=0)
+
+
+class StartReadinessUpdate(StrictInput):
+    status: Literal["not_started", "in_progress", "ready", "blocked", "started"]
+    risk_level: Literal["unknown", "low", "medium", "high", "critical"]
+    risk_reason: str | None = Field(default=None, max_length=1000)
+    next_action: str | None = Field(default=None, max_length=500)
+    owner_user_id: UUID | None = None
+    due_at: datetime | None = None
+    expected_version: int = Field(ge=0)
+
+    @field_validator("due_at")
+    @classmethod
+    def readiness_due_requires_zone(cls, value):
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("A timezone-aware deadline is required")
+        return value
+
+
+class StartReadinessItemInput(StrictInput):
+    item_key: str = Field(min_length=1, max_length=120)
+    label: str = Field(min_length=1, max_length=200)
+    category: str = Field(min_length=1, max_length=120)
+    status: Literal["missing", "pending", "complete", "waived", "not_applicable"]
+    required: bool = True
+    source_type: str | None = Field(default=None, max_length=120)
+    source_reference: str | None = Field(default=None, max_length=500)
+    due_at: datetime | None = None
+    notes: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("due_at")
+    @classmethod
+    def readiness_item_due_requires_zone(cls, value):
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("A timezone-aware deadline is required")
+        return value
