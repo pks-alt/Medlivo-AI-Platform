@@ -20,10 +20,10 @@ def assert_rate_close(actual, expected):
 
 
 def test_california_nursing_workbook_regression():
-    assumptions = seed_assumptions("nursing_rehab_ca_w2")
+    assumptions = seed_assumptions("nursing_allied_ca_w2")
     result = calculate_margin(
         MarginInput(
-            profile="nursing_rehab_ca_w2",
+            profile="nursing_allied_ca_w2",
             division="nursing_allied",
             customer_type="msp_vms",
             contract_type="new_contract",
@@ -46,10 +46,10 @@ def test_california_nursing_workbook_regression():
 
 
 def test_national_nursing_workbook_regression():
-    assumptions = seed_assumptions("nursing_rehab_national_w2")
+    assumptions = seed_assumptions("nursing_allied_national_w2")
     result = calculate_margin(
         MarginInput(
-            profile="nursing_rehab_national_w2",
+            profile="nursing_allied_national_w2",
             division="nursing_allied",
             customer_type="msp_vms",
             contract_type="new_contract",
@@ -120,10 +120,10 @@ def test_locums_1099_workbook_regression():
 
 
 def test_direct_customer_has_zero_msp_fee_even_with_default_assumption():
-    assumptions = seed_assumptions("nursing_rehab_national_w2")
+    assumptions = seed_assumptions("nursing_allied_national_w2")
     result = calculate_margin(
         MarginInput(
-            profile="nursing_rehab_national_w2",
+            profile="rehabilitation_national_w2",
             division="rehabilitation",
             customer_type="direct",
             assignment_weeks_equivalent=d(13),
@@ -138,10 +138,10 @@ def test_direct_customer_has_zero_msp_fee_even_with_default_assumption():
 
 
 def test_extension_suppresses_onboarding_and_sourcing():
-    assumptions = seed_assumptions("nursing_rehab_ca_w2")
+    assumptions = seed_assumptions("rehabilitation_ca_w2")
     result = calculate_margin(
         MarginInput(
-            profile="nursing_rehab_ca_w2",
+            profile="rehabilitation_ca_w2",
             division="rehabilitation",
             customer_type="direct",
             contract_type="extension",
