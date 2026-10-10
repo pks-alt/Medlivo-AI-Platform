@@ -20,6 +20,7 @@ from .schemas import (
     CostAssumptionSetInput, CustomerEconomicRuleInput,
     W2PayPackageSnapshotInput, LocumsPayPackageSnapshotInput,
     ApprovalDecisionInput, StartReadinessUpdate, StartReadinessItemInput,
+    SubmissionTemplateBootstrapInput, SubmissionPackagePrepareInput,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -396,6 +397,38 @@ def build_app(store, verifier):
         return store.add_margin_discussion(
             who, str(snapshot_id), str(idempotency_key), value
         )
+
+    @app.post(prefix + "/submission-studio/bootstrap-templates")
+    def bootstrap_submission_templates(value: SubmissionTemplateBootstrapInput,
+                                       idempotency_key: UUID = Header(),
+                                       who=Depends(identity)):
+        return store.bootstrap_submission_templates(
+            who, str(idempotency_key), value
+        )
+
+    @app.post(prefix + "/submission-studio/jobs/{job_id}/candidates/{candidate_id}/prepare")
+    def prepare_submission_package(job_id: UUID, candidate_id: UUID,
+                                   value: SubmissionPackagePrepareInput,
+                                   idempotency_key: UUID = Header(),
+                                   who=Depends(identity)):
+        return store.prepare_submission_package(
+            who, str(job_id), str(candidate_id), str(idempotency_key), value
+        )
+
+    @app.get(prefix + "/submission-studio/packages")
+    def submission_packages(job_id: UUID | None = None, candidate_id: UUID | None = None,
+                            limit: int = Query(default=100, ge=1, le=200),
+                            who=Depends(identity)):
+        return store.list_submission_packages(
+            who,
+            job_id=str(job_id) if job_id else None,
+            candidate_id=str(candidate_id) if candidate_id else None,
+            limit=limit,
+        )
+
+    @app.get(prefix + "/submission-studio/packages/{package_id}")
+    def submission_package(package_id: UUID, who=Depends(identity)):
+        return store.get_submission_package(who, str(package_id))
 
     @app.get(prefix + "/funnel")
     def recruiting_funnel(limit: int = Query(default=100, ge=1, le=200),
