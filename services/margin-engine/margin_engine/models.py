@@ -23,10 +23,14 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
-class ApprovalBands(StrictModel):
-    recruiter_min_margin: Decimal | None = Field(default=None, ge=Decimal("-1"), le=Decimal("1"))
-    manager_min_margin: Decimal | None = Field(default=None, ge=Decimal("-1"), le=Decimal("1"))
-    legacy_workbook_approval_floor: Decimal | None = Field(
+class GuidelineBands(StrictModel):
+    recruiter_guideline_min_margin: Decimal | None = Field(
+        default=None, ge=Decimal("-1"), le=Decimal("1")
+    )
+    delivery_manager_discussion_min_margin: Decimal | None = Field(
+        default=None, ge=Decimal("-1"), le=Decimal("1")
+    )
+    legacy_workbook_floor: Decimal | None = Field(
         default=None, ge=Decimal("-1"), le=Decimal("1")
     )
 
@@ -56,7 +60,7 @@ class CostAssumptionSet(StrictModel):
     referral_sourcing_cost: Decimal = Field(default=Decimal("0"), ge=0)
 
     commission_rate: Decimal = Field(default=Decimal("0.03"), ge=0, le=1)
-    approval_bands: ApprovalBands = Field(default_factory=ApprovalBands)
+    guideline_bands: GuidelineBands = Field(default_factory=GuidelineBands)
 
 
 class MarginInput(StrictModel):
@@ -128,10 +132,10 @@ class MarginResult(StrictModel):
 
     commissionable_net_profit: Decimal
     projected_recruiter_commission: Decimal
-    approval_status: Literal[
-        "healthy",
-        "manager_approval_required",
-        "executive_approval_required",
+    guideline_status: Literal[
+        "within_guideline",
+        "discuss_delivery_manager",
+        "discuss_leadership",
         "negative_gm",
         "policy_unconfigured",
     ]
