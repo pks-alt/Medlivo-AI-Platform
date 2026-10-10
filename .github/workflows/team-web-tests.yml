@@ -5,6 +5,7 @@ on:
       - 'apps/recruiter-web/**'
       - 'services/team-workspace/**'
       - 'services/job-intelligence/**'
+      - 'services/margin-engine/**'
       - '.github/workflows/team-web-tests.yml'
   push:
     branches: [main]
@@ -12,6 +13,7 @@ on:
       - 'apps/recruiter-web/**'
       - 'services/team-workspace/**'
       - 'services/job-intelligence/**'
+      - 'services/margin-engine/**'
       - '.github/workflows/team-web-tests.yml'
 permissions:
   contents: read
@@ -55,7 +57,7 @@ jobs:
       - name: Install private API and isolated browser test tools
         working-directory: .
         run: |
-          python -m pip install './services/job-intelligence' './services/team-workspace[test]' playwright
+          python -m pip install './services/job-intelligence' './services/margin-engine' './services/team-workspace[test]' playwright
           python -m playwright install --with-deps chromium
       - name: Verify browser to private API with separate team identities
         env:
