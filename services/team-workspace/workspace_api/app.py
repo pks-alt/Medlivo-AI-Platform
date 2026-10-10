@@ -17,6 +17,7 @@ from .schemas import (
     JobPublicationDraftInput, JobPublicationDecision, MatchFeedbackInput,
     JobOperationalUpdate, JobAssignmentInput, JobIntakeItemDecision,
     MarginCalculationInput, MarginDiscussionInput, MarginFinalizeInput,
+    CostAssumptionSetInput, CustomerEconomicRuleInput,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -323,6 +324,30 @@ def build_app(store, verifier):
         return store.decide_job_intake_item(
             who, str(batch_id), str(item_id), str(idempotency_key), value
         )
+
+    @app.get(prefix + "/economic-config/assumptions")
+    def economic_assumptions(profile: str | None = None,
+                             limit: int = Query(default=100, ge=1, le=200),
+                             who=Depends(identity)):
+        return store.list_cost_assumption_sets(who, profile=profile, limit=limit)
+
+    @app.post(prefix + "/economic-config/assumptions", status_code=201)
+    def create_economic_assumptions(value: CostAssumptionSetInput,
+                                    idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.create_cost_assumption_set(who, str(idempotency_key), value)
+
+    @app.get(prefix + "/economic-config/customers/{customer_id}")
+    def customer_economic_rules(customer_id: UUID, profile: str | None = None,
+                                limit: int = Query(default=100, ge=1, le=200),
+                                who=Depends(identity)):
+        return store.list_customer_economic_rules(
+            who, str(customer_id), profile=profile, limit=limit
+        )
+
+    @app.post(prefix + "/economic-config/customers", status_code=201)
+    def create_customer_economic_rule(value: CustomerEconomicRuleInput,
+                                      idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.create_customer_economic_rule(who, str(idempotency_key), value)
 
     @app.post(prefix + "/margin/snapshots", status_code=201)
     def create_margin_snapshot(value: MarginCalculationInput,

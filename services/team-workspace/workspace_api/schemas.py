@@ -213,7 +213,6 @@ class MarginCalculationInput(StrictInput):
     other_recurring_cost_per_week: float = Field(default=0, ge=0)
     other_one_time_cost_assignment: float = Field(default=0, ge=0)
     employee_benefits_enabled: bool = False
-    msp_fee_rate_override: float | None = Field(default=None, ge=0, le=1)
     actual_worked_hours_per_week: float | None = Field(default=None, gt=0)
     shifts_per_week: float | None = Field(default=None, gt=0)
     commissionable_net_profit_override: float | None = None
@@ -228,3 +227,63 @@ class MarginDiscussionInput(StrictInput):
 
 class MarginFinalizeInput(StrictInput):
     expected_version: int = Field(ge=1)
+
+
+class CostAssumptionSetInput(StrictInput):
+    profile: Literal[
+        "nursing_rehab_ca_w2",
+        "nursing_rehab_national_w2",
+        "locums_ca_w2",
+        "locums_national_1099",
+    ]
+    version: str = Field(min_length=1, max_length=80)
+    assumption_payload: dict
+    effective_from: datetime
+
+    @field_validator("effective_from")
+    @classmethod
+    def assumption_effective_from_requires_zone(cls, value):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("A timezone-aware effective date is required")
+        return value
+
+
+class CustomerEconomicRulePayload(StrictInput):
+    msp_fee_rate: float | None = Field(default=None, ge=0, le=1)
+    professional_liability_rate: float | None = Field(default=None, ge=0, le=1)
+    factoring_rate: float | None = Field(default=None, ge=0, le=1)
+    overhead_rate: float | None = Field(default=None, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def at_least_one_customer_rule(self):
+        if all(
+            getattr(self, field) is None
+            for field in (
+                "msp_fee_rate",
+                "professional_liability_rate",
+                "factoring_rate",
+                "overhead_rate",
+            )
+        ):
+            raise ValueError("At least one customer economic override is required")
+        return self
+
+
+class CustomerEconomicRuleInput(StrictInput):
+    customer_id: UUID
+    calculation_profile: Literal[
+        "nursing_rehab_ca_w2",
+        "nursing_rehab_national_w2",
+        "locums_ca_w2",
+        "locums_national_1099",
+    ]
+    version: str = Field(min_length=1, max_length=80)
+    rule_payload: CustomerEconomicRulePayload
+    effective_from: datetime
+
+    @field_validator("effective_from")
+    @classmethod
+    def customer_rule_effective_from_requires_zone(cls, value):
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("A timezone-aware effective date is required")
+        return value

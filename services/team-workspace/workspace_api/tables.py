@@ -56,6 +56,7 @@ customers = Table(
     "customer", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), S("name", nullable=False),
     S("status"), Column("metadata", JSON, nullable=False, default=dict), D("created_at"), D("updated_at"),
+    UniqueConstraint("tenant_id", "id"),
 )
 job_requirements = Table(
     "job_requirement", metadata,
@@ -391,6 +392,18 @@ cost_assumption_sets = Table(
     ForeignKeyConstraint(["tenant_id", "created_by"], ["app_user.tenant_id", "app_user.id"]),
 )
 
+customer_economic_rules = Table(
+    "ws_customer_economic_rule", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("customer_id", nullable=False),
+    S("calculation_profile", nullable=False), S("version", nullable=False),
+    Column("rule_payload", JSON, nullable=False), S("status", nullable=False),
+    D("effective_from", nullable=False), D("effective_to"), U("created_by", nullable=False),
+    D("created_at", nullable=False),
+    UniqueConstraint("tenant_id", "customer_id", "calculation_profile", "version"),
+    ForeignKeyConstraint(["tenant_id", "customer_id"], ["customer.tenant_id", "customer.id"]),
+    ForeignKeyConstraint(["tenant_id", "created_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
 margin_snapshots = Table(
     "ws_margin_snapshot", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
@@ -399,6 +412,7 @@ margin_snapshots = Table(
     S("assumption_version", nullable=False), Column("version", Integer, nullable=False),
     Column("input_payload", JSON, nullable=False), Column("result_payload", JSON, nullable=False),
     S("guideline_status", nullable=False), S("lifecycle_status", nullable=False),
+    U("customer_rule_id"), S("customer_rule_version"),
     U("created_by", nullable=False), D("created_at", nullable=False),
     U("finalized_by"), D("finalized_at"),
     UniqueConstraint("tenant_id", "job_id", "candidate_id", "version"),
@@ -408,6 +422,7 @@ margin_snapshots = Table(
     ForeignKeyConstraint(["tenant_id", "created_by"], ["app_user.tenant_id", "app_user.id"]),
     ForeignKeyConstraint(["tenant_id", "finalized_by"], ["app_user.tenant_id", "app_user.id"]),
     ForeignKeyConstraint(["assumption_set_id"], ["ws_cost_assumption_set.id"]),
+    ForeignKeyConstraint(["customer_rule_id"], ["ws_customer_economic_rule.id"]),
 )
 
 margin_cost_components = Table(
@@ -442,6 +457,9 @@ commission_projections = Table(
     ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
 )
 
+Index("idx_ws_customer_economic_rule_effective", customer_economic_rules.c.tenant_id,
+      customer_economic_rules.c.customer_id, customer_economic_rules.c.calculation_profile,
+      customer_economic_rules.c.effective_from)
 Index("idx_ws_margin_snapshot_job_candidate", margin_snapshots.c.tenant_id,
       margin_snapshots.c.job_id, margin_snapshots.c.candidate_id, margin_snapshots.c.version)
 Index("idx_ws_margin_discussion_snapshot", margin_discussions.c.tenant_id,

@@ -10,7 +10,7 @@ from . import tables as t
 from .auth import Identity
 from .job_intake import process_rows, parse_xlsx, suggest_mapping
 from .intake_intelligence import analyze_intake_job
-from margin_engine import CostAssumptionSet, MarginInput, calculate_margin, seed_assumptions
+from margin_engine import CostAssumptionSet, MarginInput, calculate_margin
 
 
 class AccessError(Exception):
@@ -2851,6 +2851,182 @@ class WorkspaceStore:
             return {"items": [clean(row) for row in rows]}
 
 
+    def create_cost_assumption_set(self, identity, key, value):
+        payload = value.model_dump(mode="json")
+
+        def apply(conn, principal):
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Admin access required")
+
+            try:
+                assumptions = CostAssumptionSet.model_validate(value.assumption_payload)
+            except Exception as error:
+                raise AccessError(422, "Invalid cost assumption payload") from error
+
+            if assumptions.profile != value.profile or assumptions.version != value.version:
+                raise AccessError(422, "Assumption profile/version must match the configuration record")
+
+            effective_from = value.effective_from
+            timestamp = now()
+            row_id = uid()
+
+            exact = conn.execute(select(t.cost_assumption_sets.c.id).where(
+                t.cost_assumption_sets.c.tenant_id == principal["tenant_id"],
+                t.cost_assumption_sets.c.profile == value.profile,
+                t.cost_assumption_sets.c.effective_from == effective_from,
+            )).first()
+            if exact is not None:
+                raise AccessError(409, "Another assumption version already starts at this effective date")
+
+            overlapping = conn.execute(select(t.cost_assumption_sets).where(
+                t.cost_assumption_sets.c.tenant_id == principal["tenant_id"],
+                t.cost_assumption_sets.c.profile == value.profile,
+                t.cost_assumption_sets.c.status == "active",
+                t.cost_assumption_sets.c.effective_from < effective_from,
+                or_(
+                    t.cost_assumption_sets.c.effective_to.is_(None),
+                    t.cost_assumption_sets.c.effective_to > effective_from,
+                ),
+            )).mappings().all()
+            for prior in overlapping:
+                conn.execute(update(t.cost_assumption_sets).where(
+                    t.cost_assumption_sets.c.id == prior["id"],
+                ).values(effective_to=effective_from))
+
+            row = dict(
+                id=row_id,
+                tenant_id=principal["tenant_id"],
+                profile=value.profile,
+                version=value.version,
+                assumption_payload=assumptions.model_dump(mode="json"),
+                status="active",
+                effective_from=effective_from,
+                effective_to=None,
+                created_by=principal["id"],
+                created_at=timestamp,
+            )
+            try:
+                conn.execute(insert(t.cost_assumption_sets).values(**row))
+            except IntegrityError:
+                raise AccessError(409, "This assumption version already exists") from None
+
+            self._operational_audit(
+                conn, principal, "economic.assumptions.created", "cost_assumption_set",
+                row_id, {}, {"profile": value.profile, "version": value.version}
+            )
+            return row
+
+        return self._global_mutate(identity, key, "economic.assumptions.created", payload, apply)
+
+    def list_cost_assumption_sets(self, identity, *, profile=None, limit=100):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if not principal["system_admin"] and principal["business_role"] not in {
+                "executive", "delivery_manager"
+            }:
+                raise AccessError(403, "Economic configuration access required")
+            statement = select(t.cost_assumption_sets).where(
+                t.cost_assumption_sets.c.tenant_id == principal["tenant_id"]
+            )
+            if profile:
+                statement = statement.where(t.cost_assumption_sets.c.profile == profile)
+            rows = conn.execute(statement.order_by(
+                t.cost_assumption_sets.c.effective_from.desc()
+            ).limit(limit)).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
+    def create_customer_economic_rule(self, identity, key, value):
+        payload = value.model_dump(mode="json")
+
+        def apply(conn, principal):
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Admin access required")
+            customer_id = str(value.customer_id)
+            customer = conn.execute(select(t.customers.c.id).where(
+                t.customers.c.tenant_id == principal["tenant_id"],
+                t.customers.c.id == customer_id,
+            )).first()
+            if customer is None:
+                raise AccessError(404, "Customer not found")
+
+            effective_from = value.effective_from
+            timestamp = now()
+            row_id = uid()
+            exact = conn.execute(select(t.customer_economic_rules.c.id).where(
+                t.customer_economic_rules.c.tenant_id == principal["tenant_id"],
+                t.customer_economic_rules.c.customer_id == customer_id,
+                t.customer_economic_rules.c.calculation_profile == value.calculation_profile,
+                t.customer_economic_rules.c.effective_from == effective_from,
+            )).first()
+            if exact is not None:
+                raise AccessError(409, "Another customer rule already starts at this effective date")
+
+            overlapping = conn.execute(select(t.customer_economic_rules).where(
+                t.customer_economic_rules.c.tenant_id == principal["tenant_id"],
+                t.customer_economic_rules.c.customer_id == customer_id,
+                t.customer_economic_rules.c.calculation_profile == value.calculation_profile,
+                t.customer_economic_rules.c.status == "active",
+                t.customer_economic_rules.c.effective_from < effective_from,
+                or_(
+                    t.customer_economic_rules.c.effective_to.is_(None),
+                    t.customer_economic_rules.c.effective_to > effective_from,
+                ),
+            )).mappings().all()
+            for prior in overlapping:
+                conn.execute(update(t.customer_economic_rules).where(
+                    t.customer_economic_rules.c.id == prior["id"],
+                ).values(effective_to=effective_from))
+
+            row = dict(
+                id=row_id,
+                tenant_id=principal["tenant_id"],
+                customer_id=customer_id,
+                calculation_profile=value.calculation_profile,
+                version=value.version,
+                rule_payload=value.rule_payload.model_dump(mode="json"),
+                status="active",
+                effective_from=effective_from,
+                effective_to=None,
+                created_by=principal["id"],
+                created_at=timestamp,
+            )
+            try:
+                conn.execute(insert(t.customer_economic_rules).values(**row))
+            except IntegrityError:
+                raise AccessError(409, "This customer economic rule version already exists") from None
+
+            self._operational_audit(
+                conn, principal, "economic.customer_rule.created", "customer_economic_rule",
+                row_id, {}, {
+                    "customer_id": customer_id,
+                    "profile": value.calculation_profile,
+                    "version": value.version,
+                }
+            )
+            return row
+
+        return self._global_mutate(identity, key, "economic.customer_rule.created", payload, apply)
+
+    def list_customer_economic_rules(self, identity, customer_id, *, profile=None, limit=100):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if not principal["system_admin"] and principal["business_role"] not in {
+                "executive", "delivery_manager"
+            }:
+                raise AccessError(403, "Economic configuration access required")
+            statement = select(t.customer_economic_rules).where(
+                t.customer_economic_rules.c.tenant_id == principal["tenant_id"],
+                t.customer_economic_rules.c.customer_id == customer_id,
+            )
+            if profile:
+                statement = statement.where(
+                    t.customer_economic_rules.c.calculation_profile == profile
+                )
+            rows = conn.execute(statement.order_by(
+                t.customer_economic_rules.c.effective_from.desc()
+            ).limit(limit)).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
     def create_margin_snapshot(self, identity, key, value):
         payload = value.model_dump(mode="json")
 
@@ -2863,10 +3039,12 @@ class WorkspaceStore:
 
             job_id = str(value.job_id)
             candidate_id = str(value.candidate_id)
-            job = conn.execute(select(t.jobs.c.id).where(
+            job = conn.execute(select(
+                t.jobs.c.id, t.jobs.c.customer_id
+            ).where(
                 t.jobs.c.tenant_id == principal["tenant_id"],
                 t.jobs.c.id == job_id,
-            )).first()
+            )).mappings().first()
             candidate = conn.execute(select(t.candidates.c.id).where(
                 t.candidates.c.tenant_id == principal["tenant_id"],
                 t.candidates.c.id == candidate_id,
@@ -2874,39 +3052,67 @@ class WorkspaceStore:
             if job is None or candidate is None:
                 raise AccessError(404, "Job or candidate not found")
 
-            assumptions = seed_assumptions(value.profile)
+            timestamp = now()
             assumption_row = conn.execute(select(t.cost_assumption_sets).where(
                 t.cost_assumption_sets.c.tenant_id == principal["tenant_id"],
                 t.cost_assumption_sets.c.profile == value.profile,
-                t.cost_assumption_sets.c.version == assumptions.version,
                 t.cost_assumption_sets.c.status == "active",
-            )).mappings().first()
-
-            timestamp = now()
+                t.cost_assumption_sets.c.effective_from <= timestamp,
+                or_(
+                    t.cost_assumption_sets.c.effective_to.is_(None),
+                    t.cost_assumption_sets.c.effective_to > timestamp,
+                ),
+            ).order_by(
+                t.cost_assumption_sets.c.effective_from.desc()
+            ).limit(1)).mappings().first()
             if assumption_row is None:
-                assumption_id = uid()
-                assumption_payload = assumptions.model_dump(mode="json")
-                conn.execute(insert(t.cost_assumption_sets).values(
-                    id=assumption_id,
-                    tenant_id=principal["tenant_id"],
-                    profile=value.profile,
-                    version=assumptions.version,
-                    assumption_payload=assumption_payload,
-                    status="active",
-                    effective_from=timestamp,
-                    effective_to=None,
-                    created_by=principal["id"],
-                    created_at=timestamp,
-                ))
-            else:
-                assumption_id = assumption_row["id"]
-                assumption_payload = assumption_row["assumption_payload"]
-                assumptions = CostAssumptionSet.model_validate(assumption_payload)
+                raise AccessError(
+                    422,
+                    "No active cost assumption set is configured for this calculation profile",
+                )
 
-            margin_input = MarginInput.model_validate({
+            assumption_id = assumption_row["id"]
+            try:
+                assumptions = CostAssumptionSet.model_validate(
+                    assumption_row["assumption_payload"]
+                )
+            except Exception as error:
+                raise AccessError(500, "Active cost assumption set is invalid") from error
+
+            customer_rule = None
+            if job["customer_id"] is not None:
+                customer_rule = conn.execute(select(t.customer_economic_rules).where(
+                    t.customer_economic_rules.c.tenant_id == principal["tenant_id"],
+                    t.customer_economic_rules.c.customer_id == job["customer_id"],
+                    t.customer_economic_rules.c.calculation_profile == value.profile,
+                    t.customer_economic_rules.c.status == "active",
+                    t.customer_economic_rules.c.effective_from <= timestamp,
+                    or_(
+                        t.customer_economic_rules.c.effective_to.is_(None),
+                        t.customer_economic_rules.c.effective_to > timestamp,
+                    ),
+                ).order_by(
+                    t.customer_economic_rules.c.effective_from.desc()
+                ).limit(1)).mappings().first()
+
+            rule_payload = customer_rule["rule_payload"] if customer_rule else {}
+            assumption_updates = {}
+            for field in (
+                "professional_liability_rate", "factoring_rate", "overhead_rate"
+            ):
+                if rule_payload.get(field) is not None:
+                    assumption_updates[field] = Decimal(str(rule_payload[field]))
+            if assumption_updates:
+                assumptions = assumptions.model_copy(update=assumption_updates)
+
+            input_values = {
                 key: val for key, val in value.model_dump().items()
                 if key not in {"job_id", "candidate_id", "recruiter_user_id"}
-            })
+            }
+            input_values["msp_fee_rate_override"] = (
+                rule_payload.get("msp_fee_rate") if customer_rule else None
+            )
+            margin_input = MarginInput.model_validate(input_values)
             result = calculate_margin(margin_input, assumptions)
 
             next_version = conn.execute(select(func.coalesce(func.max(
@@ -2924,6 +3130,11 @@ class WorkspaceStore:
                 else "draft"
             )
             result_payload = result.model_dump(mode="json")
+            result_payload["economic_configuration"] = {
+                "assumption_version": assumptions.version,
+                "customer_rule_version": customer_rule["version"] if customer_rule else None,
+                "customer_rule_applied": bool(customer_rule),
+            }
             input_payload = margin_input.model_dump(mode="json")
             row = dict(
                 id=snapshot_id,
@@ -2939,6 +3150,8 @@ class WorkspaceStore:
                 result_payload=result_payload,
                 guideline_status=result.guideline_status,
                 lifecycle_status=lifecycle,
+                customer_rule_id=customer_rule["id"] if customer_rule else None,
+                customer_rule_version=customer_rule["version"] if customer_rule else None,
                 created_by=principal["id"],
                 created_at=timestamp,
                 finalized_by=None,
@@ -3000,6 +3213,7 @@ class WorkspaceStore:
                     "version": int(next_version),
                     "guideline_status": result.guideline_status,
                     "assumption_version": assumptions.version,
+                    "customer_rule_version": customer_rule["version"] if customer_rule else None,
                 },
             )
             return row
