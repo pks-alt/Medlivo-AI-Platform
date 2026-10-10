@@ -2835,6 +2835,1373 @@ class WorkspaceStore:
             return after
         return self._global_mutate(identity, key, "job_intake.item.decision", payload, apply)
 
+    def list_submission_templates(self, identity, *, division=None, limit=200):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if not principal["system_admin"] and principal["business_role"] not in {
+                "executive", "delivery_manager"
+            }:
+                raise AccessError(403, "Submission template visibility required")
+            statement = select(
+                t.submission_templates,
+                t.customers.c.name.label("customer_name"),
+            ).outerjoin(
+                t.customers,
+                and_(
+                    t.customers.c.tenant_id == t.submission_templates.c.tenant_id,
+                    t.customers.c.id == t.submission_templates.c.customer_id,
+                ),
+            ).where(
+                t.submission_templates.c.tenant_id == principal["tenant_id"]
+            )
+            if division:
+                statement = statement.where(t.submission_templates.c.division == division)
+            rows = conn.execute(statement.order_by(
+                t.submission_templates.c.division,
+                t.submission_templates.c.name,
+                t.submission_templates.c.version.desc(),
+            ).limit(limit)).mappings().all()
+            result = []
+            for row in rows:
+                item = clean(row)
+                count = conn.execute(select(func.count()).select_from(
+                    t.submission_template_requirements
+                ).where(
+                    t.submission_template_requirements.c.tenant_id == principal["tenant_id"],
+                    t.submission_template_requirements.c.template_id == row["id"],
+                )).scalar_one()
+                item["requirement_count"] = count
+                result.append(item)
+            return {"items": result}
+
+    def create_submission_template(self, identity, key, value):
+        payload = value.model_dump(mode="json")
+
+        def apply(conn, principal):
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Admin access required")
+
+            if value.customer_id is not None:
+                customer = conn.execute(select(t.customers.c.id).where(
+                    t.customers.c.tenant_id == principal["tenant_id"],
+                    t.customers.c.id == str(value.customer_id),
+                )).first()
+                if customer is None:
+                    raise AccessError(422, "Customer not found")
+
+            parent_id = str(value.parent_template_id) if value.parent_template_id else None
+            if parent_id:
+                parent = conn.execute(select(t.submission_templates).where(
+                    t.submission_templates.c.tenant_id == principal["tenant_id"],
+                    t.submission_templates.c.id == parent_id,
+                )).mappings().first()
+                if parent is None:
+                    raise AccessError(422, "Parent submission template not found")
+                if parent["division"] != value.division:
+                    raise AccessError(422, "Parent template must use the same division")
+
+            logical = [
+                t.submission_templates.c.tenant_id == principal["tenant_id"],
+                t.submission_templates.c.division == value.division,
+                t.submission_templates.c.template_scope == value.template_scope,
+            ]
+            def same_or_null(column, raw):
+                return column.is_(None) if raw is None else column == raw
+
+            customer_id = str(value.customer_id) if value.customer_id else None
+            logical.extend([
+                same_or_null(t.submission_templates.c.customer_id, customer_id),
+                same_or_null(t.submission_templates.c.program_name, value.program_name),
+                same_or_null(t.submission_templates.c.profession, value.profession),
+                same_or_null(t.submission_templates.c.specialty, value.specialty),
+            ])
+            prior = conn.execute(select(t.submission_templates).where(
+                *logical
+            ).order_by(t.submission_templates.c.version.desc()).limit(1).with_for_update()).mappings().first()
+            version = (prior["version"] + 1) if prior else 1
+            timestamp = now()
+
+            if value.activate:
+                conn.execute(update(t.submission_templates).where(
+                    *logical,
+                    t.submission_templates.c.status == "active",
+                ).values(
+                    status="retired",
+                    effective_to=timestamp,
+                    updated_at=timestamp,
+                ))
+
+            template_id = uid()
+            row = dict(
+                id=template_id,
+                tenant_id=principal["tenant_id"],
+                name=value.name,
+                division=value.division,
+                customer_id=customer_id,
+                program_name=value.program_name,
+                profession=value.profession,
+                specialty=value.specialty,
+                template_scope=value.template_scope,
+                version=version,
+                status="active" if value.activate else "draft",
+                effective_from=timestamp if value.activate else None,
+                effective_to=None,
+                parent_template_id=parent_id,
+                resume_format_profile=value.resume_format_profile,
+                output_profile=value.output_profile,
+                ai_policy=value.ai_policy,
+                created_by=principal["id"],
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+            conn.execute(insert(t.submission_templates).values(**row))
+            seen = set()
+            for index, requirement in enumerate(value.requirements):
+                if requirement.requirement_key in seen:
+                    raise AccessError(422, "Requirement keys must be unique within a template")
+                seen.add(requirement.requirement_key)
+                conn.execute(insert(t.submission_template_requirements).values(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    template_id=template_id,
+                    requirement_key=requirement.requirement_key,
+                    label=requirement.label,
+                    requirement_type=requirement.requirement_type,
+                    category=requirement.category,
+                    lifecycle_stage=requirement.lifecycle_stage,
+                    sensitivity=requirement.sensitivity,
+                    fulfillment_strategy=requirement.fulfillment_strategy,
+                    required=requirement.required,
+                    source_preference=requirement.source_preference,
+                    validation_rule=requirement.validation_rule,
+                    output_rule=requirement.output_rule,
+                    display_order=requirement.display_order or (index + 1),
+                    created_at=timestamp,
+                ))
+
+            self._operational_audit(
+                conn, principal, "submission_template.created",
+                "submission_template", template_id, {}, clean(row)
+            )
+            return {
+                **clean(row),
+                "requirement_count": len(value.requirements),
+            }
+
+        return self._global_mutate(
+            identity, key, "submission_template.created", payload, apply
+        )
+
+    def bootstrap_submission_templates(self, identity, key, value):
+        payload = value.model_dump(mode="json")
+
+        defaults = {
+            "Rehabilitation": [
+                ("resume", "Medlivo-formatted resume", "document", "resume", "source_or_ai", True),
+                ("active_license", "Active license verification", "document", "licensure", "source_only", True),
+                ("candidate_summary", "Candidate presentation summary", "derived", "presentation", "source_or_ai", True),
+            ],
+            "Nursing & Allied": [
+                ("resume", "Medlivo-formatted resume", "document", "resume", "source_or_ai", True),
+                ("active_license", "Active license verification", "document", "licensure", "source_only", True),
+                ("skills_checklist", "Current specialty skills checklist", "skills_checklist", "skills", "source_only", True),
+                ("candidate_summary", "Candidate presentation summary", "derived", "presentation", "source_or_ai", True),
+            ],
+            "Locum Tenens": [
+                ("resume", "Current CV with gap review", "document", "resume", "source_or_ai", True),
+                ("active_license", "Active state license verification", "document", "licensure", "source_only", True),
+                ("candidate_summary", "Provider presentation summary", "derived", "presentation", "source_or_ai", True),
+                ("availability", "Provider availability and schedule confirmation", "field", "availability", "manual_confirmation", True),
+            ],
+        }
+
+        def apply(conn, principal):
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Admin access required")
+            created = []
+            existing = []
+            timestamp = now()
+            for division, requirements in defaults.items():
+                row = conn.execute(select(t.submission_templates).where(
+                    t.submission_templates.c.tenant_id == principal["tenant_id"],
+                    t.submission_templates.c.division == division,
+                    t.submission_templates.c.template_scope == "division_default",
+                    t.submission_templates.c.customer_id.is_(None),
+                    t.submission_templates.c.program_name.is_(None),
+                    t.submission_templates.c.profession.is_(None),
+                    t.submission_templates.c.specialty.is_(None),
+                    t.submission_templates.c.status == "active",
+                ).order_by(t.submission_templates.c.version.desc()).limit(1)).mappings().first()
+                if row is not None:
+                    existing.append({"division": division, "template_id": row["id"], "version": row["version"]})
+                    continue
+                template_id = uid()
+                conn.execute(insert(t.submission_templates).values(
+                    id=template_id,
+                    tenant_id=principal["tenant_id"],
+                    name=f"Medlivo {division} Submission Default",
+                    division=division,
+                    customer_id=None,
+                    program_name=None,
+                    profession=None,
+                    specialty=None,
+                    template_scope="division_default",
+                    version=1,
+                    status="active" if value.activate else "draft",
+                    effective_from=timestamp if value.activate else None,
+                    effective_to=None,
+                    parent_template_id=None,
+                    resume_format_profile={
+                        "style": "medlivo_standard",
+                        "job_relevant_ordering": True,
+                        "remove_drafting_artifacts": True,
+                        "invent_facts": False,
+                    },
+                    output_profile={
+                        "combined_pdf": True,
+                        "separate_documents": True,
+                        "preview_required": True,
+                    },
+                    ai_policy={
+                        "resume_restructure": True,
+                        "candidate_summary": True,
+                        "conflict_detection": True,
+                        "source_grounding_required": True,
+                        "model_required_for_narrative": True,
+                    },
+                    created_by=principal["id"],
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                ))
+                for order, (req_key, label, req_type, category, strategy, required) in enumerate(requirements, start=1):
+                    conn.execute(insert(t.submission_template_requirements).values(
+                        id=uid(),
+                        tenant_id=principal["tenant_id"],
+                        template_id=template_id,
+                        requirement_key=req_key,
+                        label=label,
+                        requirement_type=req_type,
+                        category=category,
+                        lifecycle_stage="submission",
+                        sensitivity="standard",
+                        fulfillment_strategy=strategy,
+                        required=required,
+                        source_preference=[],
+                        validation_rule={},
+                        output_rule={},
+                        display_order=order,
+                        created_at=timestamp,
+                    ))
+                created.append({"division": division, "template_id": template_id, "version": 1})
+                self._operational_audit(
+                    conn, principal, "submission_template.bootstrapped",
+                    "submission_template", template_id, {},
+                    {"division": division, "version": 1, "scope": "division_default"},
+                )
+            return {"created": created, "existing": existing}
+
+        return self._global_mutate(
+            identity, key, "submission_template.bootstrap", payload, apply
+        )
+
+    def _submission_template_for_job(self, conn, principal, job, program_name=None):
+        timestamp = now()
+        rows = conn.execute(select(t.submission_templates).where(
+            t.submission_templates.c.tenant_id == principal["tenant_id"],
+            t.submission_templates.c.division == job["division"],
+            t.submission_templates.c.status == "active",
+            or_(t.submission_templates.c.effective_from.is_(None),
+                t.submission_templates.c.effective_from <= timestamp),
+            or_(t.submission_templates.c.effective_to.is_(None),
+                t.submission_templates.c.effective_to > timestamp),
+        )).mappings().all()
+
+        eligible = []
+        for row in rows:
+            if row["customer_id"] is not None and row["customer_id"] != job.get("customer_id"):
+                continue
+            if row["program_name"] is not None and row["program_name"] != program_name:
+                continue
+            if row["profession"] is not None and row["profession"] != job.get("profession"):
+                continue
+            if row["specialty"] is not None and row["specialty"] != job.get("specialty"):
+                continue
+            score = 0
+            score += 16 if row["customer_id"] is not None else 0
+            score += 8 if row["program_name"] is not None else 0
+            score += 4 if row["profession"] is not None else 0
+            score += 2 if row["specialty"] is not None else 0
+            score += {
+                "job": 32, "specialty": 16, "profession": 8, "program": 4,
+                "customer": 2, "division_default": 1, "medlivo_default": 0,
+            }.get(row["template_scope"], 0)
+            eligible.append((score, row["version"], row))
+        if not eligible:
+            raise AccessError(422, "No active submission template is configured for this division")
+        eligible.sort(key=lambda x: (x[0], x[1]), reverse=True)
+        return eligible[0][2]
+
+    def _submission_requirements(self, conn, principal, template):
+        chain = []
+        current = template
+        seen = set()
+        while current is not None and current["id"] not in seen and len(chain) < 10:
+            seen.add(current["id"])
+            chain.append(current)
+            parent_id = current.get("parent_template_id")
+            if not parent_id:
+                break
+            current = conn.execute(select(t.submission_templates).where(
+                t.submission_templates.c.tenant_id == principal["tenant_id"],
+                t.submission_templates.c.id == parent_id,
+            )).mappings().first()
+        merged = {}
+        for row in reversed(chain):
+            requirements = conn.execute(select(t.submission_template_requirements).where(
+                t.submission_template_requirements.c.tenant_id == principal["tenant_id"],
+                t.submission_template_requirements.c.template_id == row["id"],
+            ).order_by(t.submission_template_requirements.c.display_order)).mappings().all()
+            for requirement in requirements:
+                merged[requirement["requirement_key"]] = requirement
+        return sorted(merged.values(), key=lambda x: (x["display_order"], x["requirement_key"]))
+
+    def _submission_item_resolution(self, conn, principal, job, candidate, requirement):
+        key = requirement["requirement_key"]
+        candidate_id = candidate["id"]
+        today = now().date()
+
+        if key == "resume":
+            resume = conn.execute(select(t.resume_versions).where(
+                t.resume_versions.c.tenant_id == principal["tenant_id"],
+                t.resume_versions.c.candidate_id == candidate_id,
+            ).order_by(t.resume_versions.c.is_primary.desc(), t.resume_versions.c.updated_at.desc())).mappings().first()
+            if resume:
+                return "matched", "resume", resume["id"], {
+                    "resume_version_id": resume["id"],
+                    "source_resume_id": resume.get("source_resume_id"),
+                }, None
+
+        if key == "active_license":
+            statement = select(t.candidate_licenses).where(
+                t.candidate_licenses.c.tenant_id == principal["tenant_id"],
+                t.candidate_licenses.c.candidate_id == candidate_id,
+            )
+            licenses = conn.execute(statement).mappings().all()
+            eligible = []
+            for license_row in licenses:
+                if job.get("state") and license_row.get("state") and str(license_row["state"]).upper() != str(job["state"]).upper():
+                    continue
+                if license_row.get("expires_at") and license_row["expires_at"] < today:
+                    continue
+                status = str(license_row.get("status") or "").lower()
+                if status and status not in {"active", "unencumbered", "current", "valid"}:
+                    continue
+                eligible.append(license_row)
+            if eligible:
+                best = sorted(eligible, key=lambda x: (
+                    x.get("verification_status") == "verified",
+                    x.get("verified_at") or datetime.min.replace(tzinfo=timezone.utc),
+                ), reverse=True)[0]
+                state = "matched" if best.get("verification_status") == "verified" else "needs_review"
+                return state, "candidate_license", best["id"], clean(best), None
+
+        if key == "skills_checklist":
+            asset = conn.execute(select(t.candidate_document_assets).where(
+                t.candidate_document_assets.c.tenant_id == principal["tenant_id"],
+                t.candidate_document_assets.c.candidate_id == candidate_id,
+                t.candidate_document_assets.c.document_type == "skills_checklist",
+                t.candidate_document_assets.c.is_current.is_(True),
+            ).order_by(t.candidate_document_assets.c.updated_at.desc())).mappings().first()
+            if asset:
+                return "matched", "candidate_document_asset", asset["id"], clean(asset), None
+
+        if key == "availability":
+            availability = conn.execute(select(t.candidate_availability).where(
+                t.candidate_availability.c.tenant_id == principal["tenant_id"],
+                t.candidate_availability.c.candidate_id == candidate_id,
+            ).order_by(t.candidate_availability.c.confirmed_at.desc())).mappings().first()
+            if availability and availability.get("confirmed_at"):
+                return "matched", "candidate_availability", availability["id"], clean(availability), None
+            if availability:
+                return "needs_review", "candidate_availability", availability["id"], clean(availability), None
+
+        if key == "candidate_summary":
+            facts = {
+                "name": candidate.get("canonical_name"),
+                "profession": candidate.get("profession"),
+                "specialty": candidate.get("specialty"),
+                "location": ", ".join([x for x in [candidate.get("city"), candidate.get("state")] if x]),
+                "profile": candidate.get("canonical_profile") or {},
+            }
+            return "needs_review", "canonical_candidate", candidate_id, facts, None
+
+        if key in {"board_certification_verification", "certifications"}:
+            certs = conn.execute(select(t.candidate_certifications).where(
+                t.candidate_certifications.c.tenant_id == principal["tenant_id"],
+                t.candidate_certifications.c.candidate_id == candidate_id,
+            )).mappings().all()
+            current = [x for x in certs if not x.get("expires_at") or x["expires_at"] >= today]
+            if current:
+                verified = [x for x in current if x.get("verification_status") == "verified"]
+                chosen = verified or current
+                state = "matched" if verified else "needs_review"
+                return state, "candidate_certification", chosen[0]["id"], {
+                    "certifications": [clean(x) for x in chosen],
+                }, None
+
+        if key == "npi":
+            evidence = conn.execute(select(t.candidate_evidence).where(
+                t.candidate_evidence.c.tenant_id == principal["tenant_id"],
+                t.candidate_evidence.c.candidate_id == candidate_id,
+                t.candidate_evidence.c.fact_key == "npi",
+            ).order_by(t.candidate_evidence.c.is_verified.desc(), t.candidate_evidence.c.updated_at.desc())).mappings().first()
+            if evidence:
+                return ("matched" if evidence.get("is_verified") else "needs_review",
+                        "candidate_evidence", evidence["id"], clean(evidence), None)
+
+        if key == "commercial_terms":
+            margin = conn.execute(select(t.margin_snapshots).where(
+                t.margin_snapshots.c.tenant_id == principal["tenant_id"],
+                t.margin_snapshots.c.job_id == job["id"],
+                t.margin_snapshots.c.candidate_id == candidate_id,
+                t.margin_snapshots.c.lifecycle_status == "finalized",
+            ).order_by(t.margin_snapshots.c.version.desc()).limit(1)).mappings().first()
+            if margin:
+                return "matched", "margin_snapshot", margin["id"], clean(margin), None
+
+        document_type_map = {
+            "dea_registration": "dea_registration",
+            "sex_offender_search": "sex_offender_search",
+            "covid_documentation": "covid_documentation",
+            "professional_references": "professional_reference",
+            "board_certification": "board_certification",
+            "license_verification": "license_verification",
+        }
+        if key in document_type_map:
+            assets = conn.execute(select(t.candidate_document_assets).where(
+                t.candidate_document_assets.c.tenant_id == principal["tenant_id"],
+                t.candidate_document_assets.c.candidate_id == candidate_id,
+                t.candidate_document_assets.c.document_type == document_type_map[key],
+                t.candidate_document_assets.c.is_current.is_(True),
+            ).order_by(t.candidate_document_assets.c.updated_at.desc())).mappings().all()
+            if assets:
+                minimum = int((requirement.get("validation_rule") or {}).get("min_count", 1))
+                if len(assets) >= minimum:
+                    return "matched", "candidate_document_asset", assets[0]["id"], {
+                        "assets": [clean(x) for x in assets[:minimum]]
+                    }, None
+
+        return "missing", None, None, None, None
+
+    def prepare_submission_package(self, identity, job_id, candidate_id, key, value):
+        payload = {
+            "job_id": job_id,
+            "candidate_id": candidate_id,
+            **value.model_dump(mode="json"),
+        }
+
+        def apply(conn, principal):
+            if principal["business_role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            job = conn.execute(select(t.jobs).where(
+                t.jobs.c.tenant_id == principal["tenant_id"],
+                t.jobs.c.id == job_id,
+            )).mappings().first()
+            candidate = conn.execute(select(t.candidates).where(
+                t.candidates.c.tenant_id == principal["tenant_id"],
+                t.candidates.c.id == candidate_id,
+            )).mappings().first()
+            if job is None or candidate is None:
+                raise AccessError(404, "Job or candidate not found")
+            if job.get("owner_user_id") not in {None, principal["id"]}:
+                raise AccessError(403, "Job is assigned to another recruiter")
+            match = conn.execute(select(t.matches.c.id).where(
+                t.matches.c.tenant_id == principal["tenant_id"],
+                t.matches.c.job_id == job_id,
+                t.matches.c.candidate_id == candidate_id,
+                t.matches.c.status != "excluded",
+            )).first()
+            if match is None:
+                raise AccessError(422, "Candidate must be an eligible job match before preparing a submission")
+
+            template = self._submission_template_for_job(
+                conn, principal, job, value.program_name
+            )
+            requirements = self._submission_requirements(conn, principal, template)
+            if not requirements:
+                raise AccessError(422, "The selected submission template has no requirements")
+
+            previous = conn.execute(select(t.submission_packages).where(
+                t.submission_packages.c.tenant_id == principal["tenant_id"],
+                t.submission_packages.c.job_id == job_id,
+                t.submission_packages.c.candidate_id == candidate_id,
+            ).order_by(t.submission_packages.c.version.desc()).limit(1)).mappings().first()
+            version = (previous["version"] + 1) if previous else 1
+            if previous and previous["status"] != "finalized":
+                conn.execute(update(t.submission_packages).where(
+                    t.submission_packages.c.id == previous["id"]
+                ).values(status="superseded", updated_at=now()))
+
+            package_id = uid()
+            timestamp = now()
+            item_rows = []
+            required_total = 0
+            required_satisfied = 0
+            review_count = 0
+            missing_count = 0
+            for requirement in requirements:
+                status, source_type, source_reference, resolved_value, conflict_detail = (
+                    self._submission_item_resolution(conn, principal, job, candidate, requirement)
+                )
+                if requirement["required"]:
+                    required_total += 1
+                    if status in {"matched", "approved", "ai_filled"}:
+                        required_satisfied += 1
+                    elif status == "missing":
+                        missing_count += 1
+                    else:
+                        review_count += 1
+                elif status in {"needs_review", "conflict"}:
+                    review_count += 1
+
+                item_rows.append(dict(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    package_id=package_id,
+                    requirement_id=requirement["id"],
+                    requirement_key=requirement["requirement_key"],
+                    label=requirement["label"],
+                    item_type=requirement["requirement_type"],
+                    status=status,
+                    source_type=source_type,
+                    source_reference=str(source_reference) if source_reference else None,
+                    document_asset_id=source_reference if source_type == "candidate_document_asset" else None,
+                    resolved_value=clean(resolved_value) if resolved_value is not None else None,
+                    ai_confidence=None,
+                    conflict_detail=conflict_detail,
+                    recruiter_note=None,
+                    display_order=requirement["display_order"],
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                ))
+
+            readiness_score = (
+                Decimal(str(round((required_satisfied / required_total) * 100, 2)))
+                if required_total else Decimal("100")
+            )
+            if missing_count:
+                readiness_status = "missing_required"
+                status = "needs_review"
+            elif review_count:
+                readiness_status = "needs_review"
+                status = "needs_review"
+            else:
+                readiness_status = "ready"
+                status = "ready_to_submit"
+
+            package = dict(
+                id=package_id,
+                tenant_id=principal["tenant_id"],
+                job_id=job_id,
+                candidate_id=candidate_id,
+                recruiter_user_id=principal["id"],
+                template_id=template["id"],
+                template_version=template["version"],
+                status=status,
+                readiness_status=readiness_status,
+                readiness_score=readiness_score,
+                ai_summary={
+                    "status": "model_pending",
+                    "source_grounded": True,
+                    "candidate_summary_required": any(
+                        x["requirement_key"] == "candidate_summary" for x in requirements
+                    ),
+                },
+                validation_summary={
+                    "required_total": required_total,
+                    "required_satisfied": required_satisfied,
+                    "missing_required": missing_count,
+                    "needs_review": review_count,
+                },
+                recruiter_edits={},
+                generated_artifacts=[],
+                version=version,
+                finalized_at=None,
+                finalized_by=None,
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+            conn.execute(insert(t.submission_packages).values(**package))
+            if item_rows:
+                conn.execute(insert(t.submission_package_items), item_rows)
+
+            for item in item_rows:
+                if item["status"] == "missing" and next(
+                    r for r in requirements if r["id"] == item["requirement_id"]
+                )["required"]:
+                    conn.execute(insert(t.submission_validation_results).values(
+                        id=uid(),
+                        tenant_id=principal["tenant_id"],
+                        package_id=package_id,
+                        severity="blocking",
+                        code="required_item_missing",
+                        field_key=item["requirement_key"],
+                        message=item["label"] + " is required before submission.",
+                        evidence={},
+                        resolution_status="open",
+                        resolved_by=None,
+                        resolved_at=None,
+                        created_at=timestamp,
+                    ))
+
+            self._operational_audit(
+                conn, principal, "submission_package.prepared",
+                "submission_package", package_id, {}, clean(package)
+            )
+            return self._submission_package_detail_conn(conn, principal, package_id)
+
+        return self._global_mutate(
+            identity, key, "submission_package.prepare", payload, apply
+        )
+
+    def _submission_package_detail_conn(self, conn, principal, package_id):
+        package = conn.execute(select(t.submission_packages).where(
+            t.submission_packages.c.tenant_id == principal["tenant_id"],
+            t.submission_packages.c.id == package_id,
+        )).mappings().first()
+        if package is None:
+            raise AccessError(404, "Submission package not found")
+        if principal["business_role"] == "recruiter" and package["recruiter_user_id"] != principal["id"]:
+            raise AccessError(404, "Submission package not found")
+        if principal["business_role"] == "delivery_manager":
+            profile = conn.execute(select(t.profiles.c.team_id).where(
+                t.profiles.c.tenant_id == principal["tenant_id"],
+                t.profiles.c.user_id == package["recruiter_user_id"],
+            )).scalar_one_or_none()
+            if profile is None or not self._team_allowed(conn, principal, profile):
+                raise AccessError(404, "Submission package not found")
+        template = conn.execute(select(t.submission_templates).where(
+            t.submission_templates.c.tenant_id == principal["tenant_id"],
+            t.submission_templates.c.id == package["template_id"],
+        )).mappings().first()
+        items = conn.execute(select(t.submission_package_items).where(
+            t.submission_package_items.c.tenant_id == principal["tenant_id"],
+            t.submission_package_items.c.package_id == package_id,
+        ).order_by(t.submission_package_items.c.display_order)).mappings().all()
+        validations = conn.execute(select(t.submission_validation_results).where(
+            t.submission_validation_results.c.tenant_id == principal["tenant_id"],
+            t.submission_validation_results.c.package_id == package_id,
+        ).order_by(t.submission_validation_results.c.severity.desc())).mappings().all()
+        return {
+            **clean(package),
+            "template": clean(template) if template else None,
+            "items": [clean(x) for x in items],
+            "validations": [clean(x) for x in validations],
+        }
+
+    def _recompute_submission_readiness(self, conn, principal, package):
+        rows = conn.execute(select(
+            t.submission_package_items.c.status,
+            t.submission_package_items.c.requirement_key,
+            t.submission_template_requirements.c.required,
+        ).join(
+            t.submission_template_requirements,
+            t.submission_template_requirements.c.id == t.submission_package_items.c.requirement_id,
+        ).where(
+            t.submission_package_items.c.tenant_id == principal["tenant_id"],
+            t.submission_package_items.c.package_id == package["id"],
+        )).mappings().all()
+
+        satisfied_states = {"matched", "approved", "ai_filled", "waived", "not_applicable"}
+        required = [row for row in rows if row["required"]]
+        satisfied = [row for row in required if row["status"] in satisfied_states]
+        missing = [row for row in required if row["status"] == "missing"]
+        review = [row for row in required if row["status"] in {"needs_review", "conflict"}]
+        score = Decimal("100") if not required else Decimal(
+            str(round((len(satisfied) / len(required)) * 100, 2))
+        )
+        if missing:
+            readiness = "missing_required"
+            package_status = "needs_review"
+        elif review:
+            readiness = "needs_review"
+            package_status = "needs_review"
+        else:
+            readiness = "ready"
+            package_status = "ready_to_submit"
+
+        validation_summary = {
+            "required_total": len(required),
+            "required_satisfied": len(satisfied),
+            "missing_required": len(missing),
+            "needs_review": len(review),
+        }
+        conn.execute(update(t.submission_packages).where(
+            t.submission_packages.c.tenant_id == principal["tenant_id"],
+            t.submission_packages.c.id == package["id"],
+        ).values(
+            readiness_status=readiness,
+            readiness_score=score,
+            status=package_status if package["status"] != "finalized" else package["status"],
+            validation_summary=validation_summary,
+            updated_at=now(),
+        ))
+        return readiness, score, validation_summary
+
+    def review_submission_package_item(self, identity, package_id, item_id, key, value):
+        payload = {
+            "package_id": package_id,
+            "item_id": item_id,
+            **value.model_dump(mode="json"),
+        }
+
+        def apply(conn, principal):
+            if principal["business_role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            package = conn.execute(select(t.submission_packages).where(
+                t.submission_packages.c.tenant_id == principal["tenant_id"],
+                t.submission_packages.c.id == package_id,
+                t.submission_packages.c.recruiter_user_id == principal["id"],
+            ).with_for_update()).mappings().first()
+            if package is None:
+                raise AccessError(404, "Submission package not found")
+            if package["status"] in {"finalized", "superseded"}:
+                raise AccessError(409, "This submission package version is locked")
+
+            item = conn.execute(select(t.submission_package_items).where(
+                t.submission_package_items.c.tenant_id == principal["tenant_id"],
+                t.submission_package_items.c.id == item_id,
+                t.submission_package_items.c.package_id == package_id,
+            ).with_for_update()).mappings().first()
+            if item is None:
+                raise AccessError(404, "Submission package item not found")
+
+            requirement = conn.execute(select(t.submission_template_requirements).where(
+                t.submission_template_requirements.c.tenant_id == principal["tenant_id"],
+                t.submission_template_requirements.c.id == item["requirement_id"],
+            )).mappings().first()
+            if requirement is None:
+                raise AccessError(409, "Submission requirement is unavailable")
+
+            if value.decision in {"waived", "not_applicable"} and (
+                value.recruiter_note is None or len(value.recruiter_note.strip()) < 5
+            ):
+                raise AccessError(422, "Waiver or not-applicable decisions require a reason")
+            if value.decision == "approved" and item["status"] == "missing":
+                if requirement["requirement_type"] in {
+                    "document", "skills_checklist", "reference", "form"
+                }:
+                    raise AccessError(
+                        422,
+                        "A required document cannot be replaced by manual confirmation"
+                    )
+                if value.resolved_value is None:
+                    raise AccessError(
+                        422,
+                        "Provide the confirmed value before approving a missing item"
+                    )
+            if (
+                value.decision == "approved"
+                and item["requirement_key"] == "candidate_summary"
+                and (
+                    value.resolved_value is None
+                    or not str(value.resolved_value.get("text") or "").strip()
+                )
+            ):
+                raise AccessError(422, "Candidate presentation text is required before approval")
+
+            before = clean(item)
+            resolved_value = (
+                value.resolved_value if value.resolved_value is not None
+                else item.get("resolved_value")
+            )
+            conn.execute(update(t.submission_package_items).where(
+                t.submission_package_items.c.id == item_id
+            ).values(
+                status=value.decision,
+                resolved_value=resolved_value,
+                recruiter_note=value.recruiter_note,
+                updated_at=now(),
+            ))
+
+            resolution_status = {
+                "approved": "corrected" if item["status"] in {"missing", "conflict"} else "accepted",
+                "waived": "waived",
+                "not_applicable": "waived",
+            }[value.decision]
+            conn.execute(update(t.submission_validation_results).where(
+                t.submission_validation_results.c.tenant_id == principal["tenant_id"],
+                t.submission_validation_results.c.package_id == package_id,
+                t.submission_validation_results.c.field_key == item["requirement_key"],
+                t.submission_validation_results.c.resolution_status == "open",
+            ).values(
+                resolution_status=resolution_status,
+                resolved_by=principal["id"],
+                resolved_at=now(),
+            ))
+
+            readiness, score, summary = self._recompute_submission_readiness(
+                conn, principal, package
+            )
+            after = {
+                **before,
+                "status": value.decision,
+                "resolved_value": clean(resolved_value) if resolved_value is not None else None,
+                "recruiter_note": value.recruiter_note,
+            }
+            self._operational_audit(
+                conn, principal, "submission_package.item.reviewed",
+                "submission_package", package_id, before, after,
+                reason=value.recruiter_note,
+            )
+            return {
+                "item": after,
+                "readiness_status": readiness,
+                "readiness_score": float(score),
+                "validation_summary": summary,
+            }
+
+        return self._global_mutate(
+            identity, key, "submission_package.item.reviewed", payload, apply
+        )
+
+    def finalize_submission_package(self, identity, package_id, key, value):
+        payload = {
+            "package_id": package_id,
+            **value.model_dump(mode="json"),
+        }
+
+        def apply(conn, principal):
+            if principal["business_role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            package = conn.execute(select(t.submission_packages).where(
+                t.submission_packages.c.tenant_id == principal["tenant_id"],
+                t.submission_packages.c.id == package_id,
+                t.submission_packages.c.recruiter_user_id == principal["id"],
+            ).with_for_update()).mappings().first()
+            if package is None:
+                raise AccessError(404, "Submission package not found")
+            if package["status"] == "finalized":
+                return self._submission_package_detail_conn(conn, principal, package_id)
+            if package["status"] == "superseded":
+                raise AccessError(409, "Prepare a new package version before finalizing")
+
+            readiness, _, _ = self._recompute_submission_readiness(conn, principal, package)
+            if readiness != "ready":
+                raise AccessError(422, "Resolve all required submission items before finalizing")
+
+            open_blocking = conn.execute(select(func.count()).select_from(
+                t.submission_validation_results
+            ).where(
+                t.submission_validation_results.c.tenant_id == principal["tenant_id"],
+                t.submission_validation_results.c.package_id == package_id,
+                t.submission_validation_results.c.severity == "blocking",
+                t.submission_validation_results.c.resolution_status == "open",
+            )).scalar_one()
+            if open_blocking:
+                raise AccessError(422, "Resolve blocking validation issues before finalizing")
+
+            before = clean(package)
+            timestamp = now()
+            conn.execute(update(t.submission_packages).where(
+                t.submission_packages.c.tenant_id == principal["tenant_id"],
+                t.submission_packages.c.id == package_id,
+            ).values(
+                status="finalized",
+                finalized_at=timestamp,
+                finalized_by=principal["id"],
+                updated_at=timestamp,
+            ))
+            self._operational_audit(
+                conn, principal, "submission_package.finalized",
+                "submission_package", package_id, before,
+                {"status": "finalized", "finalized_by": principal["id"], "finalized_at": timestamp},
+            )
+            return self._submission_package_detail_conn(conn, principal, package_id)
+
+        return self._global_mutate(
+            identity, key, "submission_package.finalized", payload, apply
+        )
+
+    def get_submission_package(self, identity, package_id):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["business_role"] not in {"recruiter", "delivery_manager", "executive"}:
+                raise AccessError(403, "Submission package access required")
+            return self._submission_package_detail_conn(conn, principal, package_id)
+
+    def list_submission_packages(self, identity, *, job_id=None, candidate_id=None, limit=100):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["business_role"] not in {"recruiter", "delivery_manager", "executive"}:
+                raise AccessError(403, "Submission package access required")
+            statement = select(t.submission_packages).where(
+                t.submission_packages.c.tenant_id == principal["tenant_id"]
+            )
+            if principal["business_role"] == "recruiter":
+                statement = statement.where(
+                    t.submission_packages.c.recruiter_user_id == principal["id"]
+                )
+            elif principal["business_role"] == "delivery_manager":
+                managed = select(t.profiles.c.user_id).join(
+                    t.teams,
+                    and_(
+                        t.teams.c.tenant_id == t.profiles.c.tenant_id,
+                        t.teams.c.id == t.profiles.c.team_id,
+                    ),
+                ).where(
+                    t.profiles.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+                statement = statement.where(
+                    t.submission_packages.c.recruiter_user_id.in_(managed)
+                )
+            if job_id:
+                statement = statement.where(t.submission_packages.c.job_id == job_id)
+            if candidate_id:
+                statement = statement.where(t.submission_packages.c.candidate_id == candidate_id)
+            rows = conn.execute(statement.order_by(
+                t.submission_packages.c.created_at.desc(),
+                t.submission_packages.c.version.desc(),
+            ).limit(limit)).mappings().all()
+            return {"items": [clean(x) for x in rows]}
+
+    def _funnel_recruiter_ids(self, conn, principal):
+        if principal["business_role"] == "executive":
+            return None
+        if principal["business_role"] == "recruiter":
+            return {principal["id"]}
+        if principal["business_role"] == "delivery_manager":
+            rows = conn.execute(
+                select(t.profiles.c.user_id)
+                .join(
+                    t.teams,
+                    and_(
+                        t.teams.c.tenant_id == t.profiles.c.tenant_id,
+                        t.teams.c.id == t.profiles.c.team_id,
+                    ),
+                )
+                .where(
+                    t.profiles.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+            ).scalars().all()
+            return set(rows)
+        raise AccessError(403, "Funnel visibility requires Recruiter, Delivery Manager, or Executive access")
+
+    def _funnel_pair_authorized(self, conn, principal, job_id, candidate_id):
+        recruiter_ids = self._funnel_recruiter_ids(conn, principal)
+        if recruiter_ids is None:
+            return True
+        if not recruiter_ids:
+            return False
+        found = conn.execute(select(t.submission_projections.c.id).where(
+            t.submission_projections.c.tenant_id == principal["tenant_id"],
+            t.submission_projections.c.job_id == job_id,
+            t.submission_projections.c.candidate_id == candidate_id,
+            t.submission_projections.c.recruiter_user_id.in_(recruiter_ids),
+        ).limit(1)).first()
+        return found is not None
+
+    def list_funnel(self, identity, *, limit=100):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            recruiter_ids = self._funnel_recruiter_ids(conn, principal)
+
+            statement = select(
+                t.submission_projections,
+                t.jobs.c.title.label("job_title"),
+                t.jobs.c.division.label("division"),
+                t.jobs.c.city.label("job_city"),
+                t.jobs.c.state.label("job_state"),
+                t.candidates.c.canonical_name.label("candidate_name"),
+                t.users.c.display_name.label("recruiter_name"),
+            ).join(
+                t.jobs,
+                and_(
+                    t.jobs.c.tenant_id == t.submission_projections.c.tenant_id,
+                    t.jobs.c.id == t.submission_projections.c.job_id,
+                ),
+            ).join(
+                t.candidates,
+                and_(
+                    t.candidates.c.tenant_id == t.submission_projections.c.tenant_id,
+                    t.candidates.c.id == t.submission_projections.c.candidate_id,
+                ),
+            ).outerjoin(
+                t.users,
+                and_(
+                    t.users.c.tenant_id == t.submission_projections.c.tenant_id,
+                    t.users.c.id == t.submission_projections.c.recruiter_user_id,
+                ),
+            ).where(
+                t.submission_projections.c.tenant_id == principal["tenant_id"]
+            )
+            if recruiter_ids is not None:
+                if not recruiter_ids:
+                    return {"items": [], "totals": {
+                        "submissions": 0, "interviews": 0, "offers": 0,
+                        "placements": 0, "starts": 0, "at_risk_starts": 0,
+                    }}
+                statement = statement.where(
+                    t.submission_projections.c.recruiter_user_id.in_(recruiter_ids)
+                )
+
+            submissions = conn.execute(
+                statement.order_by(
+                    t.submission_projections.c.submitted_at.desc(),
+                    t.submission_projections.c.synced_at.desc(),
+                ).limit(limit)
+            ).mappings().all()
+
+            if not submissions:
+                return {"items": [], "totals": {
+                    "submissions": 0, "interviews": 0, "offers": 0,
+                    "placements": 0, "starts": 0, "at_risk_starts": 0,
+                }}
+
+            pairs = {(row["job_id"], row["candidate_id"]) for row in submissions}
+            def pair_filter(table):
+                return or_(*[
+                    and_(table.c.job_id == job_id, table.c.candidate_id == candidate_id)
+                    for job_id, candidate_id in pairs
+                ])
+
+            interviews = conn.execute(select(t.interview_projections).where(
+                t.interview_projections.c.tenant_id == principal["tenant_id"],
+                pair_filter(t.interview_projections),
+            ).order_by(
+                t.interview_projections.c.scheduled_at.desc(),
+                t.interview_projections.c.synced_at.desc(),
+            )).mappings().all()
+            offers = conn.execute(select(t.offer_projections).where(
+                t.offer_projections.c.tenant_id == principal["tenant_id"],
+                pair_filter(t.offer_projections),
+            ).order_by(
+                t.offer_projections.c.offered_at.desc(),
+                t.offer_projections.c.synced_at.desc(),
+            )).mappings().all()
+            placements = conn.execute(select(t.placement_projections).where(
+                t.placement_projections.c.tenant_id == principal["tenant_id"],
+                pair_filter(t.placement_projections),
+            ).order_by(
+                t.placement_projections.c.planned_start_date.desc(),
+                t.placement_projections.c.synced_at.desc(),
+            )).mappings().all()
+            readiness_rows = conn.execute(select(t.start_readiness).where(
+                t.start_readiness.c.tenant_id == principal["tenant_id"],
+                pair_filter(t.start_readiness),
+            )).mappings().all()
+
+            def latest_by_pair(rows):
+                result = {}
+                for row in rows:
+                    key = (row["job_id"], row["candidate_id"])
+                    if key not in result:
+                        result[key] = clean(row)
+                return result
+
+            interview_map = latest_by_pair(interviews)
+            offer_map = latest_by_pair(offers)
+            placement_map = latest_by_pair(placements)
+            readiness_map = latest_by_pair(readiness_rows)
+
+            items = []
+            for row in submissions:
+                key = (row["job_id"], row["candidate_id"])
+                item = clean(row)
+                item["interview"] = interview_map.get(key)
+                item["offer"] = offer_map.get(key)
+                item["placement"] = placement_map.get(key)
+                item["start_readiness"] = readiness_map.get(key)
+                items.append(item)
+
+            starts = sum(
+                1 for x in placement_map.values()
+                if x.get("actual_start_date") is not None
+                or x.get("placement_status") == "started"
+            )
+            at_risk = sum(
+                1 for x in readiness_map.values()
+                if x.get("status") != "started"
+                and x.get("risk_level") in {"high", "critical"}
+            )
+            return {
+                "items": items,
+                "totals": {
+                    "submissions": len(submissions),
+                    "interviews": len(interview_map),
+                    "offers": len(offer_map),
+                    "placements": len(placement_map),
+                    "starts": starts,
+                    "at_risk_starts": at_risk,
+                },
+            }
+
+    def get_funnel_detail(self, identity, job_id, candidate_id):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if not self._funnel_pair_authorized(conn, principal, job_id, candidate_id):
+                raise AccessError(404, "Funnel record not found")
+
+            submissions = conn.execute(select(t.submission_projections).where(
+                t.submission_projections.c.tenant_id == principal["tenant_id"],
+                t.submission_projections.c.job_id == job_id,
+                t.submission_projections.c.candidate_id == candidate_id,
+            ).order_by(t.submission_projections.c.submitted_at.desc())).mappings().all()
+            if not submissions:
+                raise AccessError(404, "Funnel record not found")
+
+            interviews = conn.execute(select(t.interview_projections).where(
+                t.interview_projections.c.tenant_id == principal["tenant_id"],
+                t.interview_projections.c.job_id == job_id,
+                t.interview_projections.c.candidate_id == candidate_id,
+            ).order_by(t.interview_projections.c.scheduled_at.desc())).mappings().all()
+            offers = conn.execute(select(t.offer_projections).where(
+                t.offer_projections.c.tenant_id == principal["tenant_id"],
+                t.offer_projections.c.job_id == job_id,
+                t.offer_projections.c.candidate_id == candidate_id,
+            ).order_by(t.offer_projections.c.offered_at.desc())).mappings().all()
+            placements = conn.execute(select(t.placement_projections).where(
+                t.placement_projections.c.tenant_id == principal["tenant_id"],
+                t.placement_projections.c.job_id == job_id,
+                t.placement_projections.c.candidate_id == candidate_id,
+            ).order_by(t.placement_projections.c.planned_start_date.desc())).mappings().all()
+            readiness = conn.execute(select(t.start_readiness).where(
+                t.start_readiness.c.tenant_id == principal["tenant_id"],
+                t.start_readiness.c.job_id == job_id,
+                t.start_readiness.c.candidate_id == candidate_id,
+            )).mappings().first()
+            items = []
+            if readiness:
+                items = conn.execute(select(t.start_readiness_items).where(
+                    t.start_readiness_items.c.tenant_id == principal["tenant_id"],
+                    t.start_readiness_items.c.readiness_id == readiness["id"],
+                ).order_by(
+                    t.start_readiness_items.c.required.desc(),
+                    t.start_readiness_items.c.category,
+                    t.start_readiness_items.c.label,
+                )).mappings().all()
+            return {
+                "submissions": [clean(x) for x in submissions],
+                "interviews": [clean(x) for x in interviews],
+                "offers": [clean(x) for x in offers],
+                "placements": [clean(x) for x in placements],
+                "start_readiness": clean(readiness) if readiness else None,
+                "readiness_items": [clean(x) for x in items],
+            }
+
+    def update_start_readiness(self, identity, job_id, candidate_id, key, value):
+        payload = {
+            "job_id": job_id,
+            "candidate_id": candidate_id,
+            **value.model_dump(mode="json"),
+        }
+
+        def apply(conn, principal):
+            if not self._funnel_pair_authorized(conn, principal, job_id, candidate_id):
+                raise AccessError(404, "Funnel record not found")
+
+            if value.risk_level in {"high", "critical"} and not value.risk_reason:
+                raise AccessError(422, "High or critical start risk requires a reason")
+            if value.risk_level in {"high", "critical"} and not value.next_action:
+                raise AccessError(422, "High or critical start risk requires a next action")
+
+            owner_id = str(value.owner_user_id) if value.owner_user_id else None
+            if owner_id:
+                owner = conn.execute(select(t.users.c.id).where(
+                    t.users.c.tenant_id == principal["tenant_id"],
+                    t.users.c.id == owner_id,
+                    t.users.c.is_active.is_(True),
+                )).first()
+                if owner is None:
+                    raise AccessError(422, "Readiness owner not found")
+
+            row = conn.execute(select(t.start_readiness).where(
+                t.start_readiness.c.tenant_id == principal["tenant_id"],
+                t.start_readiness.c.job_id == job_id,
+                t.start_readiness.c.candidate_id == candidate_id,
+            ).with_for_update()).mappings().first()
+
+            timestamp = now()
+            if row is None:
+                if value.expected_version != 0:
+                    raise AccessError(409, "Start readiness changed; reload before saving")
+                readiness_id = uid()
+                before = {}
+                after = dict(
+                    id=readiness_id,
+                    tenant_id=principal["tenant_id"],
+                    job_id=job_id,
+                    candidate_id=candidate_id,
+                    placement_projection_id=None,
+                    status=value.status,
+                    risk_level=value.risk_level,
+                    risk_reason=value.risk_reason,
+                    next_action=value.next_action,
+                    owner_user_id=owner_id,
+                    due_at=value.due_at,
+                    version=1,
+                    updated_by=principal["id"],
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                )
+                conn.execute(insert(t.start_readiness).values(**after))
+            else:
+                if row["version"] != value.expected_version:
+                    raise AccessError(409, "Start readiness changed; reload before saving")
+                if value.status == "ready":
+                    blocking = conn.execute(select(func.count()).select_from(
+                        t.start_readiness_items
+                    ).where(
+                        t.start_readiness_items.c.tenant_id == principal["tenant_id"],
+                        t.start_readiness_items.c.readiness_id == row["id"],
+                        t.start_readiness_items.c.required.is_(True),
+                        t.start_readiness_items.c.status.not_in(
+                            ["complete", "waived", "not_applicable"]
+                        ),
+                    )).scalar_one()
+                    if blocking:
+                        raise AccessError(
+                            422,
+                            "Required start-readiness items must be complete or waived before marking Ready",
+                        )
+                before = clean(row)
+                readiness_id = row["id"]
+                after = dict(row)
+                after.update(
+                    status=value.status,
+                    risk_level=value.risk_level,
+                    risk_reason=value.risk_reason,
+                    next_action=value.next_action,
+                    owner_user_id=owner_id,
+                    due_at=value.due_at,
+                    version=row["version"] + 1,
+                    updated_by=principal["id"],
+                    updated_at=timestamp,
+                )
+                conn.execute(update(t.start_readiness).where(
+                    t.start_readiness.c.tenant_id == principal["tenant_id"],
+                    t.start_readiness.c.id == readiness_id,
+                ).values(
+                    status=after["status"],
+                    risk_level=after["risk_level"],
+                    risk_reason=after["risk_reason"],
+                    next_action=after["next_action"],
+                    owner_user_id=after["owner_user_id"],
+                    due_at=after["due_at"],
+                    version=after["version"],
+                    updated_by=after["updated_by"],
+                    updated_at=after["updated_at"],
+                ))
+
+            self._operational_audit(
+                conn,
+                principal,
+                "start_readiness.updated",
+                "start_readiness",
+                readiness_id,
+                before,
+                clean(after),
+                reason=value.risk_reason,
+            )
+            return clean(after)
+
+        return self._global_mutate(
+            identity, key, "start_readiness.updated", payload, apply
+        )
+
+    def upsert_start_readiness_item(self, identity, job_id, candidate_id, key, value):
+        payload = {
+            "job_id": job_id,
+            "candidate_id": candidate_id,
+            **value.model_dump(mode="json"),
+        }
+
+        def apply(conn, principal):
+            if not self._funnel_pair_authorized(conn, principal, job_id, candidate_id):
+                raise AccessError(404, "Funnel record not found")
+            readiness = conn.execute(select(t.start_readiness).where(
+                t.start_readiness.c.tenant_id == principal["tenant_id"],
+                t.start_readiness.c.job_id == job_id,
+                t.start_readiness.c.candidate_id == candidate_id,
+            )).mappings().first()
+            if readiness is None:
+                raise AccessError(422, "Create start readiness before adding readiness items")
+
+            timestamp = now()
+            existing = conn.execute(select(t.start_readiness_items).where(
+                t.start_readiness_items.c.tenant_id == principal["tenant_id"],
+                t.start_readiness_items.c.readiness_id == readiness["id"],
+                t.start_readiness_items.c.item_key == value.item_key,
+            ).with_for_update()).mappings().first()
+
+            if existing is None:
+                row = dict(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    readiness_id=readiness["id"],
+                    item_key=value.item_key,
+                    label=value.label,
+                    category=value.category,
+                    status=value.status,
+                    required=value.required,
+                    source_type=value.source_type,
+                    source_reference=value.source_reference,
+                    due_at=value.due_at,
+                    notes=value.notes,
+                    updated_by=principal["id"],
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                )
+                conn.execute(insert(t.start_readiness_items).values(**row))
+                before = {}
+            else:
+                before = clean(existing)
+                row = dict(existing)
+                row.update(
+                    label=value.label,
+                    category=value.category,
+                    status=value.status,
+                    required=value.required,
+                    source_type=value.source_type,
+                    source_reference=value.source_reference,
+                    due_at=value.due_at,
+                    notes=value.notes,
+                    updated_by=principal["id"],
+                    updated_at=timestamp,
+                )
+                conn.execute(update(t.start_readiness_items).where(
+                    t.start_readiness_items.c.id == existing["id"]
+                ).values(
+                    label=row["label"],
+                    category=row["category"],
+                    status=row["status"],
+                    required=row["required"],
+                    source_type=row["source_type"],
+                    source_reference=row["source_reference"],
+                    due_at=row["due_at"],
+                    notes=row["notes"],
+                    updated_by=row["updated_by"],
+                    updated_at=row["updated_at"],
+                ))
+
+            self._operational_audit(
+                conn,
+                principal,
+                "start_readiness.item.updated",
+                "start_readiness",
+                readiness["id"],
+                before,
+                clean(row),
+                reason=value.notes,
+            )
+            return clean(row)
+
+        return self._global_mutate(
+            identity, key, "start_readiness.item.updated", payload, apply
+        )
+
     def list_operational_audit(self, identity, *, object_type=None, object_id=None, limit=100):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
