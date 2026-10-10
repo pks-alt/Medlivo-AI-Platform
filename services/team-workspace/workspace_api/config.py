@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     submission_ai_project: str = ""
     submission_ai_location: str = "global"
     submission_ai_model: str = ""
+    submission_packet_download_enabled: bool = False
+    submission_document_buckets: str = ""
 
     @model_validator(mode="after")
     def check_configuration(self):
@@ -29,4 +31,8 @@ class Settings(BaseSettings):
                     raise ValueError("Configure the Vertex AI location for Submission Studio")
                 if not self.submission_ai_model or "/" in self.submission_ai_model:
                     raise ValueError("Configure the approved Submission Studio model")
+            if self.submission_packet_download_enabled:
+                buckets = [x.strip() for x in self.submission_document_buckets.split(",") if x.strip()]
+                if not buckets or any("/" in x or ":" in x for x in buckets):
+                    raise ValueError("Configure approved GCS buckets for Submission Studio documents")
         return self
