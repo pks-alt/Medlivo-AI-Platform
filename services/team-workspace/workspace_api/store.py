@@ -12,7 +12,7 @@ from .job_intake import process_rows, parse_xlsx, suggest_mapping
 from .intake_intelligence import analyze_intake_job
 from margin_engine import (
     CostAssumptionSet, MarginInput, W2PayPackageInput, LocumsPayPackageInput,
-    build_w2_pay_package, build_locums_pay_package, calculate_margin,
+    build_w2_pay_package, build_locums_pay_package, calculate_margin, seed_assumptions,
 )
 
 
@@ -2853,6 +2853,90 @@ class WorkspaceStore:
             ).limit(limit)).mappings().all()
             return {"items": [clean(row) for row in rows]}
 
+
+    def bootstrap_economic_assumptions(self, identity, key):
+        payload = {"source": "approved_workbook_defaults"}
+
+        def apply(conn, principal):
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Admin access required")
+
+            profiles = [
+                "nursing_allied_ca_w2",
+                "nursing_allied_national_w2",
+                "rehabilitation_ca_w2",
+                "rehabilitation_national_w2",
+                "locums_ca_w2",
+                "locums_national_1099",
+            ]
+            timestamp = now()
+            created = []
+            existing = []
+            for profile in profiles:
+                active = conn.execute(select(t.cost_assumption_sets).where(
+                    t.cost_assumption_sets.c.tenant_id == principal["tenant_id"],
+                    t.cost_assumption_sets.c.profile == profile,
+                    t.cost_assumption_sets.c.status == "active",
+                    t.cost_assumption_sets.c.effective_from <= timestamp,
+                    or_(
+                        t.cost_assumption_sets.c.effective_to.is_(None),
+                        t.cost_assumption_sets.c.effective_to > timestamp,
+                    ),
+                ).order_by(
+                    t.cost_assumption_sets.c.effective_from.desc()
+                ).limit(1)).mappings().first()
+                if active is not None:
+                    existing.append({
+                        "profile": profile,
+                        "version": active["version"],
+                    })
+                    continue
+
+                assumptions = seed_assumptions(profile)
+                row_id = uid()
+                conn.execute(insert(t.cost_assumption_sets).values(
+                    id=row_id,
+                    tenant_id=principal["tenant_id"],
+                    profile=profile,
+                    version=assumptions.version,
+                    assumption_payload=assumptions.model_dump(mode="json"),
+                    status="active",
+                    effective_from=timestamp,
+                    effective_to=None,
+                    created_by=principal["id"],
+                    created_at=timestamp,
+                ))
+                created.append({
+                    "id": row_id,
+                    "profile": profile,
+                    "version": assumptions.version,
+                })
+                self._operational_audit(
+                    conn,
+                    principal,
+                    "economic.assumptions.bootstrapped",
+                    "cost_assumption_set",
+                    row_id,
+                    {},
+                    {
+                        "profile": profile,
+                        "version": assumptions.version,
+                        "source": "approved_workbook_defaults",
+                    },
+                )
+            return {
+                "created": created,
+                "existing": existing,
+                "complete": len(created) + len(existing) == len(profiles),
+            }
+
+        return self._global_mutate(
+            identity,
+            key,
+            "economic.assumptions.bootstrap",
+            payload,
+            apply,
+        )
 
     def create_cost_assumption_set(self, identity, key, value):
         payload = value.model_dump(mode="json")
