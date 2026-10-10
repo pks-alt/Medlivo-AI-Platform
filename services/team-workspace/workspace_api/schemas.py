@@ -228,3 +228,35 @@ class MarginDiscussionInput(StrictInput):
 
 class MarginFinalizeInput(StrictInput):
     expected_version: int = Field(ge=1)
+
+
+class CostAssumptionSetInput(StrictInput):
+    profile: Literal[
+        "nursing_rehab_ca_w2",
+        "nursing_rehab_national_w2",
+        "locums_ca_w2",
+        "locums_national_1099",
+    ]
+    version: str = Field(min_length=1, max_length=80)
+    assumption_payload: dict
+    effective_from: datetime
+
+
+class CustomerEconomicRulePayload(StrictInput):
+    msp_fee_rate: float | None = Field(default=None, ge=0, le=1)
+    professional_liability_rate: float | None = Field(default=None, ge=0, le=1)
+    factoring_rate: float | None = Field(default=None, ge=0, le=1)
+    overhead_rate: float | None = Field(default=None, ge=0, le=1)
+
+
+class CustomerEconomicRuleInput(StrictInput):
+    customer_id: UUID
+    calculation_profile: Literal[
+        "nursing_rehab_ca_w2",
+        "nursing_rehab_national_w2",
+        "locums_ca_w2",
+        "locums_national_1099",
+    ]
+    version: str = Field(min_length=1, max_length=80)
+    rule_payload: CustomerEconomicRulePayload
+    effective_from: datetime
