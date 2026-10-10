@@ -336,3 +336,66 @@ class W2PayPackageSnapshotInput(StrictInput):
     completion_bonus: float = Field(default=0, ge=0)
     travel_reimbursement: float = Field(default=0, ge=0)
     other_reimbursement: float = Field(default=0, ge=0)
+
+
+class LocumsPayPackageSnapshotInput(StrictInput):
+    job_id: UUID
+    candidate_id: UUID
+    recruiter_user_id: UUID
+    worker_classification: Literal["w2", "1099"]
+    assignment_type: Literal["per_diem", "contract", "travel_contract"] = "contract"
+    customer_type: Literal["direct", "msp_vms"]
+    contract_type: Literal["new_contract", "extension"] = "new_contract"
+    candidate_source: Literal["internal_database", "vivian", "referral", "job_board", "other"] = "internal_database"
+
+    planned_per_diem_shifts: float = Field(default=0, ge=0)
+    shifts_per_week: float = Field(gt=0)
+    contract_weeks: float = Field(gt=0)
+    shift_length_hours: float = Field(gt=0)
+
+    client_rate_type: Literal["hourly", "per_shift", "daily", "24_hour_call"] = "hourly"
+    client_rate_amount: float = Field(gt=0)
+    provider_rate_type: Literal["hourly", "per_shift", "daily", "24_hour_call"] = "hourly"
+    provider_rate_amount: float = Field(gt=0)
+
+    client_ot_rate: float | None = Field(default=None, ge=0)
+    client_dt_rate: float | None = Field(default=None, ge=0)
+
+    callback_included: bool = False
+    callback_hours_per_shift: float = Field(default=0, ge=0)
+    callbacks_per_week: float = Field(default=0, ge=0)
+    minimum_guaranteed_hours_per_callback: float = Field(default=0, ge=0)
+    callback_client_bill_rate: float = Field(default=0, ge=0)
+    callback_provider_pay_rate: float = Field(default=0, ge=0)
+
+    standby_included: bool = False
+    standby_rate_type: Literal["hourly", "per_shift", "daily", "24_hour_call"] = "hourly"
+    standby_units_per_shift: float = Field(default=0, ge=0)
+    client_standby_bill_rate: float = Field(default=0, ge=0)
+    provider_standby_pay_rate: float = Field(default=0, ge=0)
+    compensable_standby_hours_per_week: float = Field(default=0, ge=0)
+
+    orientation_required: bool = False
+    orientation_hours_assignment: float = Field(default=0, ge=0)
+    orientation_client_bill_rate: float = Field(default=0, ge=0)
+    orientation_provider_pay_rate: float = Field(default=0, ge=0)
+    regular_stipends_during_orientation: bool = True
+
+    employee_benefits_enabled: bool = False
+
+    housing_daily_cost: float = Field(default=0, ge=0)
+    housing_days_per_week: float = Field(default=0, ge=0)
+    meals_incidentals_daily_cost: float = Field(default=0, ge=0)
+    meals_incidentals_days_per_week: float = Field(default=0, ge=0)
+    rental_car_weekly_cost: float = Field(default=0, ge=0)
+    mileage_reimbursement_rate: float = Field(default=0, ge=0)
+    approved_miles_per_week: float = Field(default=0, ge=0)
+    other_weekly_assignment_cost: float = Field(default=0, ge=0)
+
+    airfare: float = Field(default=0, ge=0)
+    state_license: float = Field(default=0, ge=0)
+    dea_registration: float = Field(default=0, ge=0)
+    other_one_time_travel_cost: float = Field(default=0, ge=0)
+    sign_on_bonus: float = Field(default=0, ge=0)
+    completion_bonus: float = Field(default=0, ge=0)
+    other_one_time_cost: float = Field(default=0, ge=0)
