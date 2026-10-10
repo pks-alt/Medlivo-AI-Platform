@@ -3,9 +3,13 @@ name: Deploy private team staging
 on:
   push:
     branches:
-      - feat/private-team-workspace-20261005
+      - main
     paths:
       - ".github/workflows/deploy-team-staging.yml"
+      - "apps/recruiter-web/**"
+      - "services/team-workspace/**"
+      - "services/margin-engine/**"
+      - "infrastructure/team-staging/**"
   workflow_dispatch:
 
 permissions:
