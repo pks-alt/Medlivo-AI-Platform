@@ -22,6 +22,7 @@ from .schemas import (
     ApprovalDecisionInput, StartReadinessUpdate, StartReadinessItemInput,
     SubmissionTemplateBootstrapInput, SubmissionPackagePrepareInput,
     SubmissionPackageItemReviewInput, SubmissionPackageFinalizeInput,
+    SubmissionTemplateCreateInput,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -397,6 +398,22 @@ def build_app(store, verifier):
                               idempotency_key: UUID = Header(), who=Depends(identity)):
         return store.add_margin_discussion(
             who, str(snapshot_id), str(idempotency_key), value
+        )
+
+    @app.get(prefix + "/submission-studio/templates")
+    def submission_templates(division: str | None = None,
+                             limit: int = Query(default=200, ge=1, le=500),
+                             who=Depends(identity)):
+        return store.list_submission_templates(
+            who, division=division, limit=limit
+        )
+
+    @app.post(prefix + "/submission-studio/templates")
+    def create_submission_template(value: SubmissionTemplateCreateInput,
+                                   idempotency_key: UUID = Header(),
+                                   who=Depends(identity)):
+        return store.create_submission_template(
+            who, str(idempotency_key), value
         )
 
     @app.post(prefix + "/submission-studio/bootstrap-templates")
