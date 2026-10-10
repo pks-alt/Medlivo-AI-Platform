@@ -120,7 +120,7 @@ def test_locums_1099_workbook_regression():
 
 
 def test_direct_customer_has_zero_msp_fee_even_with_default_assumption():
-    assumptions = seed_assumptions("nursing_allied_national_w2")
+    assumptions = seed_assumptions("rehabilitation_national_w2")
     result = calculate_margin(
         MarginInput(
             profile="rehabilitation_national_w2",
