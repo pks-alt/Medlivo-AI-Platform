@@ -371,6 +371,68 @@ Index("idx_ws_operational_audit_object_created", operational_audit.c.tenant_id,
       operational_audit.c.object_type, operational_audit.c.object_id, operational_audit.c.created_at)
 
 
+cost_assumption_sets = Table(
+    "ws_cost_assumption_set", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), S("profile", nullable=False),
+    S("version", nullable=False), Column("assumption_payload", JSON, nullable=False),
+    D("effective_from", nullable=False), D("effective_to"), S("status", nullable=False),
+    U("approved_by"), U("created_by", nullable=False), D("created_at", nullable=False),
+    D("updated_at", nullable=False),
+    UniqueConstraint("tenant_id", "profile", "version"),
+    ForeignKeyConstraint(["tenant_id", "approved_by"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "created_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+margin_snapshots = Table(
+    "ws_margin_snapshot", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
+    U("candidate_id", nullable=False), U("recruiter_user_id", nullable=False),
+    S("profile", nullable=False), U("assumption_set_id"), S("assumption_version", nullable=False),
+    Column("version", Integer, nullable=False), Column("input_payload", JSON, nullable=False),
+    Column("result_payload", JSON, nullable=False), S("approval_status", nullable=False),
+    S("lifecycle_status", nullable=False), U("created_by", nullable=False), U("finalized_by"),
+    D("finalized_at"), D("created_at", nullable=False),
+    UniqueConstraint("tenant_id", "job_id", "candidate_id", "version"),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "created_by"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "finalized_by"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["assumption_set_id"], ["ws_cost_assumption_set.id"]),
+)
+
+margin_cost_components = Table(
+    "ws_margin_cost_component", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("snapshot_id", nullable=False),
+    S("component_key", nullable=False), S("label", nullable=False), S("category", nullable=False),
+    Column("per_week", Numeric(18,6), nullable=False),
+    Column("assignment_total", Numeric(18,6), nullable=False), D("created_at", nullable=False),
+    UniqueConstraint("snapshot_id", "component_key"),
+    ForeignKeyConstraint(["snapshot_id"], ["ws_margin_snapshot.id"]),
+)
+
+commission_projections = Table(
+    "ws_commission_projection", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("snapshot_id", nullable=False),
+    U("recruiter_user_id", nullable=False),
+    Column("commissionable_net_profit", Numeric(18,6), nullable=False),
+    Column("commission_rate", Numeric(12,10), nullable=False),
+    Column("projected_amount", Numeric(18,6), nullable=False), S("status", nullable=False),
+    S("quarter"), Column("approved_amount", Numeric(18,6)), U("approved_by"), D("approved_at"),
+    D("created_at", nullable=False), UniqueConstraint("snapshot_id"),
+    ForeignKeyConstraint(["snapshot_id"], ["ws_margin_snapshot.id"]),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "approved_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+Index("idx_ws_cost_assumption_profile_effective", cost_assumption_sets.c.tenant_id,
+      cost_assumption_sets.c.profile, cost_assumption_sets.c.effective_from)
+Index("idx_ws_margin_snapshot_job_candidate", margin_snapshots.c.tenant_id,
+      margin_snapshots.c.job_id, margin_snapshots.c.candidate_id, margin_snapshots.c.version)
+Index("idx_ws_margin_snapshot_recruiter", margin_snapshots.c.tenant_id,
+      margin_snapshots.c.recruiter_user_id, margin_snapshots.c.created_at)
+
+
 job_publications = Table(
     "ws_job_publication", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), U("team_id"),
