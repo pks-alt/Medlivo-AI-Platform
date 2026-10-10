@@ -3514,6 +3514,9 @@ class WorkspaceStore:
         def apply(conn, principal):
             if principal["business_role"] != "recruiter":
                 raise AccessError(403, "Recruiter access required")
+            recruiter_id = str(value.recruiter_user_id)
+            if recruiter_id != principal["id"]:
+                raise AccessError(403, "Recruiters may only finalize their own rate packages")
             if value.profile in {
                 "nursing_allied_ca_w2",
                 "nursing_allied_national_w2",
@@ -3526,9 +3529,6 @@ class WorkspaceStore:
                     422,
                     "Use the structured pay package workflow for this division",
                 )
-            recruiter_id = str(value.recruiter_user_id)
-            if recruiter_id != principal["id"]:
-                raise AccessError(403, "Recruiters may only finalize their own rate packages")
 
             job_id = str(value.job_id)
             candidate_id = str(value.candidate_id)
