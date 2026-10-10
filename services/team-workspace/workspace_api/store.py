@@ -3822,6 +3822,138 @@ class WorkspaceStore:
             identity, key, "margin.discussion.recorded", payload, apply
         )
 
+    def list_margin_history(self, identity, *, job_id=None, candidate_id=None, limit=100):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            statement = select(t.margin_snapshots).where(
+                t.margin_snapshots.c.tenant_id == principal["tenant_id"]
+            )
+            role = principal["business_role"]
+            if role == "recruiter":
+                statement = statement.where(
+                    t.margin_snapshots.c.recruiter_user_id == principal["id"]
+                )
+            elif role == "delivery_manager":
+                managed_recruiters = select(t.profiles.c.user_id).join(
+                    t.teams,
+                    and_(
+                        t.teams.c.tenant_id == t.profiles.c.tenant_id,
+                        t.teams.c.id == t.profiles.c.team_id,
+                    ),
+                ).where(
+                    t.profiles.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+                statement = statement.where(
+                    t.margin_snapshots.c.recruiter_user_id.in_(managed_recruiters)
+                )
+            elif role != "executive":
+                raise AccessError(403, "Margin visibility requires recruiter, Delivery Manager, or Executive access")
+
+            if job_id:
+                statement = statement.where(t.margin_snapshots.c.job_id == job_id)
+            if candidate_id:
+                statement = statement.where(t.margin_snapshots.c.candidate_id == candidate_id)
+
+            rows = conn.execute(
+                statement.order_by(
+                    t.margin_snapshots.c.created_at.desc(),
+                    t.margin_snapshots.c.version.desc(),
+                ).limit(limit)
+            ).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
+    def margin_management_summary(self, identity, *, limit=500):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["business_role"] not in {"delivery_manager", "executive"}:
+                raise AccessError(403, "Management margin visibility required")
+
+            statement = select(t.margin_snapshots).where(
+                t.margin_snapshots.c.tenant_id == principal["tenant_id"]
+            )
+            if principal["business_role"] == "delivery_manager":
+                managed_recruiters = select(t.profiles.c.user_id).join(
+                    t.teams,
+                    and_(
+                        t.teams.c.tenant_id == t.profiles.c.tenant_id,
+                        t.teams.c.id == t.profiles.c.team_id,
+                    ),
+                ).where(
+                    t.profiles.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+                statement = statement.where(
+                    t.margin_snapshots.c.recruiter_user_id.in_(managed_recruiters)
+                )
+
+            rows = conn.execute(
+                statement.order_by(
+                    t.margin_snapshots.c.created_at.desc(),
+                    t.margin_snapshots.c.version.desc(),
+                ).limit(limit)
+            ).mappings().all()
+
+            latest = {}
+            for row in rows:
+                key = (row["job_id"], row["candidate_id"])
+                if key not in latest:
+                    latest[key] = row
+            current = list(latest.values())
+
+            def gm_percent(row):
+                try:
+                    return float((row.get("result_payload") or {}).get("gross_margin_percent") or 0)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            finalized = [row for row in current if row["lifecycle_status"] == "finalized"]
+            negative = [row for row in current if row["guideline_status"] == "negative_gm"]
+            discussions = [
+                row for row in current
+                if row["guideline_status"] in {"discuss_delivery_manager", "discuss_leadership"}
+                and row["lifecycle_status"] != "finalized"
+            ]
+            within = [row for row in current if row["guideline_status"] == "within_guideline"]
+            average_margin = (
+                sum(gm_percent(row) for row in current) / len(current)
+                if current else 0.0
+            )
+            finalized_average = (
+                sum(gm_percent(row) for row in finalized) / len(finalized)
+                if finalized else 0.0
+            )
+
+            recruiter_ids = {row["recruiter_user_id"] for row in current}
+            recruiter_names = {}
+            if recruiter_ids:
+                people = conn.execute(select(
+                    t.users.c.id, t.users.c.display_name
+                ).where(
+                    t.users.c.tenant_id == principal["tenant_id"],
+                    t.users.c.id.in_(recruiter_ids),
+                )).mappings().all()
+                recruiter_names = {row["id"]: row["display_name"] for row in people}
+
+            recent = []
+            for row in current[:50]:
+                item = clean(row)
+                item["recruiter_name"] = recruiter_names.get(row["recruiter_user_id"], "Recruiter")
+                recent.append(item)
+
+            return {
+                "totals": {
+                    "current_packages": len(current),
+                    "finalized": len(finalized),
+                    "within_guideline": len(within),
+                    "discussion_required": len(discussions),
+                    "negative_gm": len(negative),
+                    "average_gm_percent": average_margin,
+                    "finalized_average_gm_percent": finalized_average,
+                },
+                "recent": recent,
+            }
+
     def list_negative_margin_exceptions(self, identity, *, status="pending", limit=100):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
