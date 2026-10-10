@@ -169,3 +169,155 @@ def test_submission_package_versions_are_immutable_and_history_is_recruiter_scop
     )
     assert other.status_code == 200
     assert other.json()["items"] == []
+
+
+def test_recruiter_can_review_narrative_then_finalize_ready_package(client, headers, seeded):
+    seed_rehab_submission_ready(seeded)
+    client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(9940)},
+        json={"activate": True},
+    )
+    prepared = client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9941)},
+        json={},
+    )
+    assert prepared.status_code == 200
+    body = prepared.json()
+    narrative = next(x for x in body["items"] if x["requirement_key"] == "candidate_summary")
+
+    reviewed = client.post(
+        f"/api/v1/team/submission-studio/packages/{body['id']}/items/{narrative['id']}/review",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9942)},
+        json={
+            "decision": "approved",
+            "recruiter_note": "Reviewed against source-supported candidate facts.",
+            "resolved_value": {
+                "text": "Physical Therapist with verified NY licensure and relevant rehabilitation experience."
+            },
+        },
+    )
+    assert reviewed.status_code == 200
+    assert reviewed.json()["readiness_status"] == "ready"
+
+    finalized = client.post(
+        f"/api/v1/team/submission-studio/packages/{body['id']}/finalize",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9943)},
+        json={"confirmation": "reviewed_and_ready"},
+    )
+    assert finalized.status_code == 200
+    assert finalized.json()["status"] == "finalized"
+    assert finalized.json()["finalized_by"] == idn(10)
+
+
+def test_missing_required_document_cannot_be_manually_overridden(client, headers, seeded):
+    seed_rehab_submission_ready(seeded)
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Nursing & Allied", profession="Registered Nurse", specialty="ICU"
+        ))
+        conn.execute(update(t.candidates).where(t.candidates.c.id == idn(300)).values(
+            profession="Registered Nurse", specialty="ICU"
+        ))
+    client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(9950)},
+        json={"activate": True},
+    )
+    prepared = client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9951)},
+        json={},
+    )
+    assert prepared.status_code == 200
+    body = prepared.json()
+    skills = next(x for x in body["items"] if x["requirement_key"] == "skills_checklist")
+    bypass = client.post(
+        f"/api/v1/team/submission-studio/packages/{body['id']}/items/{skills['id']}/review",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9952)},
+        json={
+            "decision": "approved",
+            "recruiter_note": "Recruiter says checklist is available.",
+            "resolved_value": {"value": "available"},
+        },
+    )
+    assert bypass.status_code == 422
+    assert "required document" in bypass.json()["detail"].lower()
+
+
+def test_customer_program_template_versions_and_outranks_division_default(client, headers, seeded):
+    seed_rehab_submission_ready(seeded)
+    with seeded.begin() as conn:
+        conn.execute(insert(t.customers).values(
+            id=idn(1960), tenant_id=idn(1), name="Synthetic MSP", status="active",
+            metadata={}, created_at=now(), updated_at=now()
+        ))
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            customer_id=idn(1960)
+        ))
+    boot = client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(9960)},
+        json={"activate": True},
+    )
+    assert boot.status_code == 200
+    parent = next(x for x in boot.json()["created"] if x["division"] == "Rehabilitation")
+
+    template_payload = {
+        "name": "Synthetic MSP Rehab Program",
+        "division": "Rehabilitation",
+        "customer_id": idn(1960),
+        "program_name": "Program A",
+        "profession": None,
+        "specialty": None,
+        "template_scope": "program",
+        "parent_template_id": parent["template_id"],
+        "activate": True,
+        "resume_format_profile": {"style": "medlivo_standard"},
+        "output_profile": {"combined_pdf": True},
+        "ai_policy": {"candidate_summary": True},
+        "requirements": [
+            {
+                "requirement_key": "professional_references",
+                "label": "Two Professional References",
+                "requirement_type": "reference",
+                "category": "references",
+                "lifecycle_stage": "submission",
+                "sensitivity": "standard",
+                "fulfillment_strategy": "source_only",
+                "required": True,
+                "source_preference": [],
+                "validation_rule": {"min_count": 2},
+                "output_rule": {},
+                "display_order": 10,
+            }
+        ],
+    }
+    created = client.post(
+        "/api/v1/team/submission-studio/templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(9961)},
+        json=template_payload,
+    )
+    assert created.status_code == 200
+    assert created.json()["version"] == 1
+
+    created_v2 = client.post(
+        "/api/v1/team/submission-studio/templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(9962)},
+        json={**template_payload, "name": "Synthetic MSP Rehab Program v2"},
+    )
+    assert created_v2.status_code == 200
+    assert created_v2.json()["version"] == 2
+
+    prepared = client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9963)},
+        json={"program_name": "Program A"},
+    )
+    assert prepared.status_code == 200
+    body = prepared.json()
+    assert body["template"]["name"] == "Synthetic MSP Rehab Program v2"
+    keys = {x["requirement_key"] for x in body["items"]}
+    assert {"resume", "active_license", "candidate_summary", "professional_references"} <= keys
+    assert body["readiness_status"] == "missing_required"
