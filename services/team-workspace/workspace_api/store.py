@@ -10,7 +10,10 @@ from . import tables as t
 from .auth import Identity
 from .job_intake import process_rows, parse_xlsx, suggest_mapping
 from .intake_intelligence import analyze_intake_job
-from margin_engine import CostAssumptionSet, MarginInput, calculate_margin
+from margin_engine import (
+    CostAssumptionSet, MarginInput, W2PayPackageInput,
+    build_w2_pay_package, calculate_margin,
+)
 
 
 class AccessError(Exception):
@@ -3027,12 +3030,266 @@ class WorkspaceStore:
             ).limit(limit)).mappings().all()
             return {"items": [clean(row) for row in rows]}
 
+    def create_w2_pay_package_snapshot(self, identity, key, value):
+        payload = value.model_dump(mode="json")
+
+        def apply(conn, principal):
+            if principal["business_role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            recruiter_id = str(value.recruiter_user_id)
+            if recruiter_id != principal["id"]:
+                raise AccessError(403, "Recruiters may only create their own rate packages")
+
+            job_id = str(value.job_id)
+            candidate_id = str(value.candidate_id)
+            job = conn.execute(select(
+                t.jobs.c.id,
+                t.jobs.c.customer_id,
+                t.jobs.c.division,
+                t.jobs.c.state,
+            ).where(
+                t.jobs.c.tenant_id == principal["tenant_id"],
+                t.jobs.c.id == job_id,
+            )).mappings().first()
+            candidate = conn.execute(select(t.candidates.c.id).where(
+                t.candidates.c.tenant_id == principal["tenant_id"],
+                t.candidates.c.id == candidate_id,
+            )).first()
+            if job is None or candidate is None:
+                raise AccessError(404, "Job or candidate not found")
+
+            if not job["division"]:
+                raise AccessError(422, "Job division is required to select the correct calculator")
+            if not job["state"]:
+                raise AccessError(422, "Job state is required to select California vs National rules")
+
+            division_map = {
+                "Nursing & Allied": ("nursing_allied", "nursing_allied"),
+                "Rehabilitation": ("rehabilitation", "rehabilitation"),
+            }
+            if job["division"] not in division_map:
+                raise AccessError(
+                    422,
+                    "This structured W-2 workflow is only for Nursing & Allied or Rehabilitation",
+                )
+            division_key, profile_prefix = division_map[job["division"]]
+            state = str(job["state"]).strip().upper()
+            jurisdiction = "ca" if state in {"CA", "CALIFORNIA"} else "national"
+            profile = f"{profile_prefix}_{jurisdiction}_w2"
+
+            timestamp = now()
+            assumption_row = conn.execute(select(t.cost_assumption_sets).where(
+                t.cost_assumption_sets.c.tenant_id == principal["tenant_id"],
+                t.cost_assumption_sets.c.profile == profile,
+                t.cost_assumption_sets.c.status == "active",
+                t.cost_assumption_sets.c.effective_from <= timestamp,
+                or_(
+                    t.cost_assumption_sets.c.effective_to.is_(None),
+                    t.cost_assumption_sets.c.effective_to > timestamp,
+                ),
+            ).order_by(
+                t.cost_assumption_sets.c.effective_from.desc()
+            ).limit(1)).mappings().first()
+            if assumption_row is None:
+                raise AccessError(
+                    422,
+                    f"No active cost assumption set is configured for {profile}",
+                )
+
+            try:
+                assumptions = CostAssumptionSet.model_validate(
+                    assumption_row["assumption_payload"]
+                )
+            except Exception as error:
+                raise AccessError(500, "Active cost assumption set is invalid") from error
+
+            customer_rule = None
+            if job["customer_id"] is not None:
+                customer_rule = conn.execute(select(t.customer_economic_rules).where(
+                    t.customer_economic_rules.c.tenant_id == principal["tenant_id"],
+                    t.customer_economic_rules.c.customer_id == job["customer_id"],
+                    t.customer_economic_rules.c.calculation_profile == profile,
+                    t.customer_economic_rules.c.status == "active",
+                    t.customer_economic_rules.c.effective_from <= timestamp,
+                    or_(
+                        t.customer_economic_rules.c.effective_to.is_(None),
+                        t.customer_economic_rules.c.effective_to > timestamp,
+                    ),
+                ).order_by(
+                    t.customer_economic_rules.c.effective_from.desc()
+                ).limit(1)).mappings().first()
+
+            rule_payload = customer_rule["rule_payload"] if customer_rule else {}
+            assumption_updates = {}
+            for field in (
+                "professional_liability_rate", "factoring_rate", "overhead_rate"
+            ):
+                if rule_payload.get(field) is not None:
+                    assumption_updates[field] = Decimal(str(rule_payload[field]))
+            if assumption_updates:
+                assumptions = assumptions.model_copy(update=assumption_updates)
+
+            package_values = {
+                key: val for key, val in value.model_dump().items()
+                if key not in {"job_id", "candidate_id", "recruiter_user_id"}
+            }
+            package_values["profile"] = profile
+            package_values["division"] = division_key
+            try:
+                package_input = W2PayPackageInput.model_validate(package_values)
+                package = build_w2_pay_package(package_input, assumptions)
+            except ValueError as error:
+                raise AccessError(422, str(error)) from None
+
+            margin_input = package.to_margin_input(
+                package_input,
+                msp_fee_rate_override=(
+                    Decimal(str(rule_payload["msp_fee_rate"]))
+                    if customer_rule and rule_payload.get("msp_fee_rate") is not None
+                    else None
+                ),
+            )
+            result = calculate_margin(margin_input, assumptions)
+
+            next_version = conn.execute(select(func.coalesce(func.max(
+                t.margin_snapshots.c.version
+            ), 0) + 1).where(
+                t.margin_snapshots.c.tenant_id == principal["tenant_id"],
+                t.margin_snapshots.c.job_id == job_id,
+                t.margin_snapshots.c.candidate_id == candidate_id,
+            )).scalar_one()
+
+            snapshot_id = uid()
+            lifecycle = (
+                "hard_exception_required"
+                if result.guideline_status == "negative_gm"
+                else "draft"
+            )
+            result_payload = result.model_dump(mode="json")
+            result_payload["pay_package"] = package.model_dump(mode="json")
+            result_payload["calculator_source"] = (
+                "Anand - Medlivo Recruiter GM Calculator"
+                if division_key == "nursing_allied"
+                else "Prachi Medlivo Recruiter GM Calculator"
+            )
+            result_payload["economic_configuration"] = {
+                "assumption_version": assumptions.version,
+                "customer_rule_version": customer_rule["version"] if customer_rule else None,
+                "customer_rule_applied": bool(customer_rule),
+            }
+            input_payload = {
+                "workflow": "structured_w2_pay_package",
+                "recruiter_input": value.model_dump(mode="json"),
+                "derived_profile": profile,
+                "derived_division": division_key,
+                "derived_jurisdiction": jurisdiction,
+                "margin_input": margin_input.model_dump(mode="json"),
+            }
+
+            row = dict(
+                id=snapshot_id,
+                tenant_id=principal["tenant_id"],
+                job_id=job_id,
+                candidate_id=candidate_id,
+                recruiter_user_id=recruiter_id,
+                calculation_profile=profile,
+                assumption_set_id=assumption_row["id"],
+                assumption_version=assumptions.version,
+                version=int(next_version),
+                input_payload=input_payload,
+                result_payload=result_payload,
+                guideline_status=result.guideline_status,
+                lifecycle_status=lifecycle,
+                customer_rule_id=customer_rule["id"] if customer_rule else None,
+                customer_rule_version=customer_rule["version"] if customer_rule else None,
+                created_by=principal["id"],
+                created_at=timestamp,
+                finalized_by=None,
+                finalized_at=None,
+            )
+            conn.execute(insert(t.margin_snapshots).values(**row))
+
+            for component in result.cost_components:
+                conn.execute(insert(t.margin_cost_components).values(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    snapshot_id=snapshot_id,
+                    component_key=component.key,
+                    label=component.label,
+                    category=component.category,
+                    per_week=component.per_week,
+                    assignment_total=component.assignment_total,
+                    created_at=timestamp,
+                ))
+
+            conn.execute(insert(t.commission_projections).values(
+                id=uid(),
+                tenant_id=principal["tenant_id"],
+                snapshot_id=snapshot_id,
+                recruiter_user_id=recruiter_id,
+                commissionable_net_profit=result.commissionable_net_profit,
+                commission_rate=assumptions.commission_rate,
+                projected_amount=result.projected_recruiter_commission,
+                status="projected",
+                created_at=timestamp,
+            ))
+
+            if result.guideline_status == "negative_gm":
+                conn.execute(insert(t.approval_requests).values(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    approval_type="negative_margin_exception",
+                    object_type="margin_snapshot",
+                    object_id=snapshot_id,
+                    requested_by=principal["id"],
+                    required_authority="executive",
+                    status="pending",
+                    reason="Negative GM requires explicit leadership exception",
+                    decision_notes=None,
+                    decided_by=None,
+                    decided_at=None,
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                ))
+
+            self._operational_audit(
+                conn,
+                principal,
+                "margin.w2_package_snapshot.created",
+                "margin_snapshot",
+                snapshot_id,
+                {},
+                {
+                    "version": int(next_version),
+                    "profile": profile,
+                    "calculator_source": result_payload["calculator_source"],
+                    "guideline_status": result.guideline_status,
+                    "assumption_version": assumptions.version,
+                    "customer_rule_version": customer_rule["version"] if customer_rule else None,
+                },
+            )
+            return row
+
+        return self._global_mutate(
+            identity, key, "margin.w2_package_snapshot.created", payload, apply
+        )
+
     def create_margin_snapshot(self, identity, key, value):
         payload = value.model_dump(mode="json")
 
         def apply(conn, principal):
             if principal["business_role"] != "recruiter":
                 raise AccessError(403, "Recruiter access required")
+            if value.profile in {
+                "nursing_allied_ca_w2",
+                "nursing_allied_national_w2",
+                "rehabilitation_ca_w2",
+                "rehabilitation_national_w2",
+            }:
+                raise AccessError(
+                    422,
+                    "Use the structured W-2 pay package workflow for Nursing & Allied or Rehabilitation",
+                )
             recruiter_id = str(value.recruiter_user_id)
             if recruiter_id != principal["id"]:
                 raise AccessError(403, "Recruiters may only finalize their own rate packages")
