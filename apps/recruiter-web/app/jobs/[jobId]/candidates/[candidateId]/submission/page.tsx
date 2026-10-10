@@ -17,6 +17,7 @@ export default function SubmissionStudioPage({params}:{params:Promise<{jobId:str
  const[job,setJob]=useState<any>(null),[candidate,setCandidate]=useState<any>(null),[me,setMe]=useState<any>(null);
  const[pack,setPack]=useState<any>(null),[history,setHistory]=useState<any[]>([]);
  const[error,setError]=useState(""),[busy,setBusy]=useState(false),[program,setProgram]=useState("");
+ const[itemNotes,setItemNotes]=useState<Record<string,string>>({}),[itemValues,setItemValues]=useState<Record<string,string>>({});
 
  async function loadAll(p:{jobId:string,candidateId:string}){
   const[m,j,c,h]=await Promise.all([
@@ -30,6 +31,37 @@ export default function SubmissionStudioPage({params}:{params:Promise<{jobId:str
   }
  }
  useEffect(()=>{params.then(async p=>{setIds(p);await loadAll(p)}).catch(e=>setError(e.message))},[params]);
+
+ async function refreshPackage(id:string){
+  const latest=await api("submission-studio/packages/"+id);setPack(latest);
+  if(ids){
+   const h=await api("submission-studio/packages?job_id="+ids.jobId+"&candidate_id="+ids.candidateId+"&limit=25");
+   setHistory(h.items||[]);
+  }
+ }
+ async function reviewItem(item:any,decision:"approved"|"waived"|"not_applicable"){
+  if(!pack)return;setBusy(true);setError("");
+  try{
+   const textValue=(itemValues[item.id]||"").trim();
+   const payload:any={decision,recruiter_note:(itemNotes[item.id]||"").trim()||null,resolved_value:null};
+   if(decision==="approved"&&item.requirement_key==="candidate_summary")payload.resolved_value={text:textValue};
+   else if(decision==="approved"&&item.status==="missing"&&textValue)payload.resolved_value={value:textValue};
+   await api("submission-studio/packages/"+pack.id+"/items/"+item.id+"/review",{
+    method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)
+   });
+   await refreshPackage(pack.id);
+  }catch(e:any){setError(e.message)}finally{setBusy(false)}
+ }
+ async function finalize(){
+  if(!pack)return;setBusy(true);setError("");
+  try{
+   const final=await api("submission-studio/packages/"+pack.id+"/finalize",{
+    method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},
+    body:JSON.stringify({confirmation:"reviewed_and_ready"})
+   });
+   setPack(final);await refreshPackage(final.id);
+  }catch(e:any){setError(e.message)}finally{setBusy(false)}
+ }
 
  async function prepare(){
   if(!ids)return;setBusy(true);setError("");
@@ -80,9 +112,24 @@ export default function SubmissionStudioPage({params}:{params:Promise<{jobId:str
      <div className="submissionChecklist">{items.map((x:any)=><article key={x.id} className={"submissionItem "+x.status}>
       <div><b>{x.label}</b><span>{String(x.item_type||"item").replaceAll("_"," ")}</span></div>
       <strong>{statusLabel(x.status)}</strong>
-      {x.status==="needs_review"&&x.requirement_key==="candidate_summary"&&<p>Medlivo has gathered source facts. The narrative will be generated only through the approved AI model and must be reviewed before use.</p>}
-      {x.status==="missing"&&<p>Required by the active template but no current matching evidence was found.</p>}
-      {x.status==="matched"&&<p>Matched to existing candidate evidence. Recruiter review remains available before final generation.</p>}
+      {x.status==="needs_review"&&x.requirement_key==="candidate_summary"&&<>
+       <p>Medlivo has gathered source facts. Use the approved AI model when connected, or enter the reviewed presentation text here.</p>
+       <textarea className="submissionNarrative" value={itemValues[x.id]||""} onChange={e=>setItemValues({...itemValues,[x.id]:e.target.value})} placeholder="Reviewed candidate presentation"/>
+       <button className="submissionItemAction" disabled={busy||!(itemValues[x.id]||"").trim()} onClick={()=>reviewItem(x,"approved")}>Approve Presentation</button>
+      </>}
+      {x.status==="missing"&&<>
+       <p>Required by the active template but no current matching evidence was found.</p>
+       {!["document","skills_checklist","reference","form"].includes(x.item_type)&&<>
+        <input className="submissionManualValue" value={itemValues[x.id]||""} onChange={e=>setItemValues({...itemValues,[x.id]:e.target.value})} placeholder="Confirmed value"/>
+        <button className="submissionItemAction" disabled={busy||!(itemValues[x.id]||"").trim()} onClick={()=>reviewItem(x,"approved")}>Confirm Value</button>
+       </>}
+      </>}
+      {x.status==="conflict"&&<>
+       <p>Conflicting evidence requires recruiter review. Do not approve until the source is confirmed.</p>
+       <textarea className="submissionNarrative" value={itemNotes[x.id]||""} onChange={e=>setItemNotes({...itemNotes,[x.id]:e.target.value})} placeholder="Resolution note"/>
+      </>}
+      {x.status==="matched"&&<p>Matched to existing candidate evidence. It is already counted toward readiness.</p>}
+      {["approved","waived","not_applicable"].includes(x.status)&&x.recruiter_note&&<p>{x.recruiter_note}</p>}
      </article>)}</div>
     </section>
 
@@ -94,6 +141,12 @@ export default function SubmissionStudioPage({params}:{params:Promise<{jobId:str
      <div className="submissionBoundary"><b>Nothing is submitted automatically.</b><span>Phase 1 prepares, validates and generates the package. The recruiter reviews it and uses the customer/MSP submission channel.</span></div>
     </aside>
    </div>
+
+   {pack.status!=="finalized"&&<section className="submissionFinalize">
+    <div><b>{pack.readiness_status==="ready"?"Package is ready for recruiter final review.":"Resolve the remaining items before finalizing."}</b><span>Finalizing locks this package version. It does not submit anything to JobDiva or the MSP/VMS.</span></div>
+    <button disabled={busy||pack.readiness_status!=="ready"} onClick={finalize}>{busy?"Working…":"Finalize Submission Package"}</button>
+   </section>}
+   {pack.status==="finalized"&&<div className="goodState">Submission package finalized and locked for this version.</div>}
 
    <section className="panelBox"><small>PACKAGE VERSION</small><div className="adminRows">
     <div><span>Template</span><b>{pack.template?.name||"Configured template"}</b></div>
