@@ -215,6 +215,7 @@ candidate_document_assets = Table(
     S("document_type", nullable=False), S("title", nullable=False), S("source_system"),
     S("source_reference"), S("storage_reference"), Column("issue_date", Date),
     Column("expiration_date", Date), S("verified_status", nullable=False), S("verified_source"),
+    D("verified_at"), D("fresh_through"), S("jurisdiction"), S("authority_type"),
     Column("extracted_facts", JSON, nullable=False, default=dict),
     Column("ai_classification", JSON, nullable=False, default=dict), S("content_hash"),
     Column("is_current", Boolean, nullable=False), D("created_at", nullable=False), D("updated_at", nullable=False),
