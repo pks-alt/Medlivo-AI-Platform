@@ -12,10 +12,14 @@ def seed_assumptions(profile: str) -> CostAssumptionSet:
         commission_rate=Decimal("0.03"),
     )
 
-    if profile == "nursing_rehab_ca_w2":
+    if profile in {"nursing_allied_ca_w2", "rehabilitation_ca_w2"}:
         return CostAssumptionSet(
             profile=profile,
-            version="workbook-2026-10-ca-w2-v1",
+            version=(
+                "anand-2026-10-nursing-ca-v1"
+                if profile == "nursing_allied_ca_w2"
+                else "prachi-2026-10-rehab-ca-v1"
+            ),
             payroll_tax_rate=Decimal("0.106"),
             workers_comp_rate=Decimal("0.034"),
             sick_leave_reserve_hours_per_hour=Decimal("0.03333333333333333"),
@@ -29,10 +33,14 @@ def seed_assumptions(profile: str) -> CostAssumptionSet:
             **common,
         )
 
-    if profile == "nursing_rehab_national_w2":
+    if profile in {"nursing_allied_national_w2", "rehabilitation_national_w2"}:
         return CostAssumptionSet(
             profile=profile,
-            version="workbook-2026-10-national-w2-v1",
+            version=(
+                "anand-2026-10-nursing-national-v1"
+                if profile == "nursing_allied_national_w2"
+                else "prachi-2026-10-rehab-national-v1"
+            ),
             payroll_tax_rate=Decimal("0.106"),
             workers_comp_rate=Decimal("0.015"),
             sick_leave_reserve_hours_per_hour=Decimal("0.03333333333333333"),

@@ -9,19 +9,27 @@ The platform must not embed three unrelated spreadsheet calculators.
 
 The uploaded workbooks are the authoritative formula-validation and current-assumption references for the initial calculation profiles:
 
-1. **Nursing / Allied / Rehabilitation — California W-2**
+1. **Nursing & Allied — California W-2**
    - Source workbook: `Anand - Medlivo Recruiter GM Calculator.xlsx`
    - Source sheets: California GM Calculator, CA Engine, Internal Calculations, Rules & Calculations
 
-2. **Nursing / Allied / Rehabilitation — National W-2**
+2. **Nursing & Allied — National W-2**
    - Source workbook: `Anand - Medlivo Recruiter GM Calculator.xlsx`
    - Source sheets: National GM Calculator, National Engine, Internal Calculations, Rules & Calculations
 
-3. **Locum Tenens — California W-2**
+3. **Rehabilitation — California W-2**
+   - Source workbook: `Prachi Medlivo Recruiter GM Calculator.xlsx`
+   - Source sheets: California GM Calculator, CA Engine, Internal Calculations, Rules & Calculations
+
+4. **Rehabilitation — National W-2**
+   - Source workbook: `Prachi Medlivo Recruiter GM Calculator.xlsx`
+   - Source sheets: National GM Calculator, National Engine, Internal Calculations, Rules & Calculations
+
+5. **Locum Tenens — California W-2**
    - Source workbook: `Medlivo CA Locums W-2 GM Calculator.xlsx`
    - Source sheets: CA Locums W-2 GM Calculator, CA Locums Engine, Pricing Summary, Admin Assumptions
 
-4. **Locum Tenens — Nationwide 1099**
+6. **Locum Tenens — Nationwide 1099**
    - Source workbook: `Medlivo Locums 1099 GM Calculator.xlsx`
    - Source sheets: 1099 GM Calculator, Locums Engine, Pricing Summary, Rules
 
@@ -149,7 +157,7 @@ GM % must not be calculated against gross billing.
 
 ## 5. Calculation profiles
 
-## 5.1 Nursing / Allied / Rehab — California W-2
+## 5.1 Nursing & Allied — California W-2
 
 Current workbook assumptions used as initial seed values:
 
@@ -180,7 +188,7 @@ The current workbook determines daily and weekly overtime and double-time from s
 
 The recruiter must not choose whether California OT/DT applies.
 
-## 5.2 Nursing / Allied / Rehab — National W-2
+## 5.2 Nursing & Allied — National W-2
 
 Initial workbook assumptions are the same as California except:
 
@@ -193,7 +201,42 @@ National profile supports configurable weekly OT treatment, including the curren
 
 These rules must be configuration/policy driven rather than recruiter-entered free text in production.
 
-## 5.3 Locum Tenens — California W-2
+## 5.3 Rehabilitation — California W-2
+
+Authoritative source: `Prachi Medlivo Recruiter GM Calculator.xlsx`.
+
+The current protected assumptions and formula structure match the corresponding Nursing & Allied California rules, but Rehabilitation remains a **separate calculation profile** so future Rehab policy changes cannot affect Nursing & Allied.
+
+Initial workbook assumptions:
+- Employer payroll taxes: 10.6% of taxable wages
+- Workers' compensation: 3.4% of taxable wages
+- Professional liability & other insurance: 2.5% of net billing
+- Factoring: 2.4% of net billing
+- Internal overhead: 3.5% of net billing
+- Default MSP/VMS fee: 6.0% of gross billing
+- Rehab credentialing/onboarding: $500 per New Contract
+- Vivian sourcing: $1,400 per New Contract
+- W-2 benefits and sick-leave reserve use the approved protected assumptions
+- California OT and double-time remain automatic and conservative
+
+## 5.4 Rehabilitation — National W-2
+
+Authoritative source: `Prachi Medlivo Recruiter GM Calculator.xlsx`.
+
+The current protected assumptions and formula structure match the corresponding Nursing & Allied National rules, but Rehabilitation remains a **separate calculation profile**.
+
+Initial workbook assumptions:
+- Employer payroll taxes: 10.6% of taxable wages
+- Workers' compensation: 1.5% of taxable wages
+- Professional liability & other insurance: 2.5% of net billing
+- Factoring: 2.4% of net billing
+- Internal overhead: 3.5% of net billing
+- Default MSP/VMS fee: 6.0% of gross billing
+- Rehab credentialing/onboarding: $500 per New Contract
+- Vivian sourcing: $1,400 per New Contract
+- National OT policy remains configuration driven
+
+## 5.5 Locum Tenens — California W-2
 
 Current workbook assumptions used as initial seed values:
 
@@ -234,7 +277,7 @@ Supported economics include:
 - bonuses
 - one-time assignment costs
 
-## 5.4 Locum Tenens — Nationwide 1099
+## 5.6 Locum Tenens — Nationwide 1099
 
 Current workbook assumptions used as initial seed values:
 
@@ -697,7 +740,7 @@ For every fixture, platform outputs must reconcile to the authoritative workbook
 The following are finalized:
 
 - One enterprise Margin & Cost Engine, not separate spreadsheet codebases
-- Four initial calculation profiles
+- Six initial calculation profiles: Nursing & Allied CA/National, Rehabilitation CA/National, Locums CA W-2, and Locums Nationwide 1099
 - GM % uses Net Client Billing
 - recruiter never manually calculates GM
 - cost assumptions are versioned

@@ -1,5 +1,6 @@
 from .assumptions import seed_assumptions
 from .calculator import calculate_margin
+from .w2_pay_package import W2PayPackageInput, W2PayPackageResult, build_w2_pay_package
 from .models import (
     GuidelineBands,
     CostAssumptionSet,
@@ -16,4 +17,7 @@ __all__ = [
     "MarginResult",
     "seed_assumptions",
     "calculate_margin",
+    "W2PayPackageInput",
+    "W2PayPackageResult",
+    "build_w2_pay_package",
 ]
