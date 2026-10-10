@@ -56,6 +56,7 @@ customers = Table(
     "customer", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), S("name", nullable=False),
     S("status"), Column("metadata", JSON, nullable=False, default=dict), D("created_at"), D("updated_at"),
+    UniqueConstraint("tenant_id", "id"),
 )
 job_requirements = Table(
     "job_requirement", metadata,
