@@ -196,8 +196,10 @@ class MarginCalculationInput(StrictInput):
     candidate_id: UUID
     recruiter_user_id: UUID
     profile: Literal[
-        "nursing_rehab_ca_w2",
-        "nursing_rehab_national_w2",
+        "nursing_allied_ca_w2",
+        "nursing_allied_national_w2",
+        "rehabilitation_ca_w2",
+        "rehabilitation_national_w2",
         "locums_ca_w2",
         "locums_national_1099",
     ]
@@ -231,8 +233,10 @@ class MarginFinalizeInput(StrictInput):
 
 class CostAssumptionSetInput(StrictInput):
     profile: Literal[
-        "nursing_rehab_ca_w2",
-        "nursing_rehab_national_w2",
+        "nursing_allied_ca_w2",
+        "nursing_allied_national_w2",
+        "rehabilitation_ca_w2",
+        "rehabilitation_national_w2",
         "locums_ca_w2",
         "locums_national_1099",
     ]
@@ -272,8 +276,10 @@ class CustomerEconomicRulePayload(StrictInput):
 class CustomerEconomicRuleInput(StrictInput):
     customer_id: UUID
     calculation_profile: Literal[
-        "nursing_rehab_ca_w2",
-        "nursing_rehab_national_w2",
+        "nursing_allied_ca_w2",
+        "nursing_allied_national_w2",
+        "rehabilitation_ca_w2",
+        "rehabilitation_national_w2",
         "locums_ca_w2",
         "locums_national_1099",
     ]
@@ -287,3 +293,46 @@ class CustomerEconomicRuleInput(StrictInput):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("A timezone-aware effective date is required")
         return value
+
+
+class W2PayPackageSnapshotInput(StrictInput):
+    job_id: UUID
+    candidate_id: UUID
+    recruiter_user_id: UUID
+    customer_type: Literal["direct", "msp_vms"]
+    contract_type: Literal["new_contract", "extension"] = "new_contract"
+    candidate_source: Literal["internal_database", "vivian", "referral", "job_board", "other"] = "internal_database"
+
+    contract_weeks: float = Field(gt=0)
+    shift_length_hours: float = Field(gt=0)
+    shifts_per_week: float = Field(gt=0)
+
+    regular_client_bill_rate: float = Field(gt=0)
+    ot_client_bill_rate: float | None = Field(default=None, ge=0)
+    double_time_client_bill_rate: float | None = Field(default=None, ge=0)
+    holiday_client_bill_rate: float | None = Field(default=None, ge=0)
+    on_call_client_bill_rate: float | None = Field(default=None, ge=0)
+    callback_client_bill_rate: float | None = Field(default=None, ge=0)
+
+    taxable_base_hourly_pay: float = Field(gt=0)
+    housing_stipend_per_hour: float = Field(default=0, ge=0)
+    meals_incidentals_stipend_per_hour: float = Field(default=0, ge=0)
+    clinician_holiday_pay_rate: float | None = Field(default=None, ge=0)
+    clinician_on_call_pay_rate: float = Field(default=0, ge=0)
+    callback_pay_rate: float | None = Field(default=None, ge=0)
+
+    additional_expected_ot_hours: float = Field(default=0, ge=0)
+    holiday_hours: float = Field(default=0, ge=0)
+    on_call_hours: float = Field(default=0, ge=0)
+    callback_hours: float = Field(default=0, ge=0)
+    orientation_hours: float = Field(default=0, ge=0)
+    national_double_time_hours: float = Field(default=0, ge=0)
+    national_ot_rule: Literal["standard_ot", "48_regular_no_ot"] = "standard_ot"
+
+    employee_benefits_enabled: bool = False
+
+    assignment_stipend: float = Field(default=0, ge=0)
+    sign_on_bonus: float = Field(default=0, ge=0)
+    completion_bonus: float = Field(default=0, ge=0)
+    travel_reimbursement: float = Field(default=0, ge=0)
+    other_reimbursement: float = Field(default=0, ge=0)
