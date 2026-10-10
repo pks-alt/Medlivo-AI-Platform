@@ -3797,10 +3797,15 @@ class WorkspaceStore:
             if requirement is None:
                 raise AccessError(409, "Submission requirement is unavailable")
 
-            if value.decision in {"waived", "not_applicable"} and (
-                value.recruiter_note is None or len(value.recruiter_note.strip()) < 5
-            ):
-                raise AccessError(422, "Waiver or not-applicable decisions require a reason")
+            if value.decision in {"waived", "not_applicable"}:
+                if value.recruiter_note is None or len(value.recruiter_note.strip()) < 5:
+                    raise AccessError(422, "Waiver or not-applicable decisions require a reason")
+                allow_waiver = bool((requirement.get("validation_rule") or {}).get("allow_recruiter_waiver"))
+                if requirement["required"] and not allow_waiver:
+                    raise AccessError(
+                        422,
+                        "This customer-required submission item cannot be waived by the recruiter"
+                    )
             if value.decision == "approved" and item["status"] == "missing":
                 if requirement["requirement_type"] in {
                     "document", "skills_checklist", "reference", "form"
