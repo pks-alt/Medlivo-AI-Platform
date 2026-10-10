@@ -327,6 +327,12 @@ def build_app(store, verifier):
             who, str(batch_id), str(item_id), str(idempotency_key), value
         )
 
+    @app.post(prefix + "/economic-config/bootstrap-assumptions")
+    def bootstrap_economic_assumptions(idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.bootstrap_economic_assumptions(
+            who, str(idempotency_key)
+        )
+
     @app.get(prefix + "/economic-config/assumptions")
     def economic_assumptions(profile: str | None = None,
                              limit: int = Query(default=100, ge=1, le=200),
