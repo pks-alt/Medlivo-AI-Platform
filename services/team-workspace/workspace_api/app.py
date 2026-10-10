@@ -18,7 +18,7 @@ from .schemas import (
     JobOperationalUpdate, JobAssignmentInput, JobIntakeItemDecision,
     MarginCalculationInput, MarginDiscussionInput, MarginFinalizeInput,
     CostAssumptionSetInput, CustomerEconomicRuleInput,
-    W2PayPackageSnapshotInput,
+    W2PayPackageSnapshotInput, LocumsPayPackageSnapshotInput,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -349,6 +349,13 @@ def build_app(store, verifier):
     def create_customer_economic_rule(value: CustomerEconomicRuleInput,
                                       idempotency_key: UUID = Header(), who=Depends(identity)):
         return store.create_customer_economic_rule(who, str(idempotency_key), value)
+
+    @app.post(prefix + "/margin/locums-pay-package-snapshots", status_code=201)
+    def create_locums_pay_package_snapshot(value: LocumsPayPackageSnapshotInput,
+                                           idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.create_locums_pay_package_snapshot(
+            who, str(idempotency_key), value
+        )
 
     @app.post(prefix + "/margin/w2-pay-package-snapshots", status_code=201)
     def create_w2_pay_package_snapshot(value: W2PayPackageSnapshotInput,

@@ -39,7 +39,7 @@ def seed_customer(seeded):
         conn.execute(update(t.jobs).where(
             t.jobs.c.id == idn(200),
             t.jobs.c.tenant_id == idn(1),
-        ).values(customer_id=idn(400)))
+        ).values(customer_id=idn(400), division="Locum Tenens", state="TX"))
 
 
 def margin_payload():
@@ -47,22 +47,29 @@ def margin_payload():
         "job_id": idn(200),
         "candidate_id": idn(300),
         "recruiter_user_id": idn(10),
-        "profile": "locums_national_1099",
-        "division": "locum_tenens",
+        "worker_classification": "1099",
+        "assignment_type": "contract",
         "customer_type": "msp_vms",
         "contract_type": "new_contract",
         "candidate_source": "internal_database",
-        "assignment_weeks_equivalent": 13,
-        "gross_client_billing_per_week": 10000,
-        "contractor_compensation_per_week": 6000,
-        "actual_worked_hours_per_week": 40,
         "shifts_per_week": 5,
+        "contract_weeks": 13,
+        "shift_length_hours": 8,
+        "client_rate_type": "hourly",
+        "client_rate_amount": 250,
+        "provider_rate_type": "hourly",
+        "provider_rate_amount": 150,
     }
 
 
-def test_margin_snapshot_fails_closed_without_active_assumptions(client, headers):
+def test_margin_snapshot_fails_closed_without_active_assumptions(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(
+            t.jobs.c.id == idn(200),
+            t.jobs.c.tenant_id == idn(1),
+        ).values(division="Locum Tenens", state="TX"))
     response = client.post(
-        "/api/v1/team/margin/snapshots",
+        "/api/v1/team/margin/locums-pay-package-snapshots",
         headers=headers("recruiter-a"),
         json=margin_payload(),
     )
@@ -153,7 +160,7 @@ def test_customer_msp_rule_overrides_profile_default_and_is_snapshotted(client, 
     assert rule.status_code == 201
 
     snapshot = client.post(
-        "/api/v1/team/margin/snapshots",
+        "/api/v1/team/margin/locums-pay-package-snapshots",
         headers=headers("recruiter-a"),
         json=margin_payload(),
     )
@@ -225,7 +232,7 @@ def test_recruiter_cannot_manually_override_msp_fee(client, headers, seeded):
     payload = margin_payload()
     payload["msp_fee_rate_override"] = 0.01
     response = client.post(
-        "/api/v1/team/margin/snapshots",
+        "/api/v1/team/margin/locums-pay-package-snapshots",
         headers=headers("recruiter-a"),
         json=payload,
     )
