@@ -11,17 +11,21 @@ const label=(s:any)=>String(s||"").replaceAll("_"," ");
 const fmt=(v:any)=>v?new Date(v).toLocaleString():"—";
 
 export default function FunnelDetail({params}:{params:Promise<{jobId:string,candidateId:string}>}){
- const[ids,setIds]=useState<any>(null),[me,setMe]=useState<any>(null),[job,setJob]=useState<any>(null),[candidate,setCandidate]=useState<any>(null),[data,setData]=useState<any>(null);
+ const[ids,setIds]=useState<any>(null),[me,setMe]=useState<any>(null),[job,setJob]=useState<any>(null),[candidate,setCandidate]=useState<any>(null),[data,setData]=useState<any>(null),[owners,setOwners]=useState<any[]>([]);
  const[error,setError]=useState(""),[busy,setBusy]=useState(false);
  const[status,setStatus]=useState("in_progress"),[risk,setRisk]=useState("unknown"),[riskReason,setRiskReason]=useState(""),[nextAction,setNextAction]=useState(""),[owner,setOwner]=useState(""),[due,setDue]=useState("");
  const[itemKey,setItemKey]=useState(""),[itemLabel,setItemLabel]=useState(""),[itemCategory,setItemCategory]=useState("compliance"),[itemStatus,setItemStatus]=useState("missing"),[itemRequired,setItemRequired]=useState(true),[itemNotes,setItemNotes]=useState("");
 
  async function refresh(p=ids){
   if(!p)return;
-  const[m,j,c,d]=await Promise.all([api("me"),api("jobs/"+p.jobId),api("candidates/"+p.candidateId),api("funnel/"+p.jobId+"/"+p.candidateId)]);
-  setMe(m);setJob(j);setCandidate(c);setData(d);
+  const m=await api("me");
+  const ownerData=m.business_role==="recruiter"?{recruiters:[{id:m.id,display_name:m.display_name||"Me"}]}:await api("manager/overview");
+  const[j,c,d]=await Promise.all([api("jobs/"+p.jobId),api("candidates/"+p.candidateId),api("funnel/"+p.jobId+"/"+p.candidateId)]);
+  const ownerList=(ownerData.recruiters||[]).map((x:any)=>({id:x.id,display_name:x.display_name||"Team member"}));
+  if(!ownerList.some((x:any)=>x.id===m.id))ownerList.unshift({id:m.id,display_name:m.display_name||"Me"});
+  setOwners(ownerList);setMe(m);setJob(j);setCandidate(c);setData(d);
   const r=d.start_readiness;
-  if(r){setStatus(r.status);setRisk(r.risk_level);setRiskReason(r.risk_reason||"");setNextAction(r.next_action||"");setOwner(r.owner_user_id||"");setDue(r.due_at?new Date(r.due_at).toISOString().slice(0,16):"");}
+  if(r){setStatus(r.status);setRisk(r.risk_level);setRiskReason(r.risk_reason||"");setNextAction(r.next_action||"");setOwner(r.owner_user_id||m.id);setDue(r.due_at?new Date(r.due_at).toISOString().slice(0,16):"");}else setOwner(m.id);
  }
  useEffect(()=>{params.then(async p=>{setIds(p);await refresh(p)}).catch(e=>setError(e.message))},[params]);
 
@@ -67,7 +71,7 @@ export default function FunnelDetail({params}:{params:Promise<{jobId:string,cand
     <form className="readinessForm" onSubmit={saveReadiness}>
      <label><span>Status</span><select value={status} onChange={e=>setStatus(e.target.value)}><option value="not_started">Not Started</option><option value="in_progress">In Progress</option><option value="ready">Ready</option><option value="blocked">Blocked</option><option value="started">Started</option></select></label>
      <label><span>Risk Level</span><select value={risk} onChange={e=>setRisk(e.target.value)}><option value="unknown">Unknown</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option></select></label>
-     <label><span>Owner User ID</span><input value={owner} onChange={e=>setOwner(e.target.value)} placeholder="Assign responsible owner"/></label>
+     <label><span>Owner</span><select value={owner} onChange={e=>setOwner(e.target.value)}>{owners.map((x:any)=><option key={x.id} value={x.id}>{x.display_name}</option>)}</select></label>
      <label><span>Due Date</span><input type="datetime-local" value={due} onChange={e=>setDue(e.target.value)}/></label>
      <label className="wide"><span>Risk Reason</span><textarea value={riskReason} onChange={e=>setRiskReason(e.target.value)} placeholder="Required for high or critical risk"/></label>
      <label className="wide"><span>Next Action</span><textarea value={nextAction} onChange={e=>setNextAction(e.target.value)} placeholder="What should happen next?"/></label>
