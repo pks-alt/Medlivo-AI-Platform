@@ -7,6 +7,7 @@ from workspace_api import tables as t
 from workspace_api.app import build_app
 from workspace_api.store import now, WorkspaceStore
 from workspace_api.submission_ai import SubmissionAIResult
+from workspace_api.submission_artifacts import GeneratedPacket
 
 
 def idn(n):
@@ -406,3 +407,108 @@ def test_ai_composer_creates_source_grounded_draft_but_does_not_auto_approve(
         json={"confirmation": "reviewed_and_ready"},
     )
     assert finalized.status_code == 422
+
+
+class FakePacketGenerator:
+    def __init__(self):
+        self.contexts = []
+
+    def generate(self, context):
+        self.contexts.append(context)
+        return GeneratedPacket(
+            content=b"PKfake-submission-package",
+            filename="Synthetic_Candidate_PT_Submission_v1.zip",
+            manifest={"candidate": context["candidate"]["canonical_name"]},
+        )
+
+
+def _prepare_review_finalize(client, headers, seeded, key_base):
+    seed_rehab_submission_ready(seeded)
+    client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(key_base)},
+        json={"activate": True},
+    )
+    prepared = client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(key_base + 1)},
+        json={},
+    )
+    assert prepared.status_code == 200
+    body = prepared.json()
+    narrative = next(x for x in body["items"] if x["requirement_key"] == "candidate_summary")
+    reviewed = client.post(
+        f"/api/v1/team/submission-studio/packages/{body['id']}/items/{narrative['id']}/review",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(key_base + 2)},
+        json={
+            "decision": "approved",
+            "recruiter_note": "Reviewed against verified source facts.",
+            "resolved_value": {"text": "Verified Physical Therapist with active New York licensure."},
+        },
+    )
+    assert reviewed.status_code == 200
+    finalized = client.post(
+        f"/api/v1/team/submission-studio/packages/{body['id']}/finalize",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(key_base + 3)},
+        json={"confirmation": "reviewed_and_ready"},
+    )
+    assert finalized.status_code == 200
+    return finalized.json()
+
+
+def test_submission_download_fails_closed_when_generator_not_configured(client, headers, seeded):
+    package = _prepare_review_finalize(client, headers, seeded, 9990)
+    response = client.get(
+        f"/api/v1/team/submission-studio/packages/{package['id']}/download",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 503
+
+
+def test_finalized_submission_download_is_recruiter_scoped_and_binary(seeded, verifier, headers):
+    generator = FakePacketGenerator()
+    download_client = TestClient(build_app(
+        WorkspaceStore(seeded, submission_packet_generator=generator), verifier
+    ))
+    package = _prepare_review_finalize(download_client, headers, seeded, 10010)
+
+    response = download_client.get(
+        f"/api/v1/team/submission-studio/packages/{package['id']}/download",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert "Synthetic_Candidate_PT_Submission_v1.zip" in response.headers["content-disposition"]
+    assert response.content == b"PKfake-submission-package"
+    assert generator.contexts[0]["candidate"]["canonical_name"] == "Synthetic Candidate One"
+
+    other = download_client.get(
+        f"/api/v1/team/submission-studio/packages/{package['id']}/download",
+        headers=headers("recruiter-b"),
+    )
+    assert other.status_code == 404
+
+
+def test_draft_submission_cannot_be_downloaded(seeded, verifier, headers):
+    generator = FakePacketGenerator()
+    download_client = TestClient(build_app(
+        WorkspaceStore(seeded, submission_packet_generator=generator), verifier
+    ))
+    seed_rehab_submission_ready(seeded)
+    download_client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(10020)},
+        json={"activate": True},
+    )
+    prepared = download_client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(10021)},
+        json={},
+    )
+    assert prepared.status_code == 200
+    response = download_client.get(
+        f"/api/v1/team/submission-studio/packages/{prepared.json()['id']}/download",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 422
+    assert generator.contexts == []
