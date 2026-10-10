@@ -189,3 +189,47 @@ class ApprovalDecisionInput(StrictInput):
         if self.decision == "rejected" and not self.notes:
             raise ValueError("A rejection reason is required")
         return self
+
+
+class MarginCalculationInput(StrictInput):
+    job_id: UUID
+    candidate_id: UUID
+    recruiter_user_id: UUID
+    profile: Literal[
+        "nursing_rehab_ca_w2",
+        "nursing_rehab_national_w2",
+        "locums_ca_w2",
+        "locums_national_1099",
+    ]
+    division: Literal["nursing_allied", "rehabilitation", "locum_tenens"]
+    customer_type: Literal["direct", "msp_vms"]
+    contract_type: Literal["new_contract", "extension"] = "new_contract"
+    candidate_source: Literal["internal_database", "vivian", "referral", "job_board", "other"] = "internal_database"
+    assignment_weeks_equivalent: float = Field(gt=0)
+    gross_client_billing_per_week: float = Field(ge=0)
+    taxable_wages_per_week: float = Field(default=0, ge=0)
+    contractor_compensation_per_week: float = Field(default=0, ge=0)
+    recurring_non_taxable_cost_per_week: float = Field(default=0, ge=0)
+    other_recurring_cost_per_week: float = Field(default=0, ge=0)
+    other_one_time_cost_assignment: float = Field(default=0, ge=0)
+    employee_benefits_enabled: bool = False
+    msp_fee_rate_override: float | None = Field(default=None, ge=0, le=1)
+    actual_worked_hours_per_week: float | None = Field(default=None, gt=0)
+    shifts_per_week: float | None = Field(default=None, gt=0)
+    commissionable_net_profit_override: float | None = None
+
+
+class MarginFinalizeInput(StrictInput):
+    expected_version: int = Field(ge=1)
+
+
+class MarginApprovalDecision(StrictInput):
+    decision: Literal["approved", "rejected"]
+    notes: str | None = Field(default=None, max_length=1000)
+    expected_snapshot_version: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def margin_rejection_requires_notes(self):
+        if self.decision == "rejected" and not self.notes:
+            raise ValueError("A rejection reason is required")
+        return self
