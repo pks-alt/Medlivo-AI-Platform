@@ -510,8 +510,14 @@ root.addEventListener('submit',event=>{event.preventDefault();const form=event.t
 });
 async function boot(){
  if(!window.TEAM_ENABLED){login();return;}
- const error=new URLSearchParams(location.search).get('error');
- if(error){history.replaceState(null,'','/team');login(error==='access'?'Your Google account is not enabled for this workspace. Please contact your administrator.':'Sign-in could not be completed. Please start again.');return;}
+ const params=new URLSearchParams(location.search),error=params.get('error'),stage=params.get('stage');
+ if(error){
+   const codes={state:'AUTH-1',provider:'AUTH-2',token:'AUTH-3',identity:'AUTH-4',workspace:'AUTH-5',session:'AUTH-6'};
+   history.replaceState(null,'','/team');
+   if(error==='access')login('Your Google account is not enabled for this workspace. Please contact your administrator.');
+   else login('Sign-in could not be completed. Please start again.'+(codes[stage]?' Reference '+codes[stage]+'.':''));
+   return;
+ }
  try{session=await call('/session');shell();await Promise.all([loadCases(),drawDailyPriorities()]);if(cases.length)await loadCase(cases[0].id);}
  catch(error){if(!session)login(error.message);else msg(error.message);}
 }
