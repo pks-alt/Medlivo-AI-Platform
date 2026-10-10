@@ -196,12 +196,16 @@ submission_template_requirements = Table(
     "ws_submission_template_requirement", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), U("template_id", nullable=False),
     S("requirement_key", nullable=False), S("label", nullable=False), S("requirement_type", nullable=False),
-    S("category", nullable=False), Column("required", Boolean, nullable=False),
+    S("category", nullable=False), S("lifecycle_stage", nullable=False), S("sensitivity", nullable=False),
+    S("fulfillment_strategy", nullable=False), Column("required", Boolean, nullable=False),
     Column("source_preference", JSON, nullable=False, default=list),
     Column("validation_rule", JSON, nullable=False, default=dict),
     Column("output_rule", JSON, nullable=False, default=dict),
     Column("display_order", Integer, nullable=False), D("created_at", nullable=False),
     UniqueConstraint("template_id", "requirement_key"),
+    CheckConstraint("lifecycle_stage IN ('submission','credentialing','start')"),
+    CheckConstraint("sensitivity IN ('standard','internal','confidential','restricted')"),
+    CheckConstraint("fulfillment_strategy IN ('source_only','source_or_ai','derived','manual_confirmation')"),
     ForeignKeyConstraint(["template_id"], ["ws_submission_template.id"]),
 )
 
