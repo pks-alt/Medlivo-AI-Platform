@@ -344,6 +344,16 @@ def build_app(store, verifier):
                                     idempotency_key: UUID = Header(), who=Depends(identity)):
         return store.create_cost_assumption_set(who, str(idempotency_key), value)
 
+    @app.get(prefix + "/economic-config/customers")
+    def economic_customers(limit: int = Query(default=500, ge=1, le=1000),
+                           who=Depends(identity)):
+        return store.list_economic_customers(who, limit=limit)
+
+    @app.get(prefix + "/economic-config/customer-rules")
+    def all_customer_economic_rules(limit: int = Query(default=500, ge=1, le=1000),
+                                    who=Depends(identity)):
+        return store.list_all_customer_economic_rules(who, limit=limit)
+
     @app.get(prefix + "/economic-config/customers/{customer_id}")
     def customer_economic_rules(customer_id: UUID, profile: str | None = None,
                                 limit: int = Query(default=100, ge=1, le=200),
