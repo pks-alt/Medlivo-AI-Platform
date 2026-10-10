@@ -142,6 +142,11 @@ def build_w2_pay_package(
             else max(scheduled - Decimal("40") - dt_hours, ZERO)
         )
 
+    if auto_ot + value.additional_expected_ot_hours > 0 and value.ot_client_bill_rate is None:
+        raise ValueError("OT client bill rate is required when OT hours apply")
+    if dt_hours > 0 and value.double_time_client_bill_rate is None:
+        raise ValueError("Double-time client bill rate is required when double-time hours apply")
+
     regular_hours = max(
         scheduled - auto_ot - dt_hours - value.holiday_hours,
         ZERO,
@@ -157,16 +162,8 @@ def build_w2_pay_package(
     )
     stipend_hours = max(total_paid - value.on_call_hours, ZERO)
 
-    ot_bill_rate = (
-        value.ot_client_bill_rate
-        if value.ot_client_bill_rate is not None
-        else value.regular_client_bill_rate
-    )
-    dt_bill_rate = (
-        value.double_time_client_bill_rate
-        if value.double_time_client_bill_rate is not None
-        else value.regular_client_bill_rate
-    )
+    ot_bill_rate = value.ot_client_bill_rate or ZERO
+    dt_bill_rate = value.double_time_client_bill_rate or ZERO
     holiday_bill_rate = value.holiday_client_bill_rate or ZERO
     on_call_bill_rate = value.on_call_client_bill_rate or ZERO
     callback_bill_rate = value.callback_client_bill_rate or ZERO
