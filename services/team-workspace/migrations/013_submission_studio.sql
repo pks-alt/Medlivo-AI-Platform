@@ -45,6 +45,9 @@ CREATE TABLE IF NOT EXISTS public.ws_submission_template_requirement (
   label text NOT NULL,
   requirement_type text NOT NULL,
   category text NOT NULL,
+  lifecycle_stage text NOT NULL DEFAULT 'submission',
+  sensitivity text NOT NULL DEFAULT 'internal',
+  fulfillment_strategy text NOT NULL DEFAULT 'source_or_ai',
   required boolean NOT NULL DEFAULT true,
   source_preference jsonb NOT NULL DEFAULT '[]'::jsonb,
   validation_rule jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -53,6 +56,15 @@ CREATE TABLE IF NOT EXISTS public.ws_submission_template_requirement (
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT ws_submission_template_requirement_type_ck CHECK (
     requirement_type IN ('field','document','derived','attestation','form','reference','skills_checklist')
+  ),
+  CONSTRAINT ws_submission_template_requirement_stage_ck CHECK (
+    lifecycle_stage IN ('submission','credentialing','start')
+  ),
+  CONSTRAINT ws_submission_template_requirement_sensitivity_ck CHECK (
+    sensitivity IN ('standard','internal','confidential','restricted')
+  ),
+  CONSTRAINT ws_submission_template_requirement_fulfillment_ck CHECK (
+    fulfillment_strategy IN ('source_only','source_or_ai','derived','manual_confirmation')
   ),
   CONSTRAINT ws_submission_template_requirement_uq UNIQUE (template_id, requirement_key),
   CONSTRAINT ws_submission_template_requirement_template_fk FOREIGN KEY (template_id)
