@@ -77,3 +77,6 @@
 
 @media(max-width:1100px){.gmMetricGrid{grid-template-columns:repeat(3,1fr)}.gmManagerGrid{grid-template-columns:repeat(3,1fr)}.gmProfileGrid{grid-template-columns:repeat(2,1fr)}}
 @media(max-width:650px){.gmMetricGrid,.gmManagerGrid,.gmProfileGrid{grid-template-columns:1fr}.exceptionHead,.gmConfigIntro{display:grid}.exceptionNumbers{grid-template-columns:1fr}.exceptionActions{display:grid}}
+
+.customerEconomics{margin-bottom:14px}.sectionHelp{font-size:9px;color:#6f8193;line-height:1.45;margin:-4px 0 12px}.customerRuleForm{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px;padding:13px;background:#f8fafb;border:1px solid #e4ebef;border-radius:10px}.customerRuleForm label{display:grid;gap:5px}.customerRuleForm label span{font-size:8px;font-weight:800;color:#5d7183}.customerRuleForm input,.customerRuleForm select{height:37px;border:1px solid #d7e1e8;border-radius:8px;background:#fff;padding:0 9px;font:600 9.5px/1 Inter,system-ui;color:#172d42}.customerRuleForm button{align-self:end;height:37px;border:0;border-radius:8px;background:#102641;color:#fff;font:800 9px/1 Inter,system-ui;cursor:pointer}.customerRuleForm button:disabled{opacity:.55}
+@media(max-width:900px){.customerRuleForm{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:620px){.customerRuleForm{grid-template-columns:1fr}}
