@@ -3822,6 +3822,155 @@ class WorkspaceStore:
             identity, key, "margin.discussion.recorded", payload, apply
         )
 
+    def list_negative_margin_exceptions(self, identity, *, status="pending", limit=100):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["business_role"] != "executive":
+                raise AccessError(403, "Executive access required")
+            if status not in {"pending", "approved", "rejected"}:
+                raise AccessError(422, "Unsupported exception status")
+
+            rows = conn.execute(
+                select(
+                    t.approval_requests,
+                    t.margin_snapshots.c.job_id.label("job_id"),
+                    t.margin_snapshots.c.candidate_id.label("candidate_id"),
+                    t.margin_snapshots.c.recruiter_user_id.label("recruiter_user_id"),
+                    t.margin_snapshots.c.calculation_profile.label("calculation_profile"),
+                    t.margin_snapshots.c.guideline_status.label("guideline_status"),
+                    t.margin_snapshots.c.lifecycle_status.label("lifecycle_status"),
+                    t.margin_snapshots.c.result_payload.label("result_payload"),
+                )
+                .join(
+                    t.margin_snapshots,
+                    and_(
+                        t.margin_snapshots.c.tenant_id == t.approval_requests.c.tenant_id,
+                        t.margin_snapshots.c.id == t.approval_requests.c.object_id,
+                    ),
+                )
+                .where(
+                    t.approval_requests.c.tenant_id == principal["tenant_id"],
+                    t.approval_requests.c.approval_type == "negative_margin_exception",
+                    t.approval_requests.c.object_type == "margin_snapshot",
+                    t.approval_requests.c.required_authority == "executive",
+                    t.approval_requests.c.status == status,
+                )
+                .order_by(t.approval_requests.c.created_at.asc())
+                .limit(limit)
+            ).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
+    def decide_negative_margin_exception(self, identity, approval_id, key, value):
+        payload = {
+            "approval_id": approval_id,
+            **value.model_dump(mode="json"),
+        }
+
+        def apply(conn, principal):
+            if principal["business_role"] != "executive":
+                raise AccessError(403, "Executive access required")
+            if value.decision not in {"approved", "rejected"}:
+                raise AccessError(422, "Negative GM exceptions may only be approved or rejected")
+
+            request = conn.execute(
+                select(t.approval_requests)
+                .where(
+                    t.approval_requests.c.tenant_id == principal["tenant_id"],
+                    t.approval_requests.c.id == approval_id,
+                    t.approval_requests.c.approval_type == "negative_margin_exception",
+                    t.approval_requests.c.object_type == "margin_snapshot",
+                    t.approval_requests.c.required_authority == "executive",
+                )
+                .with_for_update()
+            ).mappings().first()
+            if request is None:
+                raise AccessError(404, "Negative GM exception not found")
+            if request["status"] != "pending":
+                raise AccessError(409, "Negative GM exception has already been decided")
+
+            snapshot = conn.execute(
+                select(t.margin_snapshots)
+                .where(
+                    t.margin_snapshots.c.tenant_id == principal["tenant_id"],
+                    t.margin_snapshots.c.id == request["object_id"],
+                )
+                .with_for_update()
+            ).mappings().first()
+            if snapshot is None:
+                raise AccessError(404, "Margin snapshot not found")
+            if snapshot["guideline_status"] != "negative_gm":
+                raise AccessError(409, "Margin snapshot is no longer a negative GM exception")
+            if snapshot["lifecycle_status"] == "finalized":
+                raise AccessError(409, "Finalized margin snapshot cannot be re-decided")
+
+            timestamp = now()
+            conn.execute(update(t.approval_requests).where(
+                t.approval_requests.c.tenant_id == principal["tenant_id"],
+                t.approval_requests.c.id == approval_id,
+            ).values(
+                status=value.decision,
+                decision_notes=value.notes,
+                decided_by=principal["id"],
+                decided_at=timestamp,
+                updated_at=timestamp,
+            ))
+
+            lifecycle = (
+                "exception_approved"
+                if value.decision == "approved"
+                else "exception_rejected"
+            )
+            conn.execute(update(t.margin_snapshots).where(
+                t.margin_snapshots.c.tenant_id == principal["tenant_id"],
+                t.margin_snapshots.c.id == snapshot["id"],
+            ).values(lifecycle_status=lifecycle))
+
+            after_request = dict(request)
+            after_request.update({
+                "status": value.decision,
+                "decision_notes": value.notes,
+                "decided_by": principal["id"],
+                "decided_at": timestamp,
+                "updated_at": timestamp,
+            })
+            self._operational_audit(
+                conn,
+                principal,
+                "margin.negative_gm_exception.decided",
+                "approval_request",
+                approval_id,
+                clean(request),
+                clean(after_request),
+                reason=value.notes,
+            )
+            self._operational_audit(
+                conn,
+                principal,
+                (
+                    "margin.negative_gm_exception.approved"
+                    if value.decision == "approved"
+                    else "margin.negative_gm_exception.rejected"
+                ),
+                "margin_snapshot",
+                snapshot["id"],
+                {"lifecycle_status": snapshot["lifecycle_status"]},
+                {"lifecycle_status": lifecycle},
+                reason=value.notes,
+            )
+            return {
+                **clean(after_request),
+                "snapshot_id": snapshot["id"],
+                "snapshot_lifecycle_status": lifecycle,
+            }
+
+        return self._global_mutate(
+            identity,
+            key,
+            "margin.negative_gm_exception.decided",
+            payload,
+            apply,
+        )
+
     def finalize_margin_snapshot(self, identity, snapshot_id, key, value):
         payload = {
             "snapshot_id": snapshot_id,
