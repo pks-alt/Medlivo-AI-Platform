@@ -1,9 +1,13 @@
 from datetime import date
 
 from sqlalchemy import insert, update
+from fastapi.testclient import TestClient
 
 from workspace_api import tables as t
-from workspace_api.store import now
+from workspace_api.app import build_app
+from workspace_api.store import now, WorkspaceStore
+from workspace_api.submission_ai import SubmissionAIResult
+from workspace_api.submission_artifacts import GeneratedPacket
 
 
 def idn(n):
@@ -321,3 +325,227 @@ def test_customer_program_template_versions_and_outranks_division_default(client
     keys = {x["requirement_key"] for x in body["items"]}
     assert {"resume", "active_license", "candidate_summary", "professional_references"} <= keys
     assert body["readiness_status"] == "missing_required"
+
+
+class FakeSubmissionAI:
+    def compose(self, context):
+        assert "source" in context
+        assert "ssn" not in context["source"]
+        return SubmissionAIResult(
+            candidate_summary="Verified PT candidate with relevant rehabilitation experience and active New York licensure.",
+            resume_markdown="# Synthetic Candidate One, PT\n\n## Experience\nSource-grounded rehabilitation experience.",
+            claims=[
+                {"text": "Active New York licensure", "source_keys": ["license." + idn(1902)]},
+                {"text": "Physical Therapist", "source_keys": ["candidate.profession"]},
+            ],
+            warnings=["Review employment dates before final customer submission."],
+            provider="fake_vertex",
+            model="fake-model",
+        )
+
+
+def test_ai_composer_fails_closed_when_not_configured(client, headers, seeded):
+    seed_rehab_submission_ready(seeded)
+    client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(9970)},
+        json={"activate": True},
+    )
+    prepared = client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9971)},
+        json={},
+    )
+    assert prepared.status_code == 200
+    response = client.post(
+        f"/api/v1/team/submission-studio/packages/{prepared.json()['id']}/compose-ai",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9972)},
+        json={},
+    )
+    assert response.status_code == 503
+
+
+def test_ai_composer_creates_source_grounded_draft_but_does_not_auto_approve(
+    seeded, verifier, headers
+):
+    seed_rehab_submission_ready(seeded)
+    ai_client = TestClient(build_app(WorkspaceStore(seeded, submission_ai=FakeSubmissionAI()), verifier))
+    boot = ai_client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(9980)},
+        json={"activate": True},
+    )
+    assert boot.status_code == 200
+    prepared = ai_client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9981)},
+        json={},
+    )
+    assert prepared.status_code == 200
+
+    drafted = ai_client.post(
+        f"/api/v1/team/submission-studio/packages/{prepared.json()['id']}/compose-ai",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9982)},
+        json={},
+    )
+    assert drafted.status_code == 200
+    body = drafted.json()
+    assert body["ai_summary"]["status"] == "draft_ready"
+    assert body["ai_summary"]["provider"] == "fake_vertex"
+    assert body["ai_summary"]["model"] == "fake-model"
+    assert body["readiness_status"] == "needs_review"
+    summary_item = next(x for x in body["items"] if x["requirement_key"] == "candidate_summary")
+    assert summary_item["status"] == "needs_review"
+    assert summary_item["resolved_value"]["ai_generated"] is True
+    assert "Verified PT candidate" in summary_item["resolved_value"]["text"]
+    resume_item = next(x for x in body["items"] if x["requirement_key"] == "resume")
+    assert "ai_resume_markdown" in resume_item["resolved_value"]
+
+    finalized = ai_client.post(
+        f"/api/v1/team/submission-studio/packages/{body['id']}/finalize",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9983)},
+        json={"confirmation": "reviewed_and_ready"},
+    )
+    assert finalized.status_code == 422
+
+
+class FakePacketGenerator:
+    def __init__(self):
+        self.contexts = []
+
+    def generate(self, context):
+        self.contexts.append(context)
+        return GeneratedPacket(
+            content=b"PKfake-submission-package",
+            filename="Synthetic_Candidate_PT_Submission_v1.zip",
+            manifest={"candidate": context["candidate"]["canonical_name"]},
+        )
+
+
+def _prepare_review_finalize(client, headers, seeded, key_base):
+    seed_rehab_submission_ready(seeded)
+    client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(key_base)},
+        json={"activate": True},
+    )
+    prepared = client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(key_base + 1)},
+        json={},
+    )
+    assert prepared.status_code == 200
+    body = prepared.json()
+    narrative = next(x for x in body["items"] if x["requirement_key"] == "candidate_summary")
+    reviewed = client.post(
+        f"/api/v1/team/submission-studio/packages/{body['id']}/items/{narrative['id']}/review",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(key_base + 2)},
+        json={
+            "decision": "approved",
+            "recruiter_note": "Reviewed against verified source facts.",
+            "resolved_value": {"text": "Verified Physical Therapist with active New York licensure."},
+        },
+    )
+    assert reviewed.status_code == 200
+    finalized = client.post(
+        f"/api/v1/team/submission-studio/packages/{body['id']}/finalize",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(key_base + 3)},
+        json={"confirmation": "reviewed_and_ready"},
+    )
+    assert finalized.status_code == 200
+    return finalized.json()
+
+
+def test_submission_download_fails_closed_when_generator_not_configured(client, headers, seeded):
+    package = _prepare_review_finalize(client, headers, seeded, 9990)
+    response = client.get(
+        f"/api/v1/team/submission-studio/packages/{package['id']}/download",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 503
+
+
+def test_finalized_submission_download_is_recruiter_scoped_and_binary(seeded, verifier, headers):
+    generator = FakePacketGenerator()
+    download_client = TestClient(build_app(
+        WorkspaceStore(seeded, submission_packet_generator=generator), verifier
+    ))
+    package = _prepare_review_finalize(download_client, headers, seeded, 10010)
+
+    response = download_client.get(
+        f"/api/v1/team/submission-studio/packages/{package['id']}/download",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert "Synthetic_Candidate_PT_Submission_v1.zip" in response.headers["content-disposition"]
+    assert response.content == b"PKfake-submission-package"
+    assert generator.contexts[0]["candidate"]["canonical_name"] == "Synthetic Candidate One"
+
+    other = download_client.get(
+        f"/api/v1/team/submission-studio/packages/{package['id']}/download",
+        headers=headers("recruiter-b"),
+    )
+    assert other.status_code == 404
+
+
+def test_draft_submission_cannot_be_downloaded(seeded, verifier, headers):
+    generator = FakePacketGenerator()
+    download_client = TestClient(build_app(
+        WorkspaceStore(seeded, submission_packet_generator=generator), verifier
+    ))
+    seed_rehab_submission_ready(seeded)
+    download_client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(10020)},
+        json={"activate": True},
+    )
+    prepared = download_client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(10021)},
+        json={},
+    )
+    assert prepared.status_code == 200
+    response = download_client.get(
+        f"/api/v1/team/submission-studio/packages/{prepared.json()['id']}/download",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 422
+    assert generator.contexts == []
+
+
+def test_recruiter_cannot_waive_customer_required_document_by_default(client, headers, seeded):
+    seed_rehab_submission_ready(seeded)
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Nursing & Allied", profession="Registered Nurse", specialty="ICU"
+        ))
+        conn.execute(update(t.candidates).where(t.candidates.c.id == idn(300)).values(
+            profession="Registered Nurse", specialty="ICU"
+        ))
+    client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(10030)},
+        json={"activate": True},
+    )
+    prepared = client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(10031)},
+        json={},
+    )
+    assert prepared.status_code == 200
+    skills = next(
+        x for x in prepared.json()["items"]
+        if x["requirement_key"] == "skills_checklist"
+    )
+    waived = client.post(
+        f"/api/v1/team/submission-studio/packages/{prepared.json()['id']}/items/{skills['id']}/review",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(10032)},
+        json={
+            "decision": "waived",
+            "recruiter_note": "Trying to bypass the required checklist.",
+            "resolved_value": None,
+        },
+    )
+    assert waived.status_code == 422
+    assert "cannot be waived" in waived.json()["detail"].lower()

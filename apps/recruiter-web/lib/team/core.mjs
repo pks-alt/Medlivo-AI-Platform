@@ -56,6 +56,19 @@ function redirect(location, cookies = []) {
   for (const value of cookies) headers.append('Set-Cookie', value);
   return new Response(null, {status:303, headers});
 }
+export async function boundedBytes(response, limit = 104857600) {
+  if (!response.body) return Buffer.alloc(0);
+  const reader=response.body.getReader(); const chunks=[]; let size=0;
+  try {
+    for (;;) {
+      const {done,value}=await reader.read(); if(done)break;
+      size+=value.length;
+      if(size>limit){await reader.cancel();throw new SafeError(502,'The service response was too large.');}
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks);
+  } finally { reader.releaseLock(); }
+}
 export async function boundedText(response, limit = 1048576) {
   if (!response.body) return '';
   const reader = response.body.getReader(); const chunks = []; let size = 0;
@@ -108,16 +121,43 @@ export function validateConfig(env) {
 function endpoint(path, method, query) {
   const id = '[0-9a-fA-F-]{36}', root = `/cases/${id}`;
   const read = [
-    '/me', '/cases', '/jobs', `/jobs/${id}`, '/candidates', `/candidates/${id}`, `/candidates/${id}/best-jobs`,
-    '/manager/overview', '/manager/weekly-review', '/manager/match-quality', '/recruiter/dashboard', '/recruiter/follow-ups', '/daily-priorities', '/work-queue', '/admin/users', '/admin/teams', '/admin/audit',
-    '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings', `/recruiters/${id}/weekly-goals`, '/job-publications', `/job-publications/${id}`,
+    '/me', '/cases', '/jobs', `/jobs/${id}`, `/jobs/${id}/operational`,
+    '/candidates', `/candidates/${id}`, `/candidates/${id}/best-jobs`,
+    '/manager/overview', '/manager/weekly-review', '/manager/match-quality', '/manager/operational-audit',
+    '/recruiter/dashboard', '/recruiter/follow-ups', '/daily-priorities', '/work-queue',
+    '/admin/users', '/admin/teams', '/admin/audit', '/admin/operations',
+    '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings',
+    `/recruiters/${id}/weekly-goals`, '/job-publications', `/job-publications/${id}`,
+    '/economic-config/assumptions', '/economic-config/customers', '/economic-config/customer-rules',
+    `/economic-config/customers/${id}`,
+    `/margin/snapshots/${id}`, '/margin/history', '/margin/management-summary',
+    '/margin/negative-gm-exceptions',
+    '/submission-studio/templates', '/submission-studio/packages', `/submission-studio/packages/${id}`,
+    `/submission-studio/packages/${id}/download`,
+    '/funnel', `/funnel/${id}/${id}`,
     root, `${root}/(?:notes|tasks|audit|eligible-owners)`
   ];
   const post = [
-    '/admin/users', `/matches/${id}/feedback`, '/job-intake/upload', '/job-intake/batches', `/job-intake/batches/${id}/rows`, '/job-publications', `/job-publications/${id}/decision`,
+    '/admin/users', `/matches/${id}/feedback`, '/job-intake/upload', '/job-intake/batches',
+    `/job-intake/batches/${id}/rows`, '/job-publications', `/job-publications/${id}/decision`,
+    '/economic-config/bootstrap-assumptions', '/economic-config/assumptions', '/economic-config/customers',
+    '/margin/locums-pay-package-snapshots', '/margin/w2-pay-package-snapshots', '/margin/snapshots',
+    `/margin/snapshots/${id}/discussions`, `/margin/snapshots/${id}/finalize`,
+    `/margin/negative-gm-exceptions/${id}/decision`,
+    '/submission-studio/templates', '/submission-studio/bootstrap-templates',
+    `/submission-studio/jobs/${id}/candidates/${id}/prepare`,
+    `/submission-studio/packages/${id}/compose-ai`,
+    `/submission-studio/packages/${id}/items/${id}/review`,
+    `/submission-studio/packages/${id}/finalize`,
     `${root}/(?:notes|tasks|reassign)`
   ];
-  const put = ['/job-intake/mappings', `/recruiters/${id}/weekly-goals`];
+  const put = [
+    '/job-intake/mappings', `/recruiters/${id}/weekly-goals`,
+    `/jobs/${id}/operational`, `/jobs/${id}/assignment`,
+    `/job-intake/batches/${id}/items/${id}/decision`,
+    `/funnel/${id}/${id}/start-readiness`,
+    `/funnel/${id}/${id}/start-readiness/items`
+  ];
   const patch = [`/admin/users/${id}`, `${root}/tasks/${id}`];
   const patterns = method === 'GET' ? read : method === 'POST' ? post :
     method === 'PUT' ? put : method === 'PATCH' ? patch : [];
@@ -133,8 +173,11 @@ function endpoint(path, method, query) {
     else if (key === 'matches_per_job' && /^(?:[1-9]|10)$/.test(value)) params.set(key, value);
     else if (key === 'team_id' && UUID.test(value)) params.set(key, value);
     else if (key === 'week_start' && /^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/.test(value)) params.set(key, value);
-    else if (key === 'status' && ['open','done','all'].includes(value)) params.set(key, value);
+    else if (key === 'status' && ['open','done','all','pending','approved','rejected'].includes(value)) params.set(key, value);
     else if (key === 'division' && ['Rehabilitation','Nursing & Allied','Locum Tenens'].includes(value)) params.set(key, value);
+    else if (['job_id','candidate_id','object_id'].includes(key) && UUID.test(value)) params.set(key, value);
+    else if (key === 'profile' && /^[a-z0-9_]{1,80}$/.test(value)) params.set(key, value);
+    else if (key === 'object_type' && /^[a-z0-9_]{1,80}$/.test(value)) params.set(key, value);
     else throw new SafeError(400, 'Invalid request parameters.');
   }
   return path + (params.size ? '?' + params : '');
@@ -234,6 +277,18 @@ export function createGateway({config, store, verifyIdToken, api, fetcher = fetc
       const message = {403:'You do not have permission for this action.',404:'Work item not found.',
         409:'This item changed or the request was already used. Reload before saving.',422:'Check the fields and select an eligible team member.'}[response.status];
       throw new SafeError(message ? response.status : 503, message || 'The team service is unavailable. Please try again.');
+    }
+    if (resource.endsWith('/download')) {
+      const media=(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
+      if(media!=='application/zip')throw new SafeError(503,'The submission package download is unavailable.');
+      const disposition=response.headers.get('content-disposition')||'';
+      const match=/^attachment; filename="([A-Za-z0-9._ -]{1,180})"$/.exec(disposition);
+      if(!match)throw new SafeError(503,'The submission package download is unavailable.');
+      const bytes=await boundedBytes(response,100*1024*1024);
+      return new Response(bytes,{status:response.status,headers:securityHeaders({
+        'Content-Type':'application/zip',
+        'Content-Disposition':`attachment; filename="${match[1]}"`
+      })});
     }
     return json(JSON.parse(await boundedText(response)), response.status);
   }

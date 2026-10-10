@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 import logging
 from uuid import UUID
 from datetime import date
-from fastapi import FastAPI, Depends, HTTPException, Header, Query, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, Header, Query, UploadFile, File, Form, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -25,6 +25,8 @@ from .schemas import (
     SubmissionTemplateCreateInput,
 )
 from .store import WorkspaceStore, AccessError
+from .submission_ai import VertexGeminiSubmissionAIComposer
+from .submission_artifacts import GCSDocumentResolver, SubmissionPacketGenerator
 
 
 logger = logging.getLogger("medlivo.workspace")
@@ -444,6 +446,14 @@ def build_app(store, verifier):
             limit=limit,
         )
 
+    @app.post(prefix + "/submission-studio/packages/{package_id}/compose-ai")
+    def compose_submission_package_ai(package_id: UUID,
+                                      idempotency_key: UUID = Header(),
+                                      who=Depends(identity)):
+        return store.compose_submission_package_ai(
+            who, str(package_id), str(idempotency_key)
+        )
+
     @app.post(prefix + "/submission-studio/packages/{package_id}/items/{item_id}/review")
     def review_submission_package_item(package_id: UUID, item_id: UUID,
                                        value: SubmissionPackageItemReviewInput,
@@ -460,6 +470,18 @@ def build_app(store, verifier):
                                     who=Depends(identity)):
         return store.finalize_submission_package(
             who, str(package_id), str(idempotency_key), value
+        )
+
+    @app.get(prefix + "/submission-studio/packages/{package_id}/download")
+    def download_submission_package(package_id: UUID, who=Depends(identity)):
+        result = store.generate_submission_packet(who, str(package_id))
+        return Response(
+            content=result.content,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": 'attachment; filename="' + result.filename + '"',
+                "X-Medlivo-Package": "submission",
+            },
         )
 
     @app.get(prefix + "/submission-studio/packages/{package_id}")
@@ -599,4 +621,28 @@ def create_app():
     engine = create_engine(settings.database_url.get_secret_value(), pool_pre_ping=True,
                            hide_parameters=True, echo=False, pool_size=5, max_overflow=5)
     # No DDL or account creation at startup. An administrator applies migrations.
-    return build_app(WorkspaceStore(engine), GoogleIdentityVerifier(settings.google_client_id, settings.google_hosted_domain))
+    submission_ai = None
+    if settings.submission_ai_enabled:
+        submission_ai = VertexGeminiSubmissionAIComposer(
+            project=settings.submission_ai_project,
+            location=settings.submission_ai_location,
+            model=settings.submission_ai_model,
+        )
+    submission_packet_generator = None
+    if settings.submission_packet_download_enabled:
+        allowed_buckets = {
+            value.strip()
+            for value in settings.submission_document_buckets.split(",")
+            if value.strip()
+        }
+        submission_packet_generator = SubmissionPacketGenerator(
+            GCSDocumentResolver(allowed_buckets=allowed_buckets)
+        )
+    return build_app(
+        WorkspaceStore(
+            engine,
+            submission_ai=submission_ai,
+            submission_packet_generator=submission_packet_generator,
+        ),
+        GoogleIdentityVerifier(settings.google_client_id, settings.google_hosted_domain),
+    )

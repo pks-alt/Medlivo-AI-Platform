@@ -39,12 +39,24 @@ export default function SubmissionStudioPage({params}:{params:Promise<{jobId:str
    setHistory(h.items||[]);
   }
  }
+ async function composeAI(){
+  if(!pack)return;setBusy(true);setError("");
+  try{
+   const drafted=await api("submission-studio/packages/"+pack.id+"/compose-ai",{
+    method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},body:"{}"
+   });
+   setPack(drafted);
+   const summaryItem=(drafted.items||[]).find((x:any)=>x.requirement_key==="candidate_summary");
+   if(summaryItem?.resolved_value?.text)setItemValues(v=>({...v,[summaryItem.id]:summaryItem.resolved_value.text}));
+  }catch(e:any){setError(e.message)}finally{setBusy(false)}
+ }
+
  async function reviewItem(item:any,decision:"approved"|"waived"|"not_applicable"){
   if(!pack)return;setBusy(true);setError("");
   try{
-   const textValue=(itemValues[item.id]||"").trim();
+   const textValue=String(item._reviewText??itemValues[item.id]??"").trim();
    const payload:any={decision,recruiter_note:(itemNotes[item.id]||"").trim()||null,resolved_value:null};
-   if(decision==="approved"&&item.requirement_key==="candidate_summary")payload.resolved_value={text:textValue};
+   if(decision==="approved"&&item.requirement_key==="candidate_summary")payload.resolved_value={...(item.resolved_value||{}),text:textValue};
    else if(decision==="approved"&&item.status==="missing"&&textValue)payload.resolved_value={value:textValue};
    await api("submission-studio/packages/"+pack.id+"/items/"+item.id+"/review",{
     method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)
@@ -107,6 +119,18 @@ export default function SubmissionStudioPage({params}:{params:Promise<{jobId:str
     <article><strong>{missing.length}</strong><b>Missing</b><span>Required items not found</span></article>
    </div>
 
+   {me.submission_ai_enabled&&pack.status!=="finalized"&&<section className="submissionAIBox">
+    <div><small>MEDLIVO AI COMPOSER</small><b>{pack.ai_summary?.status==="draft_ready"?"AI draft ready for review":"Draft presentation + formatted resume from verified source facts"}</b><span>AI cannot finalize the package or invent unsupported experience, credentials, rates, or availability.</span></div>
+    <button disabled={busy} onClick={composeAI}>{busy?"Drafting…":pack.ai_summary?.status==="draft_ready"?"Regenerate AI Draft":"Draft with AI"}</button>
+   </section>}
+   {!me.submission_ai_enabled&&<div className="submissionBoundary aiDisabled"><b>AI composer is not enabled in this environment.</b><span>Recruiters can still prepare and review packages manually. Production AI requires the approved Vertex AI project/model configuration.</span></div>}
+
+   {pack.ai_summary?.status==="draft_ready"&&<section className="panelBox submissionAIPreview"><small>AI DRAFT · RECRUITER REVIEW REQUIRED</small>
+    <div className="aiDraftGrid"><article><b>Candidate Presentation</b><p>{pack.ai_summary.candidate_summary}</p></article><article><b>Resume Draft</b><pre>{pack.ai_summary.resume_markdown}</pre></article></div>
+    {(pack.ai_summary.warnings||[]).length>0&&<div className="aiWarningList"><b>AI review flags</b>{pack.ai_summary.warnings.map((w:string,i:number)=><span key={i}>{w}</span>)}</div>}
+    <p className="aiModelNote">Generated with {pack.ai_summary.provider} · {pack.ai_summary.model}. Final recruiter review is required.</p>
+   </section>}
+
    <div className="submissionGrid">
     <section className="panelBox"><small>PACKAGE CHECKLIST</small>
      <div className="submissionChecklist">{items.map((x:any)=><article key={x.id} className={"submissionItem "+x.status}>
@@ -114,8 +138,8 @@ export default function SubmissionStudioPage({params}:{params:Promise<{jobId:str
       <strong>{statusLabel(x.status)}</strong>
       {x.status==="needs_review"&&x.requirement_key==="candidate_summary"&&<>
        <p>Medlivo has gathered source facts. Use the approved AI model when connected, or enter the reviewed presentation text here.</p>
-       <textarea className="submissionNarrative" value={itemValues[x.id]||""} onChange={e=>setItemValues({...itemValues,[x.id]:e.target.value})} placeholder="Reviewed candidate presentation"/>
-       <button className="submissionItemAction" disabled={busy||!(itemValues[x.id]||"").trim()} onClick={()=>reviewItem(x,"approved")}>Approve Presentation</button>
+       <textarea className="submissionNarrative" value={itemValues[x.id]??x.resolved_value?.text??""} onChange={e=>setItemValues({...itemValues,[x.id]:e.target.value})} placeholder="Reviewed candidate presentation"/>
+       <button className="submissionItemAction" disabled={busy||!String(itemValues[x.id]??x.resolved_value?.text??"").trim()} onClick={()=>reviewItem({...x,_reviewText:itemValues[x.id]??x.resolved_value?.text??""},"approved")}>Approve Presentation</button>
       </>}
       {x.status==="missing"&&<>
        <p>Required by the active template but no current matching evidence was found.</p>
@@ -146,14 +170,17 @@ export default function SubmissionStudioPage({params}:{params:Promise<{jobId:str
     <div><b>{pack.readiness_status==="ready"?"Package is ready for recruiter final review.":"Resolve the remaining items before finalizing."}</b><span>Finalizing locks this package version. It does not submit anything to JobDiva or the MSP/VMS.</span></div>
     <button disabled={busy||pack.readiness_status!=="ready"} onClick={finalize}>{busy?"Working…":"Finalize Submission Package"}</button>
    </section>}
-   {pack.status==="finalized"&&<div className="goodState">Submission package finalized and locked for this version.</div>}
+   {pack.status==="finalized"&&<section className="submissionDownload">
+    <div><b>Submission package finalized.</b><span>This version is locked. Download the combined PDF, separate supporting files, and manifest as one ZIP.</span></div>
+    {me.submission_packet_download_enabled?<a href={"/api/team/submission-studio/packages/"+pack.id+"/download"}>Download Submission Package</a>:<span className="downloadDisabled">Download generation is not enabled in this environment.</span>}
+   </section>}
 
    <section className="panelBox"><small>PACKAGE VERSION</small><div className="adminRows">
     <div><span>Template</span><b>{pack.template?.name||"Configured template"}</b></div>
     <div><span>Template version</span><b>v{pack.template_version}</b></div>
     <div><span>Package version</span><b>v{pack.version}</b></div>
     <div><span>Required satisfied</span><b>{summary.required_satisfied??0} / {summary.required_total??0}</b></div>
-    <div><span>AI narrative</span><b>{pack.ai_summary?.status==="model_pending"?"Awaiting approved model generation":"Available"}</b></div>
+    <div><span>AI narrative</span><b>{pack.ai_summary?.status==="draft_ready"?"Draft ready for review":pack.ai_summary?.status==="model_pending"?"Not generated":"Available"}</b></div>
    </div></section>
 
    <section className="panelBox"><small>PACKAGE HISTORY</small>{history.length?<table className="adminTable"><thead><tr><th>Version</th><th>Readiness</th><th>Score</th><th>Status</th><th>Created</th></tr></thead><tbody>{history.map((x:any)=><tr key={x.id}><td>v{x.version}</td><td>{statusLabel(x.readiness_status)}</td><td>{Number(x.readiness_score||0).toFixed(0)}%</td><td>{statusLabel(x.status)}</td><td>{x.created_at?new Date(x.created_at).toLocaleString():"—"}</td></tr>)}</tbody></table>:null}</section>
