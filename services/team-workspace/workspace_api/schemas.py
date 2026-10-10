@@ -435,3 +435,11 @@ class StartReadinessItemInput(StrictInput):
         if value is not None and (value.tzinfo is None or value.utcoffset() is None):
             raise ValueError("A timezone-aware deadline is required")
         return value
+
+
+class SubmissionTemplateBootstrapInput(StrictInput):
+    activate: bool = True
+
+
+class SubmissionPackagePrepareInput(StrictInput):
+    program_name: str | None = Field(default=None, max_length=200)
