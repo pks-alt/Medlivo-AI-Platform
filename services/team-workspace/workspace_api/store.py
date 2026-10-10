@@ -3432,6 +3432,15 @@ class WorkspaceStore:
                 raise AccessError(422, "Waiver or not-applicable decisions require a reason")
             if value.decision == "approved" and item["status"] == "missing" and value.resolved_value is None:
                 raise AccessError(422, "Provide the confirmed value or evidence before approving a missing item")
+            if (
+                value.decision == "approved"
+                and item["requirement_key"] == "candidate_summary"
+                and (
+                    value.resolved_value is None
+                    or not str(value.resolved_value.get("text") or "").strip()
+                )
+            ):
+                raise AccessError(422, "Candidate presentation text is required before approval")
 
             before = clean(item)
             resolved_value = (
