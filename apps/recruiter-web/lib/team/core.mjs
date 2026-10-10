@@ -132,6 +132,7 @@ function endpoint(path, method, query) {
     `/margin/negative-gm-exceptions/${id}/decision`,
     '/submission-studio/templates', '/submission-studio/bootstrap-templates',
     `/submission-studio/jobs/${id}/candidates/${id}/prepare`,
+    `/submission-studio/packages/${id}/compose-ai`,
     `/submission-studio/packages/${id}/items/${id}/review`,
     `/submission-studio/packages/${id}/finalize`,
     `${root}/(?:notes|tasks|reassign)`
