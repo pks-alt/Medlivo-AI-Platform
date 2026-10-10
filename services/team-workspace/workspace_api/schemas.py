@@ -453,3 +453,40 @@ class SubmissionPackageItemReviewInput(StrictInput):
 
 class SubmissionPackageFinalizeInput(StrictInput):
     confirmation: Literal["reviewed_and_ready"]
+
+
+class SubmissionTemplateRequirementInput(StrictInput):
+    requirement_key: str = Field(min_length=1, max_length=120)
+    label: str = Field(min_length=1, max_length=200)
+    requirement_type: Literal[
+        "field", "document", "derived", "attestation", "form", "reference", "skills_checklist"
+    ]
+    category: str = Field(min_length=1, max_length=120)
+    lifecycle_stage: Literal["submission", "credentialing", "start"] = "submission"
+    sensitivity: Literal["standard", "internal", "confidential", "restricted"] = "standard"
+    fulfillment_strategy: Literal[
+        "source_only", "source_or_ai", "derived", "manual_confirmation"
+    ] = "source_only"
+    required: bool = True
+    source_preference: list[str] = Field(default_factory=list)
+    validation_rule: dict = Field(default_factory=dict)
+    output_rule: dict = Field(default_factory=dict)
+    display_order: int = Field(default=0, ge=0, le=10000)
+
+
+class SubmissionTemplateCreateInput(StrictInput):
+    name: str = Field(min_length=1, max_length=200)
+    division: Literal["Rehabilitation", "Nursing & Allied", "Locum Tenens"]
+    customer_id: UUID | None = None
+    program_name: str | None = Field(default=None, max_length=200)
+    profession: str | None = Field(default=None, max_length=160)
+    specialty: str | None = Field(default=None, max_length=160)
+    template_scope: Literal[
+        "medlivo_default", "division_default", "customer", "program", "profession", "specialty", "job"
+    ]
+    parent_template_id: UUID | None = None
+    activate: bool = True
+    resume_format_profile: dict = Field(default_factory=dict)
+    output_profile: dict = Field(default_factory=dict)
+    ai_policy: dict = Field(default_factory=dict)
+    requirements: list[SubmissionTemplateRequirementInput] = Field(min_length=1, max_length=200)
