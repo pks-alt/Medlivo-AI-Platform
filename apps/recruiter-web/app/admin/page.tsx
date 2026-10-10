@@ -57,6 +57,8 @@ export default function AdminPage(){
     <aside className="adminNav">
       <div className="adminBrand"><b>medlivo</b><span>ADMIN</span></div>
       {sections.map(([id,label])=><button key={id} className={tab===id?"active":""} onClick={()=>setTab(id)}>{label}</button>)}
+      <a className="adminUtilityLink" href="/executive/margin">Executive GM</a>
+      <a className="adminUtilityLink" href="/admin/gm-config">GM Configuration</a>
       <a href="/">Recruiter workspace</a>
     </aside>
     <section className="adminMain">

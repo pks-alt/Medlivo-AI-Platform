@@ -327,6 +327,12 @@ def build_app(store, verifier):
             who, str(batch_id), str(item_id), str(idempotency_key), value
         )
 
+    @app.post(prefix + "/economic-config/bootstrap-assumptions")
+    def bootstrap_economic_assumptions(idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.bootstrap_economic_assumptions(
+            who, str(idempotency_key)
+        )
+
     @app.get(prefix + "/economic-config/assumptions")
     def economic_assumptions(profile: str | None = None,
                              limit: int = Query(default=100, ge=1, le=200),
@@ -337,6 +343,16 @@ def build_app(store, verifier):
     def create_economic_assumptions(value: CostAssumptionSetInput,
                                     idempotency_key: UUID = Header(), who=Depends(identity)):
         return store.create_cost_assumption_set(who, str(idempotency_key), value)
+
+    @app.get(prefix + "/economic-config/customers")
+    def economic_customers(limit: int = Query(default=500, ge=1, le=1000),
+                           who=Depends(identity)):
+        return store.list_economic_customers(who, limit=limit)
+
+    @app.get(prefix + "/economic-config/customer-rules")
+    def all_customer_economic_rules(limit: int = Query(default=500, ge=1, le=1000),
+                                    who=Depends(identity)):
+        return store.list_all_customer_economic_rules(who, limit=limit)
 
     @app.get(prefix + "/economic-config/customers/{customer_id}")
     def customer_economic_rules(customer_id: UUID, profile: str | None = None,
@@ -380,6 +396,22 @@ def build_app(store, verifier):
         return store.add_margin_discussion(
             who, str(snapshot_id), str(idempotency_key), value
         )
+
+    @app.get(prefix + "/margin/history")
+    def margin_history(job_id: UUID | None = None, candidate_id: UUID | None = None,
+                       limit: int = Query(default=100, ge=1, le=200),
+                       who=Depends(identity)):
+        return store.list_margin_history(
+            who,
+            job_id=str(job_id) if job_id else None,
+            candidate_id=str(candidate_id) if candidate_id else None,
+            limit=limit,
+        )
+
+    @app.get(prefix + "/margin/management-summary")
+    def margin_management_summary(limit: int = Query(default=500, ge=1, le=1000),
+                                  who=Depends(identity)):
+        return store.margin_management_summary(who, limit=limit)
 
     @app.get(prefix + "/margin/negative-gm-exceptions")
     def negative_gm_exceptions(status: str = "pending",

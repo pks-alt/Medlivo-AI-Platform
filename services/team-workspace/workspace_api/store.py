@@ -12,7 +12,7 @@ from .job_intake import process_rows, parse_xlsx, suggest_mapping
 from .intake_intelligence import analyze_intake_job
 from margin_engine import (
     CostAssumptionSet, MarginInput, W2PayPackageInput, LocumsPayPackageInput,
-    build_w2_pay_package, build_locums_pay_package, calculate_margin,
+    build_w2_pay_package, build_locums_pay_package, calculate_margin, seed_assumptions,
 )
 
 
@@ -2854,6 +2854,90 @@ class WorkspaceStore:
             return {"items": [clean(row) for row in rows]}
 
 
+    def bootstrap_economic_assumptions(self, identity, key):
+        payload = {"source": "approved_workbook_defaults"}
+
+        def apply(conn, principal):
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Admin access required")
+
+            profiles = [
+                "nursing_allied_ca_w2",
+                "nursing_allied_national_w2",
+                "rehabilitation_ca_w2",
+                "rehabilitation_national_w2",
+                "locums_ca_w2",
+                "locums_national_1099",
+            ]
+            timestamp = now()
+            created = []
+            existing = []
+            for profile in profiles:
+                active = conn.execute(select(t.cost_assumption_sets).where(
+                    t.cost_assumption_sets.c.tenant_id == principal["tenant_id"],
+                    t.cost_assumption_sets.c.profile == profile,
+                    t.cost_assumption_sets.c.status == "active",
+                    t.cost_assumption_sets.c.effective_from <= timestamp,
+                    or_(
+                        t.cost_assumption_sets.c.effective_to.is_(None),
+                        t.cost_assumption_sets.c.effective_to > timestamp,
+                    ),
+                ).order_by(
+                    t.cost_assumption_sets.c.effective_from.desc()
+                ).limit(1)).mappings().first()
+                if active is not None:
+                    existing.append({
+                        "profile": profile,
+                        "version": active["version"],
+                    })
+                    continue
+
+                assumptions = seed_assumptions(profile)
+                row_id = uid()
+                conn.execute(insert(t.cost_assumption_sets).values(
+                    id=row_id,
+                    tenant_id=principal["tenant_id"],
+                    profile=profile,
+                    version=assumptions.version,
+                    assumption_payload=assumptions.model_dump(mode="json"),
+                    status="active",
+                    effective_from=timestamp,
+                    effective_to=None,
+                    created_by=principal["id"],
+                    created_at=timestamp,
+                ))
+                created.append({
+                    "id": row_id,
+                    "profile": profile,
+                    "version": assumptions.version,
+                })
+                self._operational_audit(
+                    conn,
+                    principal,
+                    "economic.assumptions.bootstrapped",
+                    "cost_assumption_set",
+                    row_id,
+                    {},
+                    {
+                        "profile": profile,
+                        "version": assumptions.version,
+                        "source": "approved_workbook_defaults",
+                    },
+                )
+            return {
+                "created": created,
+                "existing": existing,
+                "complete": len(created) + len(existing) == len(profiles),
+            }
+
+        return self._global_mutate(
+            identity,
+            key,
+            "economic.assumptions.bootstrap",
+            payload,
+            apply,
+        )
+
     def create_cost_assumption_set(self, identity, key, value):
         payload = value.model_dump(mode="json")
 
@@ -2935,6 +3019,45 @@ class WorkspaceStore:
                 statement = statement.where(t.cost_assumption_sets.c.profile == profile)
             rows = conn.execute(statement.order_by(
                 t.cost_assumption_sets.c.effective_from.desc()
+            ).limit(limit)).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
+    def list_economic_customers(self, identity, *, limit=500):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if not principal["system_admin"] and principal["business_role"] not in {
+                "executive", "delivery_manager"
+            }:
+                raise AccessError(403, "Economic configuration access required")
+            rows = conn.execute(select(
+                t.customers.c.id,
+                t.customers.c.name,
+                t.customers.c.status,
+            ).where(
+                t.customers.c.tenant_id == principal["tenant_id"]
+            ).order_by(t.customers.c.name).limit(limit)).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
+    def list_all_customer_economic_rules(self, identity, *, limit=500):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if not principal["system_admin"] and principal["business_role"] not in {
+                "executive", "delivery_manager"
+            }:
+                raise AccessError(403, "Economic configuration access required")
+            rows = conn.execute(select(
+                t.customer_economic_rules,
+                t.customers.c.name.label("customer_name"),
+            ).join(
+                t.customers,
+                and_(
+                    t.customers.c.tenant_id == t.customer_economic_rules.c.tenant_id,
+                    t.customers.c.id == t.customer_economic_rules.c.customer_id,
+                ),
+            ).where(
+                t.customer_economic_rules.c.tenant_id == principal["tenant_id"]
+            ).order_by(
+                t.customer_economic_rules.c.effective_from.desc()
             ).limit(limit)).mappings().all()
             return {"items": [clean(row) for row in rows]}
 
@@ -3821,6 +3944,138 @@ class WorkspaceStore:
         return self._global_mutate(
             identity, key, "margin.discussion.recorded", payload, apply
         )
+
+    def list_margin_history(self, identity, *, job_id=None, candidate_id=None, limit=100):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            statement = select(t.margin_snapshots).where(
+                t.margin_snapshots.c.tenant_id == principal["tenant_id"]
+            )
+            role = principal["business_role"]
+            if role == "recruiter":
+                statement = statement.where(
+                    t.margin_snapshots.c.recruiter_user_id == principal["id"]
+                )
+            elif role == "delivery_manager":
+                managed_recruiters = select(t.profiles.c.user_id).join(
+                    t.teams,
+                    and_(
+                        t.teams.c.tenant_id == t.profiles.c.tenant_id,
+                        t.teams.c.id == t.profiles.c.team_id,
+                    ),
+                ).where(
+                    t.profiles.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+                statement = statement.where(
+                    t.margin_snapshots.c.recruiter_user_id.in_(managed_recruiters)
+                )
+            elif role != "executive":
+                raise AccessError(403, "Margin visibility requires recruiter, Delivery Manager, or Executive access")
+
+            if job_id:
+                statement = statement.where(t.margin_snapshots.c.job_id == job_id)
+            if candidate_id:
+                statement = statement.where(t.margin_snapshots.c.candidate_id == candidate_id)
+
+            rows = conn.execute(
+                statement.order_by(
+                    t.margin_snapshots.c.created_at.desc(),
+                    t.margin_snapshots.c.version.desc(),
+                ).limit(limit)
+            ).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
+    def margin_management_summary(self, identity, *, limit=500):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["business_role"] not in {"delivery_manager", "executive"}:
+                raise AccessError(403, "Management margin visibility required")
+
+            statement = select(t.margin_snapshots).where(
+                t.margin_snapshots.c.tenant_id == principal["tenant_id"]
+            )
+            if principal["business_role"] == "delivery_manager":
+                managed_recruiters = select(t.profiles.c.user_id).join(
+                    t.teams,
+                    and_(
+                        t.teams.c.tenant_id == t.profiles.c.tenant_id,
+                        t.teams.c.id == t.profiles.c.team_id,
+                    ),
+                ).where(
+                    t.profiles.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+                statement = statement.where(
+                    t.margin_snapshots.c.recruiter_user_id.in_(managed_recruiters)
+                )
+
+            rows = conn.execute(
+                statement.order_by(
+                    t.margin_snapshots.c.created_at.desc(),
+                    t.margin_snapshots.c.version.desc(),
+                ).limit(limit)
+            ).mappings().all()
+
+            latest = {}
+            for row in rows:
+                key = (row["job_id"], row["candidate_id"])
+                if key not in latest:
+                    latest[key] = row
+            current = list(latest.values())
+
+            def gm_percent(row):
+                try:
+                    return float((row.get("result_payload") or {}).get("gross_margin_percent") or 0)
+                except (TypeError, ValueError):
+                    return 0.0
+
+            finalized = [row for row in current if row["lifecycle_status"] == "finalized"]
+            negative = [row for row in current if row["guideline_status"] == "negative_gm"]
+            discussions = [
+                row for row in current
+                if row["guideline_status"] in {"discuss_delivery_manager", "discuss_leadership"}
+                and row["lifecycle_status"] != "finalized"
+            ]
+            within = [row for row in current if row["guideline_status"] == "within_guideline"]
+            average_margin = (
+                sum(gm_percent(row) for row in current) / len(current)
+                if current else 0.0
+            )
+            finalized_average = (
+                sum(gm_percent(row) for row in finalized) / len(finalized)
+                if finalized else 0.0
+            )
+
+            recruiter_ids = {row["recruiter_user_id"] for row in current}
+            recruiter_names = {}
+            if recruiter_ids:
+                people = conn.execute(select(
+                    t.users.c.id, t.users.c.display_name
+                ).where(
+                    t.users.c.tenant_id == principal["tenant_id"],
+                    t.users.c.id.in_(recruiter_ids),
+                )).mappings().all()
+                recruiter_names = {row["id"]: row["display_name"] for row in people}
+
+            recent = []
+            for row in current[:50]:
+                item = clean(row)
+                item["recruiter_name"] = recruiter_names.get(row["recruiter_user_id"], "Recruiter")
+                recent.append(item)
+
+            return {
+                "totals": {
+                    "current_packages": len(current),
+                    "finalized": len(finalized),
+                    "within_guideline": len(within),
+                    "discussion_required": len(discussions),
+                    "negative_gm": len(negative),
+                    "average_gm_percent": average_margin,
+                    "finalized_average_gm_percent": finalized_average,
+                },
+                "recent": recent,
+            }
 
     def list_negative_margin_exceptions(self, identity, *, status="pending", limit=100):
         with self.engine.begin() as conn:
