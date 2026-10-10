@@ -171,6 +171,110 @@ submissions = Table(
     D("approved_at"), D("submitted_at"), D("created_at"), D("updated_at"),
 )
 
+
+submission_projections = Table(
+    "ws_submission_projection", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
+    U("candidate_id", nullable=False), U("recruiter_user_id"),
+    S("source_system", nullable=False), S("source_submission_id", nullable=False),
+    S("source_status", nullable=False), D("submitted_at"), D("client_response_at"),
+    D("source_updated_at"), Column("raw_payload", JSON, nullable=False, default=dict),
+    D("synced_at", nullable=False),
+    UniqueConstraint("tenant_id", "source_system", "source_submission_id"),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+interview_projections = Table(
+    "ws_interview_projection", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
+    U("candidate_id", nullable=False), U("submission_projection_id"),
+    S("source_system", nullable=False), S("source_interview_id", nullable=False),
+    S("source_status", nullable=False), S("interview_type"), D("scheduled_at"), D("completed_at"),
+    S("outcome"), D("outcome_at"), D("source_updated_at"),
+    Column("raw_payload", JSON, nullable=False, default=dict), D("synced_at", nullable=False),
+    UniqueConstraint("tenant_id", "source_system", "source_interview_id"),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+    ForeignKeyConstraint(["submission_projection_id"], ["ws_submission_projection.id"]),
+)
+
+offer_projections = Table(
+    "ws_offer_projection", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
+    U("candidate_id", nullable=False), U("submission_projection_id"),
+    S("source_system", nullable=False), S("source_offer_id", nullable=False),
+    S("source_status", nullable=False), D("offered_at"), D("accepted_at"), D("declined_at"),
+    S("decline_reason"), D("source_updated_at"), Column("raw_payload", JSON, nullable=False, default=dict),
+    D("synced_at", nullable=False),
+    UniqueConstraint("tenant_id", "source_system", "source_offer_id"),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+    ForeignKeyConstraint(["submission_projection_id"], ["ws_submission_projection.id"]),
+)
+
+placement_projections = Table(
+    "ws_placement_projection", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
+    U("candidate_id", nullable=False), S("source_system", nullable=False),
+    S("source_placement_id", nullable=False), S("source_status", nullable=False),
+    S("placement_status"), Column("planned_start_date", Date), Column("actual_start_date", Date),
+    Column("planned_end_date", Date), Column("actual_end_date", Date), D("source_updated_at"),
+    Column("raw_payload", JSON, nullable=False, default=dict), D("synced_at", nullable=False),
+    UniqueConstraint("tenant_id", "source_system", "source_placement_id"),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+)
+
+start_readiness = Table(
+    "ws_start_readiness", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
+    U("candidate_id", nullable=False), U("placement_projection_id"),
+    S("status", nullable=False), S("risk_level", nullable=False), S("risk_reason"),
+    S("next_action"), U("owner_user_id"), D("due_at"), Column("version", Integer, nullable=False),
+    U("updated_by", nullable=False), D("created_at", nullable=False), D("updated_at", nullable=False),
+    UniqueConstraint("tenant_id", "job_id", "candidate_id"),
+    CheckConstraint("status IN ('not_started','in_progress','ready','blocked','started')"),
+    CheckConstraint("risk_level IN ('unknown','low','medium','high','critical')"),
+    CheckConstraint("version > 0"),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+    ForeignKeyConstraint(["placement_projection_id"], ["ws_placement_projection.id"]),
+    ForeignKeyConstraint(["tenant_id", "owner_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "updated_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+start_readiness_items = Table(
+    "ws_start_readiness_item", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("readiness_id", nullable=False),
+    S("item_key", nullable=False), S("label", nullable=False), S("category", nullable=False),
+    S("status", nullable=False), Column("required", Boolean, nullable=False), S("source_type"),
+    S("source_reference"), D("due_at"), S("notes"), U("updated_by", nullable=False),
+    D("created_at", nullable=False), D("updated_at", nullable=False),
+    UniqueConstraint("readiness_id", "item_key"),
+    CheckConstraint("status IN ('missing','pending','complete','waived','not_applicable')"),
+    ForeignKeyConstraint(["readiness_id"], ["ws_start_readiness.id"]),
+    ForeignKeyConstraint(["tenant_id", "updated_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+Index("idx_ws_submission_projection_pair", submission_projections.c.tenant_id,
+      submission_projections.c.job_id, submission_projections.c.candidate_id,
+      submission_projections.c.submitted_at)
+Index("idx_ws_interview_projection_pair", interview_projections.c.tenant_id,
+      interview_projections.c.job_id, interview_projections.c.candidate_id,
+      interview_projections.c.scheduled_at)
+Index("idx_ws_offer_projection_pair", offer_projections.c.tenant_id,
+      offer_projections.c.job_id, offer_projections.c.candidate_id,
+      offer_projections.c.offered_at)
+Index("idx_ws_placement_projection_start", placement_projections.c.tenant_id,
+      placement_projections.c.planned_start_date, placement_projections.c.source_status)
+Index("idx_ws_start_readiness_risk", start_readiness.c.tenant_id,
+      start_readiness.c.risk_level, start_readiness.c.status, start_readiness.c.due_at)
+Index("idx_ws_start_readiness_item_status", start_readiness_items.c.tenant_id,
+      start_readiness_items.c.readiness_id, start_readiness_items.c.status,
+      start_readiness_items.c.due_at)
+
 identities = Table("ws_identity", metadata, S("provider", primary_key=True), S("subject", primary_key=True),
                    U("tenant_id", nullable=False), U("user_id", nullable=False),
                    ForeignKeyConstraint(["tenant_id", "user_id"], ["app_user.tenant_id", "app_user.id"]),
