@@ -129,7 +129,7 @@ export default function PayPackagePage({params}:{params:Promise<{jobId:string,ca
 
    <aside className="marginPanel">
     <small>MARGIN SNAPSHOT</small>
-    {!result?<div className="emptyMargin"><b>Ready to calculate</b><p>Complete the package. Medlivo will apply the correct division calculator, customer rules, costs and margin guideline.</p></div>:<MarginResult data={result}/>}
+    {!result?<div className="emptyMargin"><b>Ready to calculate</b><p>Complete the package. Medlivo will apply the correct division calculator, customer rules, costs and margin guideline.</p></div>:<MarginResult data={result} onUpdate={setResult}/>}
    </aside>
   </form>
  </main>
@@ -139,16 +139,44 @@ function Field({name,label,type="text",required=false,defaultValue="",select=fal
  return <label><span>{label}</span>{select?<select name={name} defaultValue={options[0]?.[0]}>{options.map(o=><option key={o[0]} value={o[0]}>{o[1]}</option>)}</select>:<input name={name} type={type} step={type==="number"?"0.01":undefined} min={type==="number"?"0":undefined} required={required} defaultValue={defaultValue}/>}</label>
 }
 function Check({name,label}:{name:string,label:string}){return <label className="checkField"><input name={name} type="checkbox"/><span>{label}</span></label>}
-function MarginResult({data}:{data:any}){
+function MarginResult({data,onUpdate}:{data:any,onUpdate:(v:any)=>void}){
  const r=data.result_payload||{},p=r.pay_package||{};
+ const[note,setNote]=useState(""),[working,setWorking]=useState(false),[message,setMessage]=useState("");
+ const canFinalize=["within_guideline","exception_approved"].includes(data.lifecycle_status)||data.guideline_status==="within_guideline";
+ async function refresh(){onUpdate(await api("margin/snapshots/"+data.id))}
+ async function discuss(role:"delivery_manager"|"designated_leadership"){
+  if(note.trim().length<3){setMessage("Add a short note about the discussion.");return}
+  setWorking(true);setMessage("");
+  try{
+   await api("margin/snapshots/"+data.id+"/discussions",{method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({
+    participant_role:role,
+    discussion_type:role==="delivery_manager"?"rate_guidance":"commercial_exception",
+    notes:note.trim()
+   })});
+   setMessage("Discussion recorded.");setNote("");await refresh();
+  }catch(e:any){setMessage(e.message)}finally{setWorking(false)}
+ }
+ async function finalize(){
+  setWorking(true);setMessage("");
+  try{
+   await api("margin/snapshots/"+data.id+"/finalize",{method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({expected_version:data.version})});
+   setMessage("Rate finalized.");await refresh();
+  }catch(e:any){setMessage(e.message)}finally{setWorking(false)}
+ }
  return <div className="marginResult">
   <div className={"marginStatus "+(data.guideline_status||"")}><span>Margin Status</span><b>{statusLabel(data.guideline_status||"")}</b></div>
   <div className="marginNumbers"><div><span>Net Billing / Week</span><b>{money(r.net_client_billing_per_week)}</b></div><div><span>Total Cost / Week</span><b>{money(r.total_cost_per_week)}</b></div><div><span>GM / Week</span><b>{money(r.gross_margin_per_week)}</b></div><div><span>Gross Margin</span><b>{pct(r.gross_margin_percent)}</b></div><div><span>Full Assignment GM</span><b>{money(r.gross_margin_assignment)}</b></div><div><span>Projected Commission</span><b>{money(data.commission_projection?.projected_amount)}</b></div></div>
   <div className="calculatorNote"><span>Calculator used</span><b>{r.calculator_source||data.calculation_profile}</b><p>Profile and customer economic rules were selected by Medlivo automatically.</p></div>
-  {data.guideline_status==="within_guideline"&&<div className="nextStep good"><b>You can finalize this rate.</b><span>The package is within the configured recruiter guideline.</span></div>}
+  {data.lifecycle_status==="finalized"&&<div className="nextStep good"><b>Rate finalized.</b><span>This version is locked as the finalized recruiter package.</span></div>}
+  {data.lifecycle_status!=="finalized"&&data.guideline_status==="within_guideline"&&<div className="nextStep good"><b>You can finalize this rate.</b><span>The package is within the configured recruiter guideline.</span></div>}
   {data.guideline_status==="discuss_delivery_manager"&&<div className="nextStep warn"><b>Discuss with Delivery Manager.</b><span>Record the discussion before finalizing. You remain the rate owner.</span></div>}
   {data.guideline_status==="discuss_leadership"&&<div className="nextStep warn"><b>Discuss with leadership.</b><span>Record the discussion before finalizing. You remain the rate owner.</span></div>}
-  {data.guideline_status==="negative_gm"&&<div className="nextStep danger"><b>Executive exception required.</b><span>This package cannot be finalized until an Executive approves the negative GM exception.</span></div>}
+  {data.guideline_status==="negative_gm"&&data.lifecycle_status!=="exception_approved"&&<div className="nextStep danger"><b>Executive exception required.</b><span>This package cannot be finalized until an Executive approves the negative GM exception.</span></div>}
+  {data.lifecycle_status==="exception_approved"&&<div className="nextStep good"><b>Executive exception approved.</b><span>You remain the rate owner and may now finalize this package.</span></div>}
+  {data.lifecycle_status==="exception_rejected"&&<div className="nextStep danger"><b>Executive exception rejected.</b><span>Revise the package and calculate a new version.</span></div>}
+  {(data.guideline_status==="discuss_delivery_manager"||data.guideline_status==="discuss_leadership")&&data.lifecycle_status!=="finalized"&&<div className="discussionBox"><span>Discussion note</span><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="What was discussed and what guidance was given?"/><button type="button" disabled={working} onClick={()=>discuss(data.guideline_status==="discuss_delivery_manager"?"delivery_manager":"designated_leadership")}>{working?"Saving…":"Record Discussion"}</button></div>}
+  {data.lifecycle_status!=="finalized"&&data.lifecycle_status!=="exception_rejected"&&(canFinalize||data.guideline_status==="discuss_delivery_manager"||data.guideline_status==="discuss_leadership")&&<button className="finalizeButton" type="button" disabled={working} onClick={finalize}>{working?"Working…":"Finalize Rate"}</button>}
+  {message&&<div className="actionMessage">{message}</div>}
   {p.weekly_clinician_package!=null&&<div className="packageLine"><span>Estimated Weekly Clinician Package</span><b>{money(p.weekly_clinician_package)}</b></div>}
  </div>
 }
