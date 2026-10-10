@@ -11,7 +11,8 @@ export default function FunnelPage(){
  const[filter,setFilter]=useState("All");
  useEffect(()=>{Promise.all([get("me"),get("funnel?limit=200")]).then(([m,d])=>{setMe(m);setData(d)}).catch(e=>setError(e.message))},[]);
  const items=useMemo(()=>{const all=data?.items||[];const ordered=[...all].sort((a:any,b:any)=>{
-  const rank=(x:any)=>({critical:5,high:4,medium:3,low:2,unknown:1}[x?.start_readiness?.risk_level||"unknown"]||0);
+  const riskRank:Record<string,number>={critical:5,high:4,medium:3,low:2,unknown:1};
+  const rank=(x:any)=>riskRank[String(x?.start_readiness?.risk_level||"unknown")]||0;
   return rank(b)-rank(a);
  });return filter==="All"?ordered:ordered.filter((x:any)=>stage(x)===filter)},[data,filter]);
  if(error)return <main className="page"><div className="adminError"><b>Funnel unavailable</b><span>{error}</span></div></main>;
