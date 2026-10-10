@@ -56,7 +56,7 @@ export default function SubmissionStudioPage({params}:{params:Promise<{jobId:str
   try{
    const textValue=String(item._reviewText??itemValues[item.id]??"").trim();
    const payload:any={decision,recruiter_note:(itemNotes[item.id]||"").trim()||null,resolved_value:null};
-   if(decision==="approved"&&item.requirement_key==="candidate_summary")payload.resolved_value={text:textValue};
+   if(decision==="approved"&&item.requirement_key==="candidate_summary")payload.resolved_value={...(item.resolved_value||{}),text:textValue};
    else if(decision==="approved"&&item.status==="missing"&&textValue)payload.resolved_value={value:textValue};
    await api("submission-studio/packages/"+pack.id+"/items/"+item.id+"/review",{
     method:"POST",headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)
