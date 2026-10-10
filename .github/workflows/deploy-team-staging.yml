@@ -62,7 +62,7 @@ jobs:
       - name: Build and push private team web
         run: |
           WEB_IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${GAR_REPOSITORY}/${WEB_SERVICE}:${GITHUB_SHA}"
-          docker build -f infrastructure/team-staging/Dockerfile.web -t "${WEB_IMAGE}" .
+          docker build -f apps/recruiter-web/Dockerfile -t "${WEB_IMAGE}" apps/recruiter-web
           docker push "${WEB_IMAGE}"
           echo "WEB_IMAGE=${WEB_IMAGE}" >> "${GITHUB_ENV}"
 
@@ -72,5 +72,12 @@ jobs:
 
       - name: Show deployed revisions
         run: |
-          gcloud run services describe "${API_SERVICE}"             --project="${PROJECT_ID}" --region="${REGION}"             --format='value(status.latestReadyRevisionName,status.url)'
-          gcloud run services describe "${WEB_SERVICE}"             --project="${PROJECT_ID}" --region="${REGION}"             --format='value(status.latestReadyRevisionName,status.url)'
+          gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format='value(status.latestReadyRevisionName,status.url)'
+          gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format='value(status.latestReadyRevisionName,status.url)'
+
+      - name: Show non-secret staging routing configuration
+        run: |
+          WEB_ORIGIN="$(gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="TEAM_APP_ORIGIN") | .value // empty')"
+          API_ORIGIN="$(gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="TEAM_API_URL") | .value // empty')"
+          WORKSPACE_ENABLED="$(gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="TEAM_WORKSPACE_ENABLED") | .value // empty')"
+          printf 'TEAM_APP_ORIGIN=%s\nTEAM_API_URL=%s\nTEAM_WORKSPACE_ENABLED=%s\n' "${WEB_ORIGIN}" "${API_ORIGIN}" "${WORKSPACE_ENABLED}"
