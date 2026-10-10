@@ -4002,27 +4002,58 @@ class WorkspaceStore:
                 t.candidate_licenses.c.candidate_id == candidate["id"],
             )).mappings().all()
 
-            document_rows = conn.execute(select(
+            document_items = conn.execute(select(
                 t.submission_package_items.c.label,
-                t.submission_package_items.c.requirement_id,
+                t.submission_package_items.c.document_asset_id,
+                t.submission_package_items.c.resolved_value,
                 t.submission_template_requirements.c.required,
-                t.candidate_document_assets.c.storage_reference,
-                t.candidate_document_assets.c.title,
-                t.candidate_document_assets.c.document_type,
             ).join(
                 t.submission_template_requirements,
                 t.submission_template_requirements.c.id == t.submission_package_items.c.requirement_id,
-            ).join(
-                t.candidate_document_assets,
-                t.candidate_document_assets.c.id == t.submission_package_items.c.document_asset_id,
             ).where(
                 t.submission_package_items.c.tenant_id == principal["tenant_id"],
                 t.submission_package_items.c.package_id == package_id,
-                t.submission_package_items.c.document_asset_id.is_not(None),
                 t.submission_package_items.c.status.in_(
                     ["matched", "approved", "ai_filled"]
                 ),
             ).order_by(t.submission_package_items.c.display_order)).mappings().all()
+
+            supporting_documents = []
+            seen_asset_ids = set()
+            for item in document_items:
+                asset_ids = []
+                if item.get("document_asset_id"):
+                    asset_ids.append(item["document_asset_id"])
+                resolved = item.get("resolved_value") or {}
+                if isinstance(resolved, dict):
+                    for asset in resolved.get("assets") or []:
+                        if isinstance(asset, dict) and asset.get("id"):
+                            asset_ids.append(asset["id"])
+                for asset_id in asset_ids:
+                    if asset_id in seen_asset_ids:
+                        continue
+                    asset = conn.execute(select(t.candidate_document_assets).where(
+                        t.candidate_document_assets.c.tenant_id == principal["tenant_id"],
+                        t.candidate_document_assets.c.candidate_id == candidate["id"],
+                        t.candidate_document_assets.c.id == asset_id,
+                        t.candidate_document_assets.c.is_current.is_(True),
+                    )).mappings().first()
+                    if asset is None:
+                        if item["required"]:
+                            raise AccessError(
+                                422,
+                                "A required submission document is no longer available"
+                            )
+                        continue
+                    seen_asset_ids.add(asset_id)
+                    supporting_documents.append({
+                        "label": item["label"],
+                        "required": bool(item["required"]),
+                        "storage_reference": asset.get("storage_reference"),
+                        "title": asset.get("title"),
+                        "document_type": asset.get("document_type"),
+                        "asset_id": asset["id"],
+                    })
 
             context = {
                 "package": clean(package),
@@ -4032,7 +4063,7 @@ class WorkspaceStore:
                 "candidate_summary": candidate_summary,
                 "resume_text": resume_text,
                 "licenses": [clean(row) for row in licenses],
-                "supporting_documents": [clean(row) for row in document_rows],
+                "supporting_documents": clean(supporting_documents),
             }
             try:
                 return self.submission_packet_generator.generate(context)
