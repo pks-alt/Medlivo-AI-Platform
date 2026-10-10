@@ -54,8 +54,9 @@ def clean(row):
 
 
 class WorkspaceStore:
-    def __init__(self, engine):
+    def __init__(self, engine, submission_ai=None):
         self.engine = engine
+        self.submission_ai = submission_ai
 
     def _principal(self, conn, identity: Identity):
         def lookup():
@@ -130,6 +131,7 @@ class WorkspaceStore:
                 "role": principal["role"],
                 "business_role": principal["business_role"],
                 "system_admin": bool(principal["system_admin"]),
+                "submission_ai_enabled": self.submission_ai is not None,
             }
 
     def admin_teams(self, identity):
@@ -3498,6 +3500,213 @@ class WorkspaceStore:
             "items": [clean(x) for x in items],
             "validations": [clean(x) for x in validations],
         }
+
+    def compose_submission_package_ai(self, identity, package_id, key):
+        payload = {"package_id": package_id}
+
+        def apply(conn, principal):
+            if principal["business_role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            if self.submission_ai is None:
+                raise AccessError(503, "Submission AI is not configured for this environment")
+
+            package = conn.execute(select(t.submission_packages).where(
+                t.submission_packages.c.tenant_id == principal["tenant_id"],
+                t.submission_packages.c.id == package_id,
+                t.submission_packages.c.recruiter_user_id == principal["id"],
+            ).with_for_update()).mappings().first()
+            if package is None:
+                raise AccessError(404, "Submission package not found")
+            if package["status"] in {"finalized", "superseded"}:
+                raise AccessError(409, "This submission package version is locked")
+
+            job = conn.execute(select(t.jobs).where(
+                t.jobs.c.tenant_id == principal["tenant_id"],
+                t.jobs.c.id == package["job_id"],
+            )).mappings().first()
+            candidate = conn.execute(select(t.candidates).where(
+                t.candidates.c.tenant_id == principal["tenant_id"],
+                t.candidates.c.id == package["candidate_id"],
+            )).mappings().first()
+            if job is None or candidate is None:
+                raise AccessError(409, "Submission source records are unavailable")
+
+            resume = conn.execute(select(t.resume_versions).where(
+                t.resume_versions.c.tenant_id == principal["tenant_id"],
+                t.resume_versions.c.candidate_id == candidate["id"],
+            ).order_by(
+                t.resume_versions.c.is_primary.desc(),
+                t.resume_versions.c.updated_at.desc(),
+            )).mappings().first()
+            licenses = conn.execute(select(t.candidate_licenses).where(
+                t.candidate_licenses.c.tenant_id == principal["tenant_id"],
+                t.candidate_licenses.c.candidate_id == candidate["id"],
+            )).mappings().all()
+            certs = conn.execute(select(t.candidate_certifications).where(
+                t.candidate_certifications.c.tenant_id == principal["tenant_id"],
+                t.candidate_certifications.c.candidate_id == candidate["id"],
+            )).mappings().all()
+            availability = conn.execute(select(t.candidate_availability).where(
+                t.candidate_availability.c.tenant_id == principal["tenant_id"],
+                t.candidate_availability.c.candidate_id == candidate["id"],
+            ).order_by(t.candidate_availability.c.confirmed_at.desc())).mappings().first()
+
+            safe_profile_keys = {
+                "years_experience", "settings", "care_settings", "emr", "emrs",
+                "work_history", "education", "skills", "procedures", "case_experience",
+                "specialty_experience", "certifications", "licenses",
+            }
+            raw_profile = candidate.get("canonical_profile") or {}
+            safe_profile = {
+                key_name: raw_profile[key_name]
+                for key_name in safe_profile_keys if key_name in raw_profile
+            }
+
+            source = {
+                "candidate": {
+                    "name": candidate.get("canonical_name"),
+                    "profession": candidate.get("profession"),
+                    "specialty": candidate.get("specialty"),
+                    "city": candidate.get("city"),
+                    "state": candidate.get("state"),
+                    "profile": clean(safe_profile),
+                },
+                "job": {
+                    "title": job.get("title"),
+                    "division": job.get("division"),
+                    "profession": job.get("profession"),
+                    "specialty": job.get("specialty"),
+                    "city": job.get("city"),
+                    "state": job.get("state"),
+                    "start_date": clean({"value": job.get("start_date")})["value"],
+                    "normalized_payload": clean(job.get("normalized_payload") or {}),
+                },
+                "resume": {
+                    "text": (resume.get("text_content") or "")[:60000] if resume else "",
+                    "parsed_payload": clean(resume.get("parsed_payload") or {}) if resume else {},
+                },
+                "licenses": [clean({
+                    "id": row["id"], "type": row.get("license_type"), "state": row.get("state"),
+                    "number": row.get("license_number"), "status": row.get("status"),
+                    "expires_at": row.get("expires_at"), "verification_status": row.get("verification_status"),
+                    "verified_at": row.get("verified_at"), "verification_source": row.get("verification_source"),
+                }) for row in licenses],
+                "certifications": [clean({
+                    "id": row["id"], "key": row.get("certification_key"), "name": row.get("certification_name"),
+                    "status": row.get("status"), "expires_at": row.get("expires_at"),
+                    "verification_status": row.get("verification_status"),
+                    "verified_at": row.get("verified_at"), "verification_source": row.get("verification_source"),
+                }) for row in certs],
+                "availability": clean(availability) if availability else None,
+            }
+            source_keys = {
+                "candidate.name", "candidate.profession", "candidate.specialty",
+                "candidate.city", "candidate.state", "candidate.profile",
+                "job.title", "job.division", "job.profession", "job.specialty",
+                "job.city", "job.state", "job.start_date", "job.normalized_payload",
+                "resume.text", "resume.parsed_payload", "availability",
+            }
+            source_keys.update("license." + str(row["id"]) for row in licenses)
+            source_keys.update("certification." + str(row["id"]) for row in certs)
+            context = {
+                "source_keys": sorted(source_keys),
+                "source": source,
+                "privacy": {
+                    "allowed_for_narrative": [
+                        "candidate.name", "candidate.profession", "candidate.specialty",
+                        "candidate.city", "candidate.state",
+                    ],
+                    "restricted_fields_not_provided": [
+                        "ssn", "date_of_birth", "government_id", "vaccination_detail",
+                    ],
+                },
+            }
+
+            try:
+                result = self.submission_ai.compose(context)
+            except Exception:
+                raise AccessError(503, "Submission AI could not prepare a draft") from None
+
+            if not result.candidate_summary.strip() or not result.resume_markdown.strip():
+                raise AccessError(503, "Submission AI returned an incomplete draft")
+
+            timestamp = now()
+            ai_summary = {
+                "status": "draft_ready",
+                "provider": result.provider,
+                "model": result.model,
+                "candidate_summary": result.candidate_summary,
+                "resume_markdown": result.resume_markdown,
+                "claims": result.claims,
+                "warnings": result.warnings,
+                "source_grounded": True,
+                "generated_at": timestamp.isoformat(),
+                "requires_recruiter_review": True,
+            }
+            conn.execute(update(t.submission_packages).where(
+                t.submission_packages.c.tenant_id == principal["tenant_id"],
+                t.submission_packages.c.id == package_id,
+            ).values(
+                ai_summary=ai_summary,
+                status="needs_review",
+                updated_at=timestamp,
+            ))
+
+            summary_item = conn.execute(select(t.submission_package_items).where(
+                t.submission_package_items.c.tenant_id == principal["tenant_id"],
+                t.submission_package_items.c.package_id == package_id,
+                t.submission_package_items.c.requirement_key == "candidate_summary",
+            ).with_for_update()).mappings().first()
+            if summary_item is not None:
+                conn.execute(update(t.submission_package_items).where(
+                    t.submission_package_items.c.id == summary_item["id"]
+                ).values(
+                    status="needs_review",
+                    resolved_value={
+                        "text": result.candidate_summary,
+                        "claims": result.claims,
+                        "ai_generated": True,
+                        "provider": result.provider,
+                        "model": result.model,
+                    },
+                    recruiter_note=None,
+                    updated_at=timestamp,
+                ))
+
+            resume_item = conn.execute(select(t.submission_package_items).where(
+                t.submission_package_items.c.tenant_id == principal["tenant_id"],
+                t.submission_package_items.c.package_id == package_id,
+                t.submission_package_items.c.requirement_key == "resume",
+            ).with_for_update()).mappings().first()
+            if resume_item is not None:
+                prior_value = resume_item.get("resolved_value") or {}
+                conn.execute(update(t.submission_package_items).where(
+                    t.submission_package_items.c.id == resume_item["id"]
+                ).values(
+                    resolved_value={
+                        **clean(prior_value),
+                        "ai_resume_markdown": result.resume_markdown,
+                        "ai_provider": result.provider,
+                        "ai_model": result.model,
+                    },
+                    updated_at=timestamp,
+                ))
+
+            self._operational_audit(
+                conn, principal, "submission_package.ai_composed",
+                "submission_package", package_id, {},
+                {
+                    "provider": result.provider,
+                    "model": result.model,
+                    "warning_count": len(result.warnings),
+                    "claim_count": len(result.claims),
+                },
+            )
+            return self._submission_package_detail_conn(conn, principal, package_id)
+
+        return self._global_mutate(
+            identity, key, "submission_package.ai_composed", payload, apply
+        )
 
     def _recompute_submission_readiness(self, conn, principal, package):
         rows = conn.execute(select(
