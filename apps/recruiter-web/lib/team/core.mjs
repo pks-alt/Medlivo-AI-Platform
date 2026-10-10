@@ -221,31 +221,36 @@ export function createGateway({config, store, verifyIdToken, api, fetcher = fetc
   async function callback(request, url) {
     const binding = cookie(request, LOGIN_COOKIE), state = url.searchParams.get('state');
     if (!binding || !/^[A-Za-z0-9_-]{43}$/.test(state || '') || url.searchParams.getAll('state').length !== 1)
-      return redirect('/team?error=login', [clearLogin]);
+      return redirect('/team?error=login&stage=state', [clearLogin]);
     const id = hash(binding), record = await store.consumeLogin(id, hash(state), clock());
-    if (!record) return redirect('/team?error=login', [clearLogin]);
+    if (!record) return redirect('/team?error=login&stage=state', [clearLogin]);
+    let stage = 'provider';
     try {
       const {nonce,verifier} = unseal(config.encryptionKey, record.ciphertext, 'login:' + id);
       const code = url.searchParams.get('code');
       if (url.searchParams.has('error') || !code || code.length > 4096 || url.searchParams.getAll('code').length !== 1) throw new Error();
+      stage = 'token';
       const response = await fetcher(TOKEN_URL, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded', Accept:'application/json'},
         body:new URLSearchParams({client_id:config.clientId,client_secret:config.clientSecret,code,code_verifier:verifier,redirect_uri:callbackUri,grant_type:'authorization_code'}),
         redirect:'error', cache:'no-store', signal:AbortSignal.timeout(10000)});
       if (!response.ok) throw new Error();
       const tokens = JSON.parse(await boundedText(response, 24000));
       if (typeof tokens.id_token !== 'string' || tokens.id_token.length > 8192) throw new Error();
+      stage = 'identity';
       const claims = await verifyIdToken(tokens.id_token, nonce);
       const expiry = Math.min(claims.exp - 30, clock()+config.sessionSeconds);
       if (!claims.sub || !Number.isFinite(expiry) || expiry <= clock()) throw new Error();
       // Membership, active status and roles must come from the PRIVATE API/database.
+      stage = 'workspace';
       const member = await api(tokens.id_token, '/me', {method:'GET'});
       if (member.status === 403) return redirect('/team?error=access', [clearLogin]);
       if (member.status !== 200) throw new Error();
+      stage = 'session';
       const old = cookie(request, SESSION_COOKIE); if (old) await store.removeSession(hash(old));
       const raw = randomSecret(), sid = hash(raw), csrf = randomSecret();
       await store.saveSession(sid, seal(config.encryptionKey, {idToken:tokens.id_token,csrf,sub:claims.sub,expires:expiry}, 'session:'+sid), expiry, Math.min(expiry,clock()+config.idleSeconds));
       return redirect('/team', [clearLogin, cookieHeader(SESSION_COOKIE, raw, expiry-clock())]);
-    } catch { return redirect('/team?error=login', [clearLogin]); }
+    } catch { return redirect('/team?error=login&stage='+encodeURIComponent(stage), [clearLogin]); }
   }
   async function proxy(request, url, data) {
     const method = request.method, resource = endpoint(url.pathname.slice('/api/team'.length), method, url.searchParams);
