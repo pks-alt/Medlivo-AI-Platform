@@ -202,7 +202,7 @@ def test_raw_margin_endpoint_cannot_bypass_nursing_rehab_package_rules(client, h
         },
     )
     assert response.status_code == 422
-    assert "structured W-2 pay package workflow" in response.json()["detail"]
+    assert "structured pay package workflow" in response.json()["detail"]
 
 
 def test_missing_job_division_or_state_fails_closed(client, headers, seeded):
