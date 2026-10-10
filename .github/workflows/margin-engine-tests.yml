@@ -1,0 +1,33 @@
+name: Test Margin Engine
+on:
+  pull_request:
+    paths:
+      - 'services/margin-engine/**'
+      - 'docs/PHASE1_MARGIN_COST_ENGINE.md'
+      - '.github/workflows/margin-engine-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'services/margin-engine/**'
+      - 'docs/PHASE1_MARGIN_COST_ENGINE.md'
+      - '.github/workflows/margin-engine-tests.yml'
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        python: ['3.12', '3.13']
+    defaults:
+      run:
+        working-directory: services/margin-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install '.[test]'
+      - run: python -m pytest -q
+      - run: python -m compileall -q margin_engine
