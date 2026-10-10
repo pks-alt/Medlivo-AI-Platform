@@ -19,6 +19,7 @@ from .schemas import (
     MarginCalculationInput, MarginDiscussionInput, MarginFinalizeInput,
     CostAssumptionSetInput, CustomerEconomicRuleInput,
     W2PayPackageSnapshotInput, LocumsPayPackageSnapshotInput,
+    ApprovalDecisionInput,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -378,6 +379,21 @@ def build_app(store, verifier):
                               idempotency_key: UUID = Header(), who=Depends(identity)):
         return store.add_margin_discussion(
             who, str(snapshot_id), str(idempotency_key), value
+        )
+
+    @app.get(prefix + "/margin/negative-gm-exceptions")
+    def negative_gm_exceptions(status: str = "pending",
+                               limit: int = Query(default=100, ge=1, le=200),
+                               who=Depends(identity)):
+        return store.list_negative_margin_exceptions(
+            who, status=status, limit=limit
+        )
+
+    @app.post(prefix + "/margin/negative-gm-exceptions/{approval_id}/decision")
+    def decide_negative_gm_exception(approval_id: UUID, value: ApprovalDecisionInput,
+                                    idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.decide_negative_margin_exception(
+            who, str(approval_id), str(idempotency_key), value
         )
 
     @app.post(prefix + "/margin/snapshots/{snapshot_id}/finalize")
