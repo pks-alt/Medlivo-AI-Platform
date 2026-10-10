@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 import logging
 from uuid import UUID
 from datetime import date
-from fastapi import FastAPI, Depends, HTTPException, Header, Query, UploadFile, File, Form
+from fastapi import FastAPI, Depends, HTTPException, Header, Query, UploadFile, File, Form, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -26,6 +26,7 @@ from .schemas import (
 )
 from .store import WorkspaceStore, AccessError
 from .submission_ai import VertexGeminiSubmissionAIComposer
+from .submission_artifacts import GCSDocumentResolver, SubmissionPacketGenerator
 
 
 logger = logging.getLogger("medlivo.workspace")
@@ -471,6 +472,18 @@ def build_app(store, verifier):
             who, str(package_id), str(idempotency_key), value
         )
 
+    @app.get(prefix + "/submission-studio/packages/{package_id}/download")
+    def download_submission_package(package_id: UUID, who=Depends(identity)):
+        result = store.generate_submission_packet(who, str(package_id))
+        return Response(
+            content=result.content,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": 'attachment; filename="' + result.filename + '"',
+                "X-Medlivo-Package": "submission",
+            },
+        )
+
     @app.get(prefix + "/submission-studio/packages/{package_id}")
     def submission_package(package_id: UUID, who=Depends(identity)):
         return store.get_submission_package(who, str(package_id))
@@ -615,7 +628,21 @@ def create_app():
             location=settings.submission_ai_location,
             model=settings.submission_ai_model,
         )
+    submission_packet_generator = None
+    if settings.submission_packet_download_enabled:
+        allowed_buckets = {
+            value.strip()
+            for value in settings.submission_document_buckets.split(",")
+            if value.strip()
+        }
+        submission_packet_generator = SubmissionPacketGenerator(
+            GCSDocumentResolver(allowed_buckets=allowed_buckets)
+        )
     return build_app(
-        WorkspaceStore(engine, submission_ai=submission_ai),
+        WorkspaceStore(
+            engine,
+            submission_ai=submission_ai,
+            submission_packet_generator=submission_packet_generator,
+        ),
         GoogleIdentityVerifier(settings.google_client_id, settings.google_hosted_domain),
     )
