@@ -3430,8 +3430,19 @@ class WorkspaceStore:
                 value.recruiter_note is None or len(value.recruiter_note.strip()) < 5
             ):
                 raise AccessError(422, "Waiver or not-applicable decisions require a reason")
-            if value.decision == "approved" and item["status"] == "missing" and value.resolved_value is None:
-                raise AccessError(422, "Provide the confirmed value or evidence before approving a missing item")
+            if value.decision == "approved" and item["status"] == "missing":
+                if requirement["requirement_type"] in {
+                    "document", "skills_checklist", "reference", "form"
+                }:
+                    raise AccessError(
+                        422,
+                        "A required document cannot be replaced by manual confirmation"
+                    )
+                if value.resolved_value is None:
+                    raise AccessError(
+                        422,
+                        "Provide the confirmed value before approving a missing item"
+                    )
             if (
                 value.decision == "approved"
                 and item["requirement_key"] == "candidate_summary"
