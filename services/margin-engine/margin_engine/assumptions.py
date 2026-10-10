@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from .models import ApprovalBands, CostAssumptionSet
+from .models import GuidelineBands, CostAssumptionSet
 
 
 def seed_assumptions(profile: str) -> CostAssumptionSet:
@@ -60,8 +60,8 @@ def seed_assumptions(profile: str) -> CostAssumptionSet:
             locums_onboarding_cost=Decimal("1200"),
             vivian_sourcing_cost=Decimal("1400"),
             referral_sourcing_cost=Decimal("500"),
-            approval_bands=ApprovalBands(
-                legacy_workbook_approval_floor=Decimal("0.05")
+            guideline_bands=GuidelineBands(
+                legacy_workbook_floor=Decimal("0.05")
             ),
             **common,
         )
@@ -74,8 +74,8 @@ def seed_assumptions(profile: str) -> CostAssumptionSet:
             locums_onboarding_cost=Decimal("1200"),
             vivian_sourcing_cost=Decimal("1400"),
             referral_sourcing_cost=Decimal("500"),
-            approval_bands=ApprovalBands(
-                legacy_workbook_approval_floor=Decimal("0.10")
+            guideline_bands=GuidelineBands(
+                legacy_workbook_floor=Decimal("0.10")
             ),
             **common,
         )

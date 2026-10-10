@@ -44,7 +44,7 @@ Medlivo AI owns:
 - pay-package calculations
 - versioned assumptions
 - margin snapshots
-- margin approvals
+- margin guideline evaluation and exception discussions
 - projected commission
 - negotiation history
 - audit trail
@@ -55,7 +55,7 @@ Medlivo AI owns:
 
 The engine is embedded in the job/candidate negotiation workflow.
 
-`Job economics → recruiter negotiates compensation → live recalculation → margin guardrail → approval if required → package finalized → immutable economics snapshot`
+`Job economics → recruiter negotiates compensation → live recalculation → guideline check → recruiter finalizes within guideline → discussion with Delivery Manager or designated leadership when needed → immutable economics snapshot`
 
 Recruiters must not manually calculate GM.
 
@@ -73,7 +73,7 @@ Recruiters may not edit:
 - factoring assumptions
 - overhead assumptions
 - customer/MSP fee rules
-- approval thresholds
+- guideline thresholds
 - commission rules
 - protected company cost assumptions
 
@@ -279,17 +279,21 @@ The engine must calculate:
 
 ---
 
-## 6. Approval policy
+## 6. Rate finalization and guideline policy
 
-Approval thresholds must be **versioned configuration**, not hardcoded application logic.
+Recruiters own rate negotiation and rate finalization. They are expected to follow Medlivo's approved commercial guidelines and do not require routine manager approval for normal rate decisions.
 
-The uploaded spreadsheets contain profile-specific historical/current workbook thresholds:
-- California Locums W-2 workbook: 5% PK approval threshold
-- Locums 1099 workbook: 10% approval threshold
+Guideline thresholds must be **versioned configuration**, not hardcoded application logic.
+
+The uploaded spreadsheets contain historical/current reference thresholds:
+- California Locums W-2 workbook: 5% historical approval/reference threshold
+- Locums 1099 workbook: 10% historical approval/reference threshold
+
+These workbook values are inputs to the guideline configuration. They are not a universal enterprise approval rule.
 
 The Nursing/Allied/Rehab workbook does not establish one universal enterprise threshold in its protected assumptions table.
 
-Therefore the platform must support configurable approval bands by:
+The platform must support configurable guideline bands by:
 - calculation profile
 - division
 - customer/MSP where needed
@@ -297,25 +301,26 @@ Therefore the platform must support configurable approval bands by:
 
 Final workflow:
 
-### Within policy
-Recruiter may finalize.
+### Within guideline
+Recruiter may finalize the negotiated rate directly.
 
-### Warning / manager exception band
-Delivery Manager approval required.
+### Discuss with Delivery Manager
+The package falls outside the normal recruiter guideline or contains an unusual commercial consideration. The platform flags the item for discussion, but the recruiter remains the primary rate owner.
 
-### Below Delivery Manager authority / special exception
-Executive approval required.
+### Discuss with leadership
+The economics are materially outside normal guidance or involve a significant exception. The recruiter discusses with the Delivery Manager and/or designated leadership. Lael may serve as a designated leadership contact operationally, but the software must use role/configuration rather than hardcoding an individual's name.
 
 ### Negative GM
-Do not finalize / do not submit without explicit Executive exception policy.
+Negative GM cannot be treated as an ordinary recruiter-finalized package. It requires an explicit leadership exception before the platform may treat the package as final.
 
 The UI should display plain-language status:
-- Healthy
-- Manager Approval Required
-- Executive Approval Required
-- Do Not Finalize — Negative GM
+- Within Guideline
+- Discuss with Delivery Manager
+- Discuss with Leadership
+- Negative GM — Leadership Exception Required
+- Guideline Not Configured
 
-The platform must preserve which approval-policy version was applied.
+The platform must preserve which guideline-policy version was applied and whether a discussion/exception was recorded.
 
 ---
 
@@ -343,7 +348,7 @@ Minimum fields:
 - minimum taxable / pricing check
 - OT multiplier
 - DT multiplier
-- approval bands
+- guideline bands
 - commission rule
 - approved_by
 - created_at
@@ -463,7 +468,7 @@ Required fields:
 - projected assignment profit
 - commissionable net profit basis
 - projected recruiter commission
-- approval status
+- guideline status
 - created_by
 - created_at
 - finalized_at
@@ -471,8 +476,8 @@ Required fields:
 States:
 - Draft
 - Negotiated
-- Approval Required
-- Approved
+- Discussion Recommended
+- Leadership Exception Required
 - Finalized
 - Superseded
 
@@ -553,36 +558,36 @@ Can:
 - enter/adjust negotiable compensation
 - view live economics
 - save negotiation versions
-- request approval
-- finalize within policy
+- finalize rates within approved guidelines
+- request or record discussion when the system flags an exception
 
 Cannot:
 - modify protected company assumptions
 - change customer fee rules
-- approve own exception
-- bypass negative-GM controls
+- modify protected guideline policy
+- bypass a required negative-GM leadership exception
 
 ### Delivery Manager
 Can:
 - view all assumptions affecting a deal
-- review margin exceptions
-- approve within manager authority
+- discuss margin exceptions with recruiters
+- provide guidance on out-of-guideline packages
 - correct permitted commercial data
 - see projected commission impact
 
 Cannot:
 - change master company assumptions unless separately granted System Admin authority
 
-### Executive
+### Executive / Designated Leadership
 Can:
-- approve executive-level exceptions
+- record leadership exceptions when required
 - view profitability summaries
 - authorize assumption/policy changes where required
 
 ### System Admin / Authorized Finance
 Can:
 - maintain versioned assumption sets
-- configure approval bands
+- configure guideline bands
 - configure customer/MSP economics
 - maintain sourcing/benefit/cost rules
 
@@ -609,9 +614,9 @@ Only the fields relevant to the negotiation.
 ### Guardrail
 Plain language:
 - Healthy
-- Manager Approval Required
-- Executive Approval Required
-- Cannot Finalize
+- Discuss with Delivery Manager
+- Discuss with Leadership
+- Negative GM — Leadership Exception Required
 
 ### Explanation
 The recruiter/manager can open **Why?** to see:
@@ -645,8 +650,8 @@ Immutable calculation result and inputs.
 ### `margin_cost_component`
 Detailed normalized cost breakdown.
 
-### `approval_request`
-Use the generic enterprise approval domain already defined.
+### `margin_discussion` / exceptional `approval_request`
+Normal rate finalization does not create an approval request. Record recruiter/Delivery Manager/leadership discussions when guidance is needed. Use the generic approval domain only for true hard exceptions such as an explicitly governed negative-GM leadership exception.
 
 ### `commission_projection`
 Projected commission tied to finalized snapshot.
@@ -680,8 +685,8 @@ Create test fixtures covering at minimum:
 - benefits on/off
 - extension with onboarding/sourcing suppression where workbook rules require
 - negative GM
-- manager approval band
-- executive approval band
+- Delivery Manager discussion band
+- leadership discussion band
 
 For every fixture, platform outputs must reconcile to the authoritative workbook within an explicitly defined currency/percentage rounding tolerance.
 
@@ -698,15 +703,15 @@ The following are finalized:
 - cost assumptions are versioned
 - customer/MSP rules can override defaults
 - negotiation snapshots are immutable/versioned
-- Delivery Manager has high visibility and approval responsibility
+- Delivery Manager has high visibility and provides guidance on flagged exceptions; recruiters remain the primary rate decision-makers
 - master assumptions remain protected
-- approval thresholds are configurable/versioned, not globally hardcoded
+- rate guideline thresholds are configurable/versioned, not globally hardcoded
 - negative GM is a hard exception
 - bill rate must not be invented
 - projected and actual economics remain separate
 - QuickBooks is not duplicated
 - recruiter commission is 3% of Commissionable Net Profit
-- public/recruiting workflows cannot bypass margin approval rules
+- public/recruiting workflows cannot bypass margin guideline and hard-exception rules
 - uploaded calculators remain formula-validation references for the initial engine implementation
 
 This specification is the governing business definition for the Phase 1 Margin & Cost Engine.

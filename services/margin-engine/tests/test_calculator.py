@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from margin_engine import ApprovalBands, MarginInput, calculate_margin, seed_assumptions
+from margin_engine import GuidelineBands, MarginInput, calculate_margin, seed_assumptions
 
 
 def d(value):
@@ -176,13 +176,13 @@ def test_benefits_use_monthly_to_weekly_employer_share():
     assert components["employer_benefits"].per_week == expected.quantize(d("0.000001"))
 
 
-def test_configured_approval_bands_route_manager_and_executive():
+def test_configured_guidelines_flag_delivery_manager_and_leadership_discussion():
     assumptions = seed_assumptions("locums_national_1099").model_copy(
         update={
-            "approval_bands": ApprovalBands(
-                recruiter_min_margin=d("0.20"),
-                manager_min_margin=d("0.10"),
-                legacy_workbook_approval_floor=d("0.10"),
+            "guideline_bands": GuidelineBands(
+                recruiter_guideline_min_margin=d("0.20"),
+                delivery_manager_discussion_min_margin=d("0.10"),
+                legacy_workbook_floor=d("0.10"),
             )
         }
     )
@@ -197,7 +197,7 @@ def test_configured_approval_bands_route_manager_and_executive():
         ),
         assumptions,
     )
-    assert manager.approval_status == "manager_approval_required"
+    assert manager.guideline_status == "discuss_delivery_manager"
 
     executive = calculate_margin(
         MarginInput(
@@ -210,15 +210,15 @@ def test_configured_approval_bands_route_manager_and_executive():
         ),
         assumptions,
     )
-    assert executive.approval_status == "executive_approval_required"
+    assert executive.guideline_status == "discuss_leadership"
 
 
 def test_negative_gm_is_hard_exception():
     assumptions = seed_assumptions("locums_national_1099").model_copy(
         update={
-            "approval_bands": ApprovalBands(
-                recruiter_min_margin=d("0.20"),
-                manager_min_margin=d("0.10"),
+            "guideline_bands": GuidelineBands(
+                recruiter_guideline_min_margin=d("0.20"),
+                delivery_manager_discussion_min_margin=d("0.10"),
             )
         }
     )
@@ -234,7 +234,7 @@ def test_negative_gm_is_hard_exception():
         assumptions,
     )
     assert result.gross_margin_per_week < 0
-    assert result.approval_status == "negative_gm"
+    assert result.guideline_status == "negative_gm"
 
 
 def test_projected_commission_is_three_percent_of_commissionable_net_profit():
@@ -253,3 +253,27 @@ def test_projected_commission_is_three_percent_of_commissionable_net_profit():
     )
     assert result.commissionable_net_profit == d("20000.000000")
     assert result.projected_recruiter_commission == d("600.000000")
+
+
+def test_recruiter_can_finalize_within_guideline():
+    assumptions = seed_assumptions("locums_national_1099").model_copy(
+        update={
+            "guideline_bands": GuidelineBands(
+                recruiter_guideline_min_margin=d("0.10"),
+                delivery_manager_discussion_min_margin=d("0.05"),
+                legacy_workbook_floor=d("0.10"),
+            )
+        }
+    )
+    result = calculate_margin(
+        MarginInput(
+            profile="locums_national_1099",
+            division="locum_tenens",
+            customer_type="direct",
+            assignment_weeks_equivalent=d(13),
+            gross_client_billing_per_week=d(10000),
+            contractor_compensation_per_week=d(6000),
+        ),
+        assumptions,
+    )
+    assert result.guideline_status == "within_guideline"
