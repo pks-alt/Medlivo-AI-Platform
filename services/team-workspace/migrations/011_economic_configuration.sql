@@ -1,6 +1,9 @@
 -- Governed company economics and customer/MSP overrides.
 -- Apply after 010_margin_snapshots.sql.
 
+CREATE UNIQUE INDEX IF NOT EXISTS uq_ws_customer_tenant_id
+  ON public.customer(tenant_id, id);
+
 CREATE TABLE IF NOT EXISTS public.ws_customer_economic_rule (
   id uuid PRIMARY KEY,
   tenant_id uuid NOT NULL,
