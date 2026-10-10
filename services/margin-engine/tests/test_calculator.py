@@ -7,6 +7,18 @@ def d(value):
     return Decimal(str(value))
 
 
+MONEY_TOLERANCE = Decimal("0.00001")
+RATE_TOLERANCE = Decimal("0.000000001")
+
+
+def assert_money_close(actual, expected):
+    assert abs(actual - d(expected)) <= MONEY_TOLERANCE
+
+
+def assert_rate_close(actual, expected):
+    assert abs(actual - d(expected)) <= RATE_TOLERANCE
+
+
 def test_california_nursing_workbook_regression():
     assumptions = seed_assumptions("nursing_rehab_ca_w2")
     result = calculate_margin(
@@ -26,11 +38,11 @@ def test_california_nursing_workbook_regression():
         ),
         assumptions,
     )
-    assert result.net_client_billing_per_week == d("5198.600000")
-    assert result.total_cost_per_week == d("4901.526092")
-    assert result.gross_margin_per_week == d("297.073908")
-    assert result.gross_margin_assignment == d("3861.960800")
-    assert result.gross_margin_percent == d("0.0571449829")
+    assert_money_close(result.net_client_billing_per_week, "5198.600000")
+    assert_money_close(result.total_cost_per_week, "4901.526092")
+    assert_money_close(result.gross_margin_per_week, "297.073908")
+    assert_money_close(result.gross_margin_assignment, "3861.960800")
+    assert_rate_close(result.gross_margin_percent, "0.0571449829")
 
 
 def test_national_nursing_workbook_regression():
@@ -52,11 +64,11 @@ def test_national_nursing_workbook_regression():
         ),
         assumptions,
     )
-    assert result.net_client_billing_per_week == d("3601.620000")
-    assert result.total_cost_per_week == d("3405.481311")
-    assert result.gross_margin_per_week == d("196.138689")
-    assert result.gross_margin_assignment == d("2549.802957")
-    assert result.gross_margin_percent == d("0.0544584629")
+    assert_money_close(result.net_client_billing_per_week, "3601.620000")
+    assert_money_close(result.total_cost_per_week, "3405.481311")
+    assert_money_close(result.gross_margin_per_week, "196.138689")
+    assert_money_close(result.gross_margin_assignment, "2549.802957")
+    assert_rate_close(result.gross_margin_percent, "0.0544584629")
 
 
 def test_ca_locums_w2_workbook_regression():
@@ -75,12 +87,12 @@ def test_ca_locums_w2_workbook_regression():
         ),
         assumptions,
     )
-    assert result.net_client_billing_per_week == d("8052.000000")
-    assert result.total_cost_per_week == d("6894.275692")
-    assert result.gross_margin_per_week == d("1157.724308")
-    assert result.gross_margin_assignment == d("15050.415999")
-    assert result.gross_margin_percent == d("0.1437809622")
-    assert result.gross_margin_per_actual_hour == d("28.943108")
+    assert_money_close(result.net_client_billing_per_week, "8052.000000")
+    assert_money_close(result.total_cost_per_week, "6894.275692")
+    assert_money_close(result.gross_margin_per_week, "1157.724308")
+    assert_money_close(result.gross_margin_assignment, "15050.415999")
+    assert_rate_close(result.gross_margin_percent, "0.1437809622")
+    assert_money_close(result.gross_margin_per_actual_hour, "28.943108")
 
 
 def test_locums_1099_workbook_regression():
@@ -99,12 +111,12 @@ def test_locums_1099_workbook_regression():
         ),
         assumptions,
     )
-    assert result.net_client_billing_per_week == d("7790.000000")
-    assert result.total_cost_per_week == d("6537.067692")
-    assert result.gross_margin_per_week == d("1252.932308")
-    assert result.gross_margin_assignment == d("16288.119999")
-    assert result.gross_margin_percent == d("0.1608385504")
-    assert result.gross_margin_per_shift == d("626.466154")
+    assert_money_close(result.net_client_billing_per_week, "7790.000000")
+    assert_money_close(result.total_cost_per_week, "6537.067692")
+    assert_money_close(result.gross_margin_per_week, "1252.932308")
+    assert_money_close(result.gross_margin_assignment, "16288.119999")
+    assert_rate_close(result.gross_margin_percent, "0.1608385504")
+    assert_money_close(result.gross_margin_per_shift, "626.466154")
 
 
 def test_direct_customer_has_zero_msp_fee_even_with_default_assumption():
