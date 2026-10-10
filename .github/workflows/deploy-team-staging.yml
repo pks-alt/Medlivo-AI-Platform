@@ -80,4 +80,12 @@ jobs:
           WEB_ORIGIN="$(gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="TEAM_APP_ORIGIN") | .value // empty')"
           API_ORIGIN="$(gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="TEAM_API_URL") | .value // empty')"
           WORKSPACE_ENABLED="$(gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="TEAM_WORKSPACE_ENABLED") | .value // empty')"
-          printf 'TEAM_APP_ORIGIN=%s\nTEAM_API_URL=%s\nTEAM_WORKSPACE_ENABLED=%s\n' "${WEB_ORIGIN}" "${API_ORIGIN}" "${WORKSPACE_ENABLED}"
+          WEB_CLIENT_ID="$(gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="TEAM_GOOGLE_CLIENT_ID") | .value // empty')"
+          API_CLIENT_ID="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="WORKSPACE_GOOGLE_CLIENT_ID") | .value // empty')"
+          WEB_DOMAIN="$(gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="TEAM_GOOGLE_HOSTED_DOMAIN") | .value // empty')"
+          API_DOMAIN="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="WORKSPACE_GOOGLE_HOSTED_DOMAIN") | .value // empty')"
+          CLIENT_ID_MATCH=false
+          if [ -n "${WEB_CLIENT_ID}" ] && [ "${WEB_CLIENT_ID}" = "${API_CLIENT_ID}" ]; then CLIENT_ID_MATCH=true; fi
+          DOMAIN_MATCH=false
+          if [ -n "${WEB_DOMAIN}" ] && [ "${WEB_DOMAIN}" = "${API_DOMAIN}" ]; then DOMAIN_MATCH=true; fi
+          printf 'TEAM_APP_ORIGIN=%s\nTEAM_API_URL=%s\nTEAM_WORKSPACE_ENABLED=%s\nOAUTH_CLIENT_IDS_CONFIGURED=%s\nOAUTH_CLIENT_IDS_MATCH=%s\nOAUTH_DOMAINS_MATCH=%s\nEXPECTED_REDIRECT_URI=%s/api/team/auth/callback\n'             "${WEB_ORIGIN}" "${API_ORIGIN}" "${WORKSPACE_ENABLED}" "$([ -n "${WEB_CLIENT_ID}" ] && [ -n "${API_CLIENT_ID}" ] && echo true || echo false)" "${CLIENT_ID_MATCH}" "${DOMAIN_MATCH}" "${WEB_ORIGIN}"
