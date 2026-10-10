@@ -7,8 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 Profile = Literal[
-    "nursing_rehab_ca_w2",
-    "nursing_rehab_national_w2",
+    "nursing_allied_ca_w2",
+    "nursing_allied_national_w2",
+    "rehabilitation_ca_w2",
+    "rehabilitation_national_w2",
     "locums_ca_w2",
     "locums_national_1099",
 ]
@@ -88,8 +90,10 @@ class MarginInput(StrictModel):
 
     @model_validator(mode="after")
     def validate_profile_alignment(self):
-        if self.profile.startswith("nursing_rehab_") and self.division == "locum_tenens":
-            raise ValueError("Nursing/Rehab profiles cannot be used for Locum Tenens")
+        if self.profile.startswith("nursing_allied_") and self.division != "nursing_allied":
+            raise ValueError("Nursing & Allied profiles require the Nursing & Allied division")
+        if self.profile.startswith("rehabilitation_") and self.division != "rehabilitation":
+            raise ValueError("Rehabilitation profiles require the Rehabilitation division")
         if self.profile.startswith("locums_") and self.division != "locum_tenens":
             raise ValueError("Locums profiles require the Locum Tenens division")
         if self.profile == "locums_national_1099":
