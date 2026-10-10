@@ -21,6 +21,7 @@ from .schemas import (
     W2PayPackageSnapshotInput, LocumsPayPackageSnapshotInput,
     ApprovalDecisionInput, StartReadinessUpdate, StartReadinessItemInput,
     SubmissionTemplateBootstrapInput, SubmissionPackagePrepareInput,
+    SubmissionPackageItemReviewInput, SubmissionPackageFinalizeInput,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -424,6 +425,24 @@ def build_app(store, verifier):
             job_id=str(job_id) if job_id else None,
             candidate_id=str(candidate_id) if candidate_id else None,
             limit=limit,
+        )
+
+    @app.post(prefix + "/submission-studio/packages/{package_id}/items/{item_id}/review")
+    def review_submission_package_item(package_id: UUID, item_id: UUID,
+                                       value: SubmissionPackageItemReviewInput,
+                                       idempotency_key: UUID = Header(),
+                                       who=Depends(identity)):
+        return store.review_submission_package_item(
+            who, str(package_id), str(item_id), str(idempotency_key), value
+        )
+
+    @app.post(prefix + "/submission-studio/packages/{package_id}/finalize")
+    def finalize_submission_package(package_id: UUID,
+                                    value: SubmissionPackageFinalizeInput,
+                                    idempotency_key: UUID = Header(),
+                                    who=Depends(identity)):
+        return store.finalize_submission_package(
+            who, str(package_id), str(idempotency_key), value
         )
 
     @app.get(prefix + "/submission-studio/packages/{package_id}")
