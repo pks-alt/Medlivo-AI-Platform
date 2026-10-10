@@ -22,6 +22,16 @@ users = Table("app_user", metadata, U("id", primary_key=True), U("tenant_id", nu
 teams = Table("team", metadata, U("id", primary_key=True), U("tenant_id", nullable=False),
               S("name", nullable=False), S("division", nullable=False), U("manager_user_id"),
               UniqueConstraint("tenant_id", "id"), ForeignKeyConstraint(["tenant_id"], ["tenant.id"]))
+access_profiles = Table(
+    "ws_access_profile", metadata,
+    U("user_id", primary_key=True), U("tenant_id", nullable=False),
+    S("business_role", nullable=False), Column("system_admin", Boolean, nullable=False),
+    D("created_at", nullable=False), D("updated_at", nullable=False),
+    UniqueConstraint("tenant_id", "user_id"),
+    ForeignKeyConstraint(["tenant_id", "user_id"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+
 profiles = Table("recruiter_profile", metadata, U("user_id", primary_key=True), U("tenant_id", nullable=False), U("team_id"))
 jobs = Table(
     "job", metadata,

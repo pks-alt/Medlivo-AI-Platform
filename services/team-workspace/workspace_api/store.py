@@ -55,10 +55,26 @@ class WorkspaceStore:
 
     def _principal(self, conn, identity: Identity):
         def lookup():
-            return conn.execute(select(t.users).join(t.identities, and_(
-                t.users.c.id == t.identities.c.user_id, t.users.c.tenant_id == t.identities.c.tenant_id
-            )).where(t.identities.c.provider == identity.provider, t.identities.c.subject == identity.subject,
-                     t.users.c.is_active.is_(True))).mappings().first()
+            return conn.execute(
+                select(
+                    t.users,
+                    t.access_profiles.c.business_role,
+                    t.access_profiles.c.system_admin,
+                )
+                .join(t.identities, and_(
+                    t.users.c.id == t.identities.c.user_id,
+                    t.users.c.tenant_id == t.identities.c.tenant_id,
+                ))
+                .outerjoin(t.access_profiles, and_(
+                    t.access_profiles.c.user_id == t.users.c.id,
+                    t.access_profiles.c.tenant_id == t.users.c.tenant_id,
+                ))
+                .where(
+                    t.identities.c.provider == identity.provider,
+                    t.identities.c.subject == identity.subject,
+                    t.users.c.is_active.is_(True),
+                )
+            ).mappings().first()
         row = lookup()
         # Automatic first-login binding is deliberately limited to the same
         # Medlivo email namespace enforced by the guarded database function.
@@ -70,7 +86,17 @@ class WorkspaceStore:
             row = lookup()
         if row is None or row["role"] not in {"admin", "manager", "recruiter"}:
             raise AccessError(403, "Workspace access is not enabled for this account")
-        return row
+
+        principal = dict(row)
+        if principal.get("business_role") is None:
+            principal["business_role"] = {
+                "admin": "executive",
+                "manager": "delivery_manager",
+                "recruiter": "recruiter",
+            }[principal["role"]]
+        if principal.get("system_admin") is None:
+            principal["system_admin"] = principal["role"] == "admin"
+        return principal
 
     def _scope(self, principal):
         if principal["role"] == "admin":
@@ -94,7 +120,13 @@ class WorkspaceStore:
     def me(self, identity):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            return {key: principal[key] for key in ("id", "display_name", "role")}
+            return {
+                "id": principal["id"],
+                "display_name": principal["display_name"],
+                "role": principal["role"],
+                "business_role": principal["business_role"],
+                "system_admin": bool(principal["system_admin"]),
+            }
 
     def admin_teams(self, identity):
         with self.engine.begin() as conn:
