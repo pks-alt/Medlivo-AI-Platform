@@ -59,6 +59,7 @@ export default function AdminPage(){
       {sections.map(([id,label])=><button key={id} className={tab===id?"active":""} onClick={()=>setTab(id)}>{label}</button>)}
       <a className="adminUtilityLink" href="/executive/margin">Executive GM</a>
       <a className="adminUtilityLink" href="/admin/gm-config">GM Configuration</a>
+      <a className="adminUtilityLink" href="/admin/submission-studio">Submission Templates</a>
       <a href="/">Recruiter workspace</a>
     </aside>
     <section className="adminMain">
