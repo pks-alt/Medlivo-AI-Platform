@@ -512,3 +512,40 @@ def test_draft_submission_cannot_be_downloaded(seeded, verifier, headers):
     )
     assert response.status_code == 422
     assert generator.contexts == []
+
+
+def test_recruiter_cannot_waive_customer_required_document_by_default(client, headers, seeded):
+    seed_rehab_submission_ready(seeded)
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Nursing & Allied", profession="Registered Nurse", specialty="ICU"
+        ))
+        conn.execute(update(t.candidates).where(t.candidates.c.id == idn(300)).values(
+            profession="Registered Nurse", specialty="ICU"
+        ))
+    client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(10030)},
+        json={"activate": True},
+    )
+    prepared = client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(10031)},
+        json={},
+    )
+    assert prepared.status_code == 200
+    skills = next(
+        x for x in prepared.json()["items"]
+        if x["requirement_key"] == "skills_checklist"
+    )
+    waived = client.post(
+        f"/api/v1/team/submission-studio/packages/{prepared.json()['id']}/items/{skills['id']}/review",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(10032)},
+        json={
+            "decision": "waived",
+            "recruiter_note": "Trying to bypass the required checklist.",
+            "resolved_value": None,
+        },
+    )
+    assert waived.status_code == 422
+    assert "cannot be waived" in waived.json()["detail"].lower()
