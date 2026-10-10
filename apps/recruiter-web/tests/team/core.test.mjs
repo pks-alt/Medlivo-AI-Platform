@@ -88,6 +88,33 @@ test('GM Submission Studio and funnel routes are allowlisted through the browser
  ];
  for(const path of puts){const req=mutation(sessionCookie,data.csrf,{});req.method='PUT';assert.equal((await h.request(path,req)).status,200,path);}
 });
+
+test('finalized submission ZIP is proxied as bounded binary without JSON parsing',async()=>{
+ const api=async(token,path,options)=>{
+  if(path==='/me')return Response.json({id:CASE,display_name:'Recruiter',role:'recruiter'});
+  if(path==='/submission-studio/packages/'+CASE+'/download')return new Response(Buffer.from('PKsyntheticzip'),{
+   status:200,headers:{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="Synthetic_Submission.zip"'}
+  });
+  return Response.json({items:[]});
+ };
+ const h=harness({api}),{sessionCookie}=await h.login();
+ const r=await h.request('/api/team/submission-studio/packages/'+CASE+'/download',{headers:{Cookie:sessionCookie}});
+ assert.equal(r.status,200);
+ assert.equal(r.headers.get('content-type'),'application/zip');
+ assert.equal(r.headers.get('content-disposition'),'attachment; filename="Synthetic_Submission.zip"');
+ assert.equal(Buffer.from(await r.arrayBuffer()).toString(),'PKsyntheticzip');
+});
+test('submission download rejects wrong upstream content type and unsafe filenames',async()=>{
+ for(const headers of [
+  {'Content-Type':'application/json','Content-Disposition':'attachment; filename="x.zip"'},
+  {'Content-Type':'application/zip','Content-Disposition':'attachment; filename="../x.zip"'}
+ ]){
+  const api=async(token,path)=>path==='/me'?Response.json({id:CASE,role:'recruiter'}):new Response('x',{status:200,headers});
+  const h=harness({api}),{sessionCookie}=await h.login();
+  const r=await h.request('/api/team/submission-studio/packages/'+CASE+'/download',{headers:{Cookie:sessionCookie}});
+  assert.equal(r.status,503);
+ }
+});
 test('pagination query is allowlisted bounded and single-valued',async()=>{const h=harness(),{sessionCookie}=await h.login();for(const q of ['limit=999','url=https://evil.example','limit=10&limit=20','after=bad'])assert.equal((await h.request('/api/team/cases?'+q,{headers:{Cookie:sessionCookie}})).status,400);assert.equal((await h.request('/api/team/cases?limit=50',{headers:{Cookie:sessionCookie}})).status,200);});
 test('backend sensitive error body is not returned',async()=>{let bad=false;const h=harness({api:async()=>bad?new Response('candidate report secret',{status:500}):Response.json({id:'one',role:'recruiter'})});const {sessionCookie}=await h.login();bad=true;const r=await h.request('/api/team/cases',{headers:{Cookie:sessionCookie}});assert.equal(r.status,503);assert.doesNotMatch(await r.text(),/candidate report/);});
 test('stale version error remains actionable without exposing backend body',async()=>{let bad=false;const h=harness({api:async()=>bad?new Response('private query',{status:409}):Response.json({id:'one',role:'manager'})});const {sessionCookie,data}=await h.login();bad=true;const r=await h.request('/api/team/cases/'+CASE+'/reassign',mutation(sessionCookie,data.csrf,{expected_version:1}));assert.equal(r.status,409);assert.match(await r.text(),/Reload/);});
