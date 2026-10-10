@@ -19,7 +19,7 @@ from .schemas import (
     MarginCalculationInput, MarginDiscussionInput, MarginFinalizeInput,
     CostAssumptionSetInput, CustomerEconomicRuleInput,
     W2PayPackageSnapshotInput, LocumsPayPackageSnapshotInput,
-    ApprovalDecisionInput,
+    ApprovalDecisionInput, StartReadinessUpdate, StartReadinessItemInput,
 )
 from .store import WorkspaceStore, AccessError
 
@@ -395,6 +395,33 @@ def build_app(store, verifier):
                               idempotency_key: UUID = Header(), who=Depends(identity)):
         return store.add_margin_discussion(
             who, str(snapshot_id), str(idempotency_key), value
+        )
+
+    @app.get(prefix + "/funnel")
+    def recruiting_funnel(limit: int = Query(default=100, ge=1, le=200),
+                          who=Depends(identity)):
+        return store.list_funnel(who, limit=limit)
+
+    @app.get(prefix + "/funnel/{job_id}/{candidate_id}")
+    def funnel_detail(job_id: UUID, candidate_id: UUID, who=Depends(identity)):
+        return store.get_funnel_detail(
+            who, str(job_id), str(candidate_id)
+        )
+
+    @app.put(prefix + "/funnel/{job_id}/{candidate_id}/start-readiness")
+    def update_start_readiness(job_id: UUID, candidate_id: UUID,
+                               value: StartReadinessUpdate,
+                               idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.update_start_readiness(
+            who, str(job_id), str(candidate_id), str(idempotency_key), value
+        )
+
+    @app.put(prefix + "/funnel/{job_id}/{candidate_id}/start-readiness/items")
+    def update_start_readiness_item(job_id: UUID, candidate_id: UUID,
+                                    value: StartReadinessItemInput,
+                                    idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.upsert_start_readiness_item(
+            who, str(job_id), str(candidate_id), str(idempotency_key), value
         )
 
     @app.get(prefix + "/margin/history")
