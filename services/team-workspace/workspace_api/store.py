@@ -2835,6 +2835,442 @@ class WorkspaceStore:
             return after
         return self._global_mutate(identity, key, "job_intake.item.decision", payload, apply)
 
+    def _funnel_recruiter_ids(self, conn, principal):
+        if principal["business_role"] == "executive":
+            return None
+        if principal["business_role"] == "recruiter":
+            return {principal["id"]}
+        if principal["business_role"] == "delivery_manager":
+            rows = conn.execute(
+                select(t.profiles.c.user_id)
+                .join(
+                    t.teams,
+                    and_(
+                        t.teams.c.tenant_id == t.profiles.c.tenant_id,
+                        t.teams.c.id == t.profiles.c.team_id,
+                    ),
+                )
+                .where(
+                    t.profiles.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+            ).scalars().all()
+            return set(rows)
+        raise AccessError(403, "Funnel visibility requires Recruiter, Delivery Manager, or Executive access")
+
+    def _funnel_pair_authorized(self, conn, principal, job_id, candidate_id):
+        recruiter_ids = self._funnel_recruiter_ids(conn, principal)
+        if recruiter_ids is None:
+            return True
+        if not recruiter_ids:
+            return False
+        found = conn.execute(select(t.submission_projections.c.id).where(
+            t.submission_projections.c.tenant_id == principal["tenant_id"],
+            t.submission_projections.c.job_id == job_id,
+            t.submission_projections.c.candidate_id == candidate_id,
+            t.submission_projections.c.recruiter_user_id.in_(recruiter_ids),
+        ).limit(1)).first()
+        return found is not None
+
+    def list_funnel(self, identity, *, limit=100):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            recruiter_ids = self._funnel_recruiter_ids(conn, principal)
+
+            statement = select(
+                t.submission_projections,
+                t.jobs.c.title.label("job_title"),
+                t.jobs.c.division.label("division"),
+                t.jobs.c.city.label("job_city"),
+                t.jobs.c.state.label("job_state"),
+                t.candidates.c.canonical_name.label("candidate_name"),
+                t.users.c.display_name.label("recruiter_name"),
+            ).join(
+                t.jobs,
+                and_(
+                    t.jobs.c.tenant_id == t.submission_projections.c.tenant_id,
+                    t.jobs.c.id == t.submission_projections.c.job_id,
+                ),
+            ).join(
+                t.candidates,
+                and_(
+                    t.candidates.c.tenant_id == t.submission_projections.c.tenant_id,
+                    t.candidates.c.id == t.submission_projections.c.candidate_id,
+                ),
+            ).outerjoin(
+                t.users,
+                and_(
+                    t.users.c.tenant_id == t.submission_projections.c.tenant_id,
+                    t.users.c.id == t.submission_projections.c.recruiter_user_id,
+                ),
+            ).where(
+                t.submission_projections.c.tenant_id == principal["tenant_id"]
+            )
+            if recruiter_ids is not None:
+                if not recruiter_ids:
+                    return {"items": [], "totals": {
+                        "submissions": 0, "interviews": 0, "offers": 0,
+                        "placements": 0, "starts": 0, "at_risk_starts": 0,
+                    }}
+                statement = statement.where(
+                    t.submission_projections.c.recruiter_user_id.in_(recruiter_ids)
+                )
+
+            submissions = conn.execute(
+                statement.order_by(
+                    t.submission_projections.c.submitted_at.desc(),
+                    t.submission_projections.c.synced_at.desc(),
+                ).limit(limit)
+            ).mappings().all()
+
+            if not submissions:
+                return {"items": [], "totals": {
+                    "submissions": 0, "interviews": 0, "offers": 0,
+                    "placements": 0, "starts": 0, "at_risk_starts": 0,
+                }}
+
+            pairs = {(row["job_id"], row["candidate_id"]) for row in submissions}
+            def pair_filter(table):
+                return or_(*[
+                    and_(table.c.job_id == job_id, table.c.candidate_id == candidate_id)
+                    for job_id, candidate_id in pairs
+                ])
+
+            interviews = conn.execute(select(t.interview_projections).where(
+                t.interview_projections.c.tenant_id == principal["tenant_id"],
+                pair_filter(t.interview_projections),
+            ).order_by(
+                t.interview_projections.c.scheduled_at.desc(),
+                t.interview_projections.c.synced_at.desc(),
+            )).mappings().all()
+            offers = conn.execute(select(t.offer_projections).where(
+                t.offer_projections.c.tenant_id == principal["tenant_id"],
+                pair_filter(t.offer_projections),
+            ).order_by(
+                t.offer_projections.c.offered_at.desc(),
+                t.offer_projections.c.synced_at.desc(),
+            )).mappings().all()
+            placements = conn.execute(select(t.placement_projections).where(
+                t.placement_projections.c.tenant_id == principal["tenant_id"],
+                pair_filter(t.placement_projections),
+            ).order_by(
+                t.placement_projections.c.planned_start_date.desc(),
+                t.placement_projections.c.synced_at.desc(),
+            )).mappings().all()
+            readiness_rows = conn.execute(select(t.start_readiness).where(
+                t.start_readiness.c.tenant_id == principal["tenant_id"],
+                pair_filter(t.start_readiness),
+            )).mappings().all()
+
+            def latest_by_pair(rows):
+                result = {}
+                for row in rows:
+                    key = (row["job_id"], row["candidate_id"])
+                    if key not in result:
+                        result[key] = clean(row)
+                return result
+
+            interview_map = latest_by_pair(interviews)
+            offer_map = latest_by_pair(offers)
+            placement_map = latest_by_pair(placements)
+            readiness_map = latest_by_pair(readiness_rows)
+
+            items = []
+            for row in submissions:
+                key = (row["job_id"], row["candidate_id"])
+                item = clean(row)
+                item["interview"] = interview_map.get(key)
+                item["offer"] = offer_map.get(key)
+                item["placement"] = placement_map.get(key)
+                item["start_readiness"] = readiness_map.get(key)
+                items.append(item)
+
+            starts = sum(
+                1 for x in placement_map.values()
+                if x.get("actual_start_date") is not None
+                or x.get("placement_status") == "started"
+            )
+            at_risk = sum(
+                1 for x in readiness_map.values()
+                if x.get("status") != "started"
+                and x.get("risk_level") in {"high", "critical"}
+            )
+            return {
+                "items": items,
+                "totals": {
+                    "submissions": len(submissions),
+                    "interviews": len(interview_map),
+                    "offers": len(offer_map),
+                    "placements": len(placement_map),
+                    "starts": starts,
+                    "at_risk_starts": at_risk,
+                },
+            }
+
+    def get_funnel_detail(self, identity, job_id, candidate_id):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if not self._funnel_pair_authorized(conn, principal, job_id, candidate_id):
+                raise AccessError(404, "Funnel record not found")
+
+            submissions = conn.execute(select(t.submission_projections).where(
+                t.submission_projections.c.tenant_id == principal["tenant_id"],
+                t.submission_projections.c.job_id == job_id,
+                t.submission_projections.c.candidate_id == candidate_id,
+            ).order_by(t.submission_projections.c.submitted_at.desc())).mappings().all()
+            if not submissions:
+                raise AccessError(404, "Funnel record not found")
+
+            interviews = conn.execute(select(t.interview_projections).where(
+                t.interview_projections.c.tenant_id == principal["tenant_id"],
+                t.interview_projections.c.job_id == job_id,
+                t.interview_projections.c.candidate_id == candidate_id,
+            ).order_by(t.interview_projections.c.scheduled_at.desc())).mappings().all()
+            offers = conn.execute(select(t.offer_projections).where(
+                t.offer_projections.c.tenant_id == principal["tenant_id"],
+                t.offer_projections.c.job_id == job_id,
+                t.offer_projections.c.candidate_id == candidate_id,
+            ).order_by(t.offer_projections.c.offered_at.desc())).mappings().all()
+            placements = conn.execute(select(t.placement_projections).where(
+                t.placement_projections.c.tenant_id == principal["tenant_id"],
+                t.placement_projections.c.job_id == job_id,
+                t.placement_projections.c.candidate_id == candidate_id,
+            ).order_by(t.placement_projections.c.planned_start_date.desc())).mappings().all()
+            readiness = conn.execute(select(t.start_readiness).where(
+                t.start_readiness.c.tenant_id == principal["tenant_id"],
+                t.start_readiness.c.job_id == job_id,
+                t.start_readiness.c.candidate_id == candidate_id,
+            )).mappings().first()
+            items = []
+            if readiness:
+                items = conn.execute(select(t.start_readiness_items).where(
+                    t.start_readiness_items.c.tenant_id == principal["tenant_id"],
+                    t.start_readiness_items.c.readiness_id == readiness["id"],
+                ).order_by(
+                    t.start_readiness_items.c.required.desc(),
+                    t.start_readiness_items.c.category,
+                    t.start_readiness_items.c.label,
+                )).mappings().all()
+            return {
+                "submissions": [clean(x) for x in submissions],
+                "interviews": [clean(x) for x in interviews],
+                "offers": [clean(x) for x in offers],
+                "placements": [clean(x) for x in placements],
+                "start_readiness": clean(readiness) if readiness else None,
+                "readiness_items": [clean(x) for x in items],
+            }
+
+    def update_start_readiness(self, identity, job_id, candidate_id, key, value):
+        payload = {
+            "job_id": job_id,
+            "candidate_id": candidate_id,
+            **value.model_dump(mode="json"),
+        }
+
+        def apply(conn, principal):
+            if not self._funnel_pair_authorized(conn, principal, job_id, candidate_id):
+                raise AccessError(404, "Funnel record not found")
+
+            if value.risk_level in {"high", "critical"} and not value.risk_reason:
+                raise AccessError(422, "High or critical start risk requires a reason")
+            if value.risk_level in {"high", "critical"} and not value.next_action:
+                raise AccessError(422, "High or critical start risk requires a next action")
+
+            owner_id = str(value.owner_user_id) if value.owner_user_id else None
+            if owner_id:
+                owner = conn.execute(select(t.users.c.id).where(
+                    t.users.c.tenant_id == principal["tenant_id"],
+                    t.users.c.id == owner_id,
+                    t.users.c.is_active.is_(True),
+                )).first()
+                if owner is None:
+                    raise AccessError(422, "Readiness owner not found")
+
+            row = conn.execute(select(t.start_readiness).where(
+                t.start_readiness.c.tenant_id == principal["tenant_id"],
+                t.start_readiness.c.job_id == job_id,
+                t.start_readiness.c.candidate_id == candidate_id,
+            ).with_for_update()).mappings().first()
+
+            timestamp = now()
+            if row is None:
+                if value.expected_version != 0:
+                    raise AccessError(409, "Start readiness changed; reload before saving")
+                readiness_id = uid()
+                before = {}
+                after = dict(
+                    id=readiness_id,
+                    tenant_id=principal["tenant_id"],
+                    job_id=job_id,
+                    candidate_id=candidate_id,
+                    placement_projection_id=None,
+                    status=value.status,
+                    risk_level=value.risk_level,
+                    risk_reason=value.risk_reason,
+                    next_action=value.next_action,
+                    owner_user_id=owner_id,
+                    due_at=value.due_at,
+                    version=1,
+                    updated_by=principal["id"],
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                )
+                conn.execute(insert(t.start_readiness).values(**after))
+            else:
+                if row["version"] != value.expected_version:
+                    raise AccessError(409, "Start readiness changed; reload before saving")
+                if value.status == "ready":
+                    blocking = conn.execute(select(func.count()).select_from(
+                        t.start_readiness_items
+                    ).where(
+                        t.start_readiness_items.c.tenant_id == principal["tenant_id"],
+                        t.start_readiness_items.c.readiness_id == row["id"],
+                        t.start_readiness_items.c.required.is_(True),
+                        t.start_readiness_items.c.status.not_in(
+                            ["complete", "waived", "not_applicable"]
+                        ),
+                    )).scalar_one()
+                    if blocking:
+                        raise AccessError(
+                            422,
+                            "Required start-readiness items must be complete or waived before marking Ready",
+                        )
+                before = clean(row)
+                readiness_id = row["id"]
+                after = dict(row)
+                after.update(
+                    status=value.status,
+                    risk_level=value.risk_level,
+                    risk_reason=value.risk_reason,
+                    next_action=value.next_action,
+                    owner_user_id=owner_id,
+                    due_at=value.due_at,
+                    version=row["version"] + 1,
+                    updated_by=principal["id"],
+                    updated_at=timestamp,
+                )
+                conn.execute(update(t.start_readiness).where(
+                    t.start_readiness.c.tenant_id == principal["tenant_id"],
+                    t.start_readiness.c.id == readiness_id,
+                ).values(
+                    status=after["status"],
+                    risk_level=after["risk_level"],
+                    risk_reason=after["risk_reason"],
+                    next_action=after["next_action"],
+                    owner_user_id=after["owner_user_id"],
+                    due_at=after["due_at"],
+                    version=after["version"],
+                    updated_by=after["updated_by"],
+                    updated_at=after["updated_at"],
+                ))
+
+            self._operational_audit(
+                conn,
+                principal,
+                "start_readiness.updated",
+                "start_readiness",
+                readiness_id,
+                before,
+                clean(after),
+                reason=value.risk_reason,
+            )
+            return clean(after)
+
+        return self._global_mutate(
+            identity, key, "start_readiness.updated", payload, apply
+        )
+
+    def upsert_start_readiness_item(self, identity, job_id, candidate_id, key, value):
+        payload = {
+            "job_id": job_id,
+            "candidate_id": candidate_id,
+            **value.model_dump(mode="json"),
+        }
+
+        def apply(conn, principal):
+            if not self._funnel_pair_authorized(conn, principal, job_id, candidate_id):
+                raise AccessError(404, "Funnel record not found")
+            readiness = conn.execute(select(t.start_readiness).where(
+                t.start_readiness.c.tenant_id == principal["tenant_id"],
+                t.start_readiness.c.job_id == job_id,
+                t.start_readiness.c.candidate_id == candidate_id,
+            )).mappings().first()
+            if readiness is None:
+                raise AccessError(422, "Create start readiness before adding readiness items")
+
+            timestamp = now()
+            existing = conn.execute(select(t.start_readiness_items).where(
+                t.start_readiness_items.c.tenant_id == principal["tenant_id"],
+                t.start_readiness_items.c.readiness_id == readiness["id"],
+                t.start_readiness_items.c.item_key == value.item_key,
+            ).with_for_update()).mappings().first()
+
+            if existing is None:
+                row = dict(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    readiness_id=readiness["id"],
+                    item_key=value.item_key,
+                    label=value.label,
+                    category=value.category,
+                    status=value.status,
+                    required=value.required,
+                    source_type=value.source_type,
+                    source_reference=value.source_reference,
+                    due_at=value.due_at,
+                    notes=value.notes,
+                    updated_by=principal["id"],
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                )
+                conn.execute(insert(t.start_readiness_items).values(**row))
+                before = {}
+            else:
+                before = clean(existing)
+                row = dict(existing)
+                row.update(
+                    label=value.label,
+                    category=value.category,
+                    status=value.status,
+                    required=value.required,
+                    source_type=value.source_type,
+                    source_reference=value.source_reference,
+                    due_at=value.due_at,
+                    notes=value.notes,
+                    updated_by=principal["id"],
+                    updated_at=timestamp,
+                )
+                conn.execute(update(t.start_readiness_items).where(
+                    t.start_readiness_items.c.id == existing["id"]
+                ).values(
+                    label=row["label"],
+                    category=row["category"],
+                    status=row["status"],
+                    required=row["required"],
+                    source_type=row["source_type"],
+                    source_reference=row["source_reference"],
+                    due_at=row["due_at"],
+                    notes=row["notes"],
+                    updated_by=row["updated_by"],
+                    updated_at=row["updated_at"],
+                ))
+
+            self._operational_audit(
+                conn,
+                principal,
+                "start_readiness.item.updated",
+                "start_readiness",
+                readiness["id"],
+                before,
+                clean(row),
+                reason=value.notes,
+            )
+            return clean(row)
+
+        return self._global_mutate(
+            identity, key, "start_readiness.item.updated", payload, apply
+        )
+
     def list_operational_audit(self, identity, *, object_type=None, object_id=None, limit=100):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
