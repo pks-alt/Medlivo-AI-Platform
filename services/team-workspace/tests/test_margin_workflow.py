@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 
 from margin_engine import GuidelineBands, seed_assumptions
 from workspace_api import tables as t
@@ -22,6 +22,10 @@ def configure_1099_guidelines(seeded):
         }
     )
     with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(
+            t.jobs.c.id == idn(200),
+            t.jobs.c.tenant_id == idn(1),
+        ).values(division="Locum Tenens", state="TX"))
         conn.execute(insert(t.cost_assumption_sets).values(
             id=idn(1200),
             tenant_id=idn(1),
@@ -37,27 +41,31 @@ def configure_1099_guidelines(seeded):
 
 
 def margin_payload(gross_billing, contractor_pay, recruiter_user_id=None):
+    # Structured 1099 package producing the same weekly economics as the
+    # historical raw margin test: 5 shifts x 8 hours = 40 hours/week.
     return {
         "job_id": idn(200),
         "candidate_id": idn(300),
         "recruiter_user_id": recruiter_user_id or idn(10),
-        "profile": "locums_national_1099",
-        "division": "locum_tenens",
+        "worker_classification": "1099",
+        "assignment_type": "contract",
         "customer_type": "direct",
         "contract_type": "new_contract",
         "candidate_source": "internal_database",
-        "assignment_weeks_equivalent": 13,
-        "gross_client_billing_per_week": gross_billing,
-        "contractor_compensation_per_week": contractor_pay,
-        "actual_worked_hours_per_week": 40,
         "shifts_per_week": 5,
+        "contract_weeks": 13,
+        "shift_length_hours": 8,
+        "client_rate_type": "hourly",
+        "client_rate_amount": gross_billing / 40,
+        "provider_rate_type": "hourly",
+        "provider_rate_amount": contractor_pay / 40,
     }
 
 
 def test_recruiter_finalizes_within_guideline_without_manager_approval(client, headers, seeded):
     configure_1099_guidelines(seeded)
     created = client.post(
-        "/api/v1/team/margin/snapshots",
+        "/api/v1/team/margin/locums-pay-package-snapshots",
         headers={**headers("recruiter-a"), "Idempotency-Key": idn(9001)},
         json=margin_payload(10000, 6000),
     )
@@ -79,7 +87,7 @@ def test_recruiter_finalizes_within_guideline_without_manager_approval(client, h
 def test_out_of_guideline_rate_requires_discussion_record_not_manager_approval(client, headers, seeded):
     configure_1099_guidelines(seeded)
     created = client.post(
-        "/api/v1/team/margin/snapshots",
+        "/api/v1/team/margin/locums-pay-package-snapshots",
         headers={**headers("recruiter-a"), "Idempotency-Key": idn(9010)},
         json=margin_payload(8000, 6000),
     )
@@ -116,7 +124,7 @@ def test_out_of_guideline_rate_requires_discussion_record_not_manager_approval(c
 def test_leadership_flag_requires_leadership_discussion(client, headers, seeded):
     configure_1099_guidelines(seeded)
     created = client.post(
-        "/api/v1/team/margin/snapshots",
+        "/api/v1/team/margin/locums-pay-package-snapshots",
         headers={**headers("recruiter-a"), "Idempotency-Key": idn(9020)},
         json=margin_payload(7000, 6000),
     )
@@ -163,7 +171,7 @@ def test_leadership_flag_requires_leadership_discussion(client, headers, seeded)
 def test_negative_gm_creates_hard_exception_and_blocks_normal_finalization(client, headers, seeded):
     configure_1099_guidelines(seeded)
     created = client.post(
-        "/api/v1/team/margin/snapshots",
+        "/api/v1/team/margin/locums-pay-package-snapshots",
         headers={**headers("recruiter-a"), "Idempotency-Key": idn(9030)},
         json=margin_payload(5000, 6000),
     )
@@ -193,12 +201,12 @@ def test_negative_gm_creates_hard_exception_and_blocks_normal_finalization(clien
 def test_margin_negotiation_versions_are_immutable_and_commission_is_projected(client, headers, seeded):
     configure_1099_guidelines(seeded)
     first = client.post(
-        "/api/v1/team/margin/snapshots",
+        "/api/v1/team/margin/locums-pay-package-snapshots",
         headers={**headers("recruiter-a"), "Idempotency-Key": idn(9040)},
         json=margin_payload(10000, 6000),
     ).json()
     second = client.post(
-        "/api/v1/team/margin/snapshots",
+        "/api/v1/team/margin/locums-pay-package-snapshots",
         headers={**headers("recruiter-a"), "Idempotency-Key": idn(9041)},
         json=margin_payload(10000, 6200),
     ).json()
@@ -221,7 +229,7 @@ def test_margin_negotiation_versions_are_immutable_and_commission_is_projected(c
 def test_recruiter_cannot_create_rate_package_for_another_recruiter(client, headers, seeded):
     configure_1099_guidelines(seeded)
     response = client.post(
-        "/api/v1/team/margin/snapshots",
+        "/api/v1/team/margin/locums-pay-package-snapshots",
         headers={**headers("recruiter-a"), "Idempotency-Key": idn(9050)},
         json=margin_payload(10000, 6000, recruiter_user_id=idn(11)),
     )
