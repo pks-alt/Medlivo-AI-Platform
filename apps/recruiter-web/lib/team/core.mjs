@@ -56,6 +56,19 @@ function redirect(location, cookies = []) {
   for (const value of cookies) headers.append('Set-Cookie', value);
   return new Response(null, {status:303, headers});
 }
+export async function boundedBytes(response, limit = 104857600) {
+  if (!response.body) return Buffer.alloc(0);
+  const reader=response.body.getReader(); const chunks=[]; let size=0;
+  try {
+    for (;;) {
+      const {done,value}=await reader.read(); if(done)break;
+      size+=value.length;
+      if(size>limit){await reader.cancel();throw new SafeError(502,'The service response was too large.');}
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks);
+  } finally { reader.releaseLock(); }
+}
 export async function boundedText(response, limit = 1048576) {
   if (!response.body) return '';
   const reader = response.body.getReader(); const chunks = []; let size = 0;
@@ -120,6 +133,7 @@ function endpoint(path, method, query) {
     `/margin/snapshots/${id}`, '/margin/history', '/margin/management-summary',
     '/margin/negative-gm-exceptions',
     '/submission-studio/templates', '/submission-studio/packages', `/submission-studio/packages/${id}`,
+    `/submission-studio/packages/${id}/download`,
     '/funnel', `/funnel/${id}/${id}`,
     root, `${root}/(?:notes|tasks|audit|eligible-owners)`
   ];
@@ -263,6 +277,18 @@ export function createGateway({config, store, verifyIdToken, api, fetcher = fetc
       const message = {403:'You do not have permission for this action.',404:'Work item not found.',
         409:'This item changed or the request was already used. Reload before saving.',422:'Check the fields and select an eligible team member.'}[response.status];
       throw new SafeError(message ? response.status : 503, message || 'The team service is unavailable. Please try again.');
+    }
+    if (resource.endsWith('/download')) {
+      const media=(response.headers.get('content-type')||'').split(';')[0].trim().toLowerCase();
+      if(media!=='application/zip')throw new SafeError(503,'The submission package download is unavailable.');
+      const disposition=response.headers.get('content-disposition')||'';
+      const match=/^attachment; filename="([A-Za-z0-9._ -]{1,180})"$/.exec(disposition);
+      if(!match)throw new SafeError(503,'The submission package download is unavailable.');
+      const bytes=await boundedBytes(response,100*1024*1024);
+      return new Response(bytes,{status:response.status,headers:securityHeaders({
+        'Content-Type':'application/zip',
+        'Content-Disposition':`attachment; filename="${match[1]}"`
+      })});
     }
     return json(JSON.parse(await boundedText(response)), response.status);
   }
