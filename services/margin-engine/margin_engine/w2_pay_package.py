@@ -16,7 +16,12 @@ def _q(value: Decimal) -> Decimal:
 
 
 class W2PayPackageInput(StrictModel):
-    profile: Literal["nursing_rehab_ca_w2", "nursing_rehab_national_w2"]
+    profile: Literal[
+        "nursing_allied_ca_w2",
+        "nursing_allied_national_w2",
+        "rehabilitation_ca_w2",
+        "rehabilitation_national_w2",
+    ]
     division: Literal["nursing_allied", "rehabilitation"]
     customer_type: Literal["direct", "msp_vms"]
     contract_type: Literal["new_contract", "extension"] = "new_contract"
@@ -57,6 +62,14 @@ class W2PayPackageInput(StrictModel):
     other_reimbursement: Decimal = Field(default=ZERO, ge=0)
 
     @model_validator(mode="after")
+    def validate_division_profile(self):
+        if self.profile.startswith("nursing_allied_") and self.division != "nursing_allied":
+            raise ValueError("Nursing & Allied profile requires Nursing & Allied division")
+        if self.profile.startswith("rehabilitation_") and self.division != "rehabilitation":
+            raise ValueError("Rehabilitation profile requires Rehabilitation division")
+        return self
+
+    @model_validator(mode="after")
     def validate_rates_for_used_components(self):
         if self.additional_expected_ot_hours > 0 and self.ot_client_bill_rate is None:
             raise ValueError("OT client bill rate is required when OT hours are used")
@@ -69,13 +82,18 @@ class W2PayPackageInput(StrictModel):
             raise ValueError("On-call client bill rate is required when on-call hours are used")
         if self.callback_hours > 0 and self.callback_client_bill_rate is None:
             raise ValueError("Callback client bill rate is required when callback hours are used")
-        if self.profile == "nursing_rehab_ca_w2" and self.national_double_time_hours != 0:
+        if self.profile.endswith("_ca_w2") and self.national_double_time_hours != 0:
             raise ValueError("California double-time is calculated automatically")
         return self
 
 
 class W2PayPackageResult(StrictModel):
-    profile: Literal["nursing_rehab_ca_w2", "nursing_rehab_national_w2"]
+    profile: Literal[
+        "nursing_allied_ca_w2",
+        "nursing_allied_national_w2",
+        "rehabilitation_ca_w2",
+        "rehabilitation_national_w2",
+    ]
     scheduled_weekly_hours: Decimal
     automatic_ot_hours: Decimal
     additional_expected_ot_hours: Decimal
@@ -129,7 +147,7 @@ def build_w2_pay_package(
 
     scheduled = value.shift_length_hours * value.shifts_per_week
 
-    if value.profile == "nursing_rehab_ca_w2":
+    if value.profile.endswith("_ca_w2"):
         daily_ot = max(min(value.shift_length_hours, Decimal("12")) - Decimal("8"), ZERO) * value.shifts_per_week
         dt_hours = max(value.shift_length_hours - Decimal("12"), ZERO) * value.shifts_per_week
         weekly_ot = max(scheduled - Decimal("40") - dt_hours, ZERO)
