@@ -3022,6 +3022,45 @@ class WorkspaceStore:
             ).limit(limit)).mappings().all()
             return {"items": [clean(row) for row in rows]}
 
+    def list_economic_customers(self, identity, *, limit=500):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if not principal["system_admin"] and principal["business_role"] not in {
+                "executive", "delivery_manager"
+            }:
+                raise AccessError(403, "Economic configuration access required")
+            rows = conn.execute(select(
+                t.customers.c.id,
+                t.customers.c.name,
+                t.customers.c.status,
+            ).where(
+                t.customers.c.tenant_id == principal["tenant_id"]
+            ).order_by(t.customers.c.name).limit(limit)).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
+    def list_all_customer_economic_rules(self, identity, *, limit=500):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if not principal["system_admin"] and principal["business_role"] not in {
+                "executive", "delivery_manager"
+            }:
+                raise AccessError(403, "Economic configuration access required")
+            rows = conn.execute(select(
+                t.customer_economic_rules,
+                t.customers.c.name.label("customer_name"),
+            ).join(
+                t.customers,
+                and_(
+                    t.customers.c.tenant_id == t.customer_economic_rules.c.tenant_id,
+                    t.customers.c.id == t.customer_economic_rules.c.customer_id,
+                ),
+            ).where(
+                t.customer_economic_rules.c.tenant_id == principal["tenant_id"]
+            ).order_by(
+                t.customer_economic_rules.c.effective_from.desc()
+            ).limit(limit)).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
     def create_customer_economic_rule(self, identity, key, value):
         payload = value.model_dump(mode="json")
 
