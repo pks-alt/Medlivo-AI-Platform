@@ -512,7 +512,7 @@ async function boot(){
  if(!window.TEAM_ENABLED){login();return;}
  const params=new URLSearchParams(location.search),error=params.get('error'),stage=params.get('stage');
  if(error){
-   const codes={state:'AUTH-1',provider:'AUTH-2',token:'AUTH-3',identity:'AUTH-4',workspace:'AUTH-5',session:'AUTH-6'};
+   const codes={state:'AUTH-1',provider:'AUTH-2',token:'AUTH-3',identity:'AUTH-4',workspace:'AUTH-5',workspace_auth:'AUTH-5A',workspace_storage:'AUTH-5B',workspace_route:'AUTH-5C',workspace_other:'AUTH-5D',session:'AUTH-6'};
    history.replaceState(null,'','/team');
    if(error==='access')login('Your Google account is not enabled for this workspace. Please contact your administrator.');
    else login('Sign-in could not be completed. Please start again.'+(codes[stage]?' Reference '+codes[stage]+'.':''));
