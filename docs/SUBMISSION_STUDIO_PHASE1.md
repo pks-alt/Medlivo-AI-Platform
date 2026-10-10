@@ -39,6 +39,47 @@ Examples that informed the architecture:
 
 These are examples, not hard-coded universal rules.
 
+
+
+### Locum Tenens
+Locum Tenens is MSP/VMS-only for Phase 1.
+There is no direct-customer template branch.
+
+Template precedence:
+1. Job override
+2. MSP/VMS program + provider type/specialty
+3. MSP/VMS program
+4. MSP/VMS customer
+5. Locum Tenens division default
+6. Medlivo default
+
+Locums submission is document-heavy and generally treated as a full credential presentation. Customer/program templates may require most or all of the following at submission:
+- CV/resume with required gap explanations
+- active state license verification
+- board certification verification
+- DEA registration
+- NPI
+- BLS / ACLS / specialty certifications
+- malpractice disclosure/attestation
+- criminal/background or sex-offender search evidence where required
+- vaccination/exemption evidence where required
+- availability, shift/call coverage and requested time off
+- recent clinical activity / date last worked
+- EMR experience
+- procedures and case/procedure experience relevant to the job
+- provider highlights
+- customer presentation form
+- rates, admin fees, travel/lodging terms where the customer presentation requires them
+
+The package engine must distinguish a credential card/copy from official primary-source verification. A board-certification card may demonstrate a credential while still requiring separate official verification. Templates can therefore require both a credential copy and a primary-source verification as separate requirements.
+
+DEA registrations are jurisdiction-sensitive. The engine must preserve registration number, expiration, registered business activity, state/location restrictions, and the evidence source. It must never assume that one DEA registration satisfies a different state/program requirement.
+
+For locums, submission composition should connect to the finalized Pay Package/GM snapshot when commercial fields are required. Recruiters should not retype bill rate, OT rate, admin fee, travel or lodging terms that already exist in governed Medlivo economics.
+
+The AI CV composer must detect and remove non-resume commentary or drafting artifacts before generating the submission CV. AI may improve structure and relevance but may not invent gap explanations, procedures, case volume, certifications, licenses, malpractice history, or availability.
+
+
 ## Requirement lifecycle
 
 Every template requirement has a lifecycle stage:
