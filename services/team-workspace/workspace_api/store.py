@@ -3342,6 +3342,210 @@ class WorkspaceStore:
             "validations": [clean(x) for x in validations],
         }
 
+    def _recompute_submission_readiness(self, conn, principal, package):
+        rows = conn.execute(select(
+            t.submission_package_items.c.status,
+            t.submission_package_items.c.requirement_key,
+            t.submission_template_requirements.c.required,
+        ).join(
+            t.submission_template_requirements,
+            t.submission_template_requirements.c.id == t.submission_package_items.c.requirement_id,
+        ).where(
+            t.submission_package_items.c.tenant_id == principal["tenant_id"],
+            t.submission_package_items.c.package_id == package["id"],
+        )).mappings().all()
+
+        satisfied_states = {"matched", "approved", "ai_filled", "waived", "not_applicable"}
+        required = [row for row in rows if row["required"]]
+        satisfied = [row for row in required if row["status"] in satisfied_states]
+        missing = [row for row in required if row["status"] == "missing"]
+        review = [row for row in required if row["status"] in {"needs_review", "conflict"}]
+        score = Decimal("100") if not required else Decimal(
+            str(round((len(satisfied) / len(required)) * 100, 2))
+        )
+        if missing:
+            readiness = "missing_required"
+            package_status = "needs_review"
+        elif review:
+            readiness = "needs_review"
+            package_status = "needs_review"
+        else:
+            readiness = "ready"
+            package_status = "ready_to_submit"
+
+        validation_summary = {
+            "required_total": len(required),
+            "required_satisfied": len(satisfied),
+            "missing_required": len(missing),
+            "needs_review": len(review),
+        }
+        conn.execute(update(t.submission_packages).where(
+            t.submission_packages.c.tenant_id == principal["tenant_id"],
+            t.submission_packages.c.id == package["id"],
+        ).values(
+            readiness_status=readiness,
+            readiness_score=score,
+            status=package_status if package["status"] != "finalized" else package["status"],
+            validation_summary=validation_summary,
+            updated_at=now(),
+        ))
+        return readiness, score, validation_summary
+
+    def review_submission_package_item(self, identity, package_id, item_id, key, value):
+        payload = {
+            "package_id": package_id,
+            "item_id": item_id,
+            **value.model_dump(mode="json"),
+        }
+
+        def apply(conn, principal):
+            if principal["business_role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            package = conn.execute(select(t.submission_packages).where(
+                t.submission_packages.c.tenant_id == principal["tenant_id"],
+                t.submission_packages.c.id == package_id,
+                t.submission_packages.c.recruiter_user_id == principal["id"],
+            ).with_for_update()).mappings().first()
+            if package is None:
+                raise AccessError(404, "Submission package not found")
+            if package["status"] in {"finalized", "superseded"}:
+                raise AccessError(409, "This submission package version is locked")
+
+            item = conn.execute(select(t.submission_package_items).where(
+                t.submission_package_items.c.tenant_id == principal["tenant_id"],
+                t.submission_package_items.c.id == item_id,
+                t.submission_package_items.c.package_id == package_id,
+            ).with_for_update()).mappings().first()
+            if item is None:
+                raise AccessError(404, "Submission package item not found")
+
+            requirement = conn.execute(select(t.submission_template_requirements).where(
+                t.submission_template_requirements.c.tenant_id == principal["tenant_id"],
+                t.submission_template_requirements.c.id == item["requirement_id"],
+            )).mappings().first()
+            if requirement is None:
+                raise AccessError(409, "Submission requirement is unavailable")
+
+            if value.decision in {"waived", "not_applicable"} and (
+                value.recruiter_note is None or len(value.recruiter_note.strip()) < 5
+            ):
+                raise AccessError(422, "Waiver or not-applicable decisions require a reason")
+            if value.decision == "approved" and item["status"] == "missing" and value.resolved_value is None:
+                raise AccessError(422, "Provide the confirmed value or evidence before approving a missing item")
+
+            before = clean(item)
+            resolved_value = (
+                value.resolved_value if value.resolved_value is not None
+                else item.get("resolved_value")
+            )
+            conn.execute(update(t.submission_package_items).where(
+                t.submission_package_items.c.id == item_id
+            ).values(
+                status=value.decision,
+                resolved_value=resolved_value,
+                recruiter_note=value.recruiter_note,
+                updated_at=now(),
+            ))
+
+            resolution_status = {
+                "approved": "corrected" if item["status"] in {"missing", "conflict"} else "accepted",
+                "waived": "waived",
+                "not_applicable": "waived",
+            }[value.decision]
+            conn.execute(update(t.submission_validation_results).where(
+                t.submission_validation_results.c.tenant_id == principal["tenant_id"],
+                t.submission_validation_results.c.package_id == package_id,
+                t.submission_validation_results.c.field_key == item["requirement_key"],
+                t.submission_validation_results.c.resolution_status == "open",
+            ).values(
+                resolution_status=resolution_status,
+                resolved_by=principal["id"],
+                resolved_at=now(),
+            ))
+
+            readiness, score, summary = self._recompute_submission_readiness(
+                conn, principal, package
+            )
+            after = {
+                **before,
+                "status": value.decision,
+                "resolved_value": clean(resolved_value) if resolved_value is not None else None,
+                "recruiter_note": value.recruiter_note,
+            }
+            self._operational_audit(
+                conn, principal, "submission_package.item.reviewed",
+                "submission_package", package_id, before, after,
+                reason=value.recruiter_note,
+            )
+            return {
+                "item": after,
+                "readiness_status": readiness,
+                "readiness_score": float(score),
+                "validation_summary": summary,
+            }
+
+        return self._global_mutate(
+            identity, key, "submission_package.item.reviewed", payload, apply
+        )
+
+    def finalize_submission_package(self, identity, package_id, key, value):
+        payload = {
+            "package_id": package_id,
+            **value.model_dump(mode="json"),
+        }
+
+        def apply(conn, principal):
+            if principal["business_role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            package = conn.execute(select(t.submission_packages).where(
+                t.submission_packages.c.tenant_id == principal["tenant_id"],
+                t.submission_packages.c.id == package_id,
+                t.submission_packages.c.recruiter_user_id == principal["id"],
+            ).with_for_update()).mappings().first()
+            if package is None:
+                raise AccessError(404, "Submission package not found")
+            if package["status"] == "finalized":
+                return self._submission_package_detail_conn(conn, principal, package_id)
+            if package["status"] == "superseded":
+                raise AccessError(409, "Prepare a new package version before finalizing")
+
+            readiness, _, _ = self._recompute_submission_readiness(conn, principal, package)
+            if readiness != "ready":
+                raise AccessError(422, "Resolve all required submission items before finalizing")
+
+            open_blocking = conn.execute(select(func.count()).select_from(
+                t.submission_validation_results
+            ).where(
+                t.submission_validation_results.c.tenant_id == principal["tenant_id"],
+                t.submission_validation_results.c.package_id == package_id,
+                t.submission_validation_results.c.severity == "blocking",
+                t.submission_validation_results.c.resolution_status == "open",
+            )).scalar_one()
+            if open_blocking:
+                raise AccessError(422, "Resolve blocking validation issues before finalizing")
+
+            before = clean(package)
+            timestamp = now()
+            conn.execute(update(t.submission_packages).where(
+                t.submission_packages.c.tenant_id == principal["tenant_id"],
+                t.submission_packages.c.id == package_id,
+            ).values(
+                status="finalized",
+                finalized_at=timestamp,
+                finalized_by=principal["id"],
+                updated_at=timestamp,
+            ))
+            self._operational_audit(
+                conn, principal, "submission_package.finalized",
+                "submission_package", package_id, before,
+                {"status": "finalized", "finalized_by": principal["id"], "finalized_at": timestamp},
+            )
+            return self._submission_package_detail_conn(conn, principal, package_id)
+
+        return self._global_mutate(
+            identity, key, "submission_package.finalized", payload, apply
+        )
+
     def get_submission_package(self, identity, package_id):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
