@@ -65,6 +65,7 @@ def test_national_nursing_default_workbook_package_matches_weekly_inputs():
         profile="nursing_allied_national_w2",
         division="nursing_allied",
         customer_type="msp_vms",
+        candidate_source="vivian",
         contract_weeks=d(13),
         shift_length_hours=d(12),
         shifts_per_week=d(3),
