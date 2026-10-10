@@ -61,6 +61,33 @@ test('proxy refuses unknown paths and arbitrary upstream endpoints',async()=>{co
 test('manager overview is an allowlisted authenticated read endpoint',async()=>{const h=harness(),{sessionCookie}=await h.login();const r=await h.request('/api/team/manager/overview',{headers:{Cookie:sessionCookie}});assert.equal(r.status,200);assert.equal(h.apiCalls.at(-1).options.method,'GET');assert.equal(h.apiCalls.at(-1).path,'/manager/overview');});
 test('jobs list and detail are allowlisted authenticated read endpoints',async()=>{const h=harness(),{sessionCookie}=await h.login();assert.equal((await h.request('/api/team/jobs?limit=50',{headers:{Cookie:sessionCookie}})).status,200);assert.equal(h.apiCalls.at(-1).path,'/jobs?limit=50');assert.equal((await h.request('/api/team/jobs/'+CASE,{headers:{Cookie:sessionCookie}})).status,200);assert.equal(h.apiCalls.at(-1).path,'/jobs/'+CASE);});
 test('candidates list and detail are allowlisted authenticated read endpoints',async()=>{const h=harness(),{sessionCookie}=await h.login();assert.equal((await h.request('/api/team/candidates?limit=50',{headers:{Cookie:sessionCookie}})).status,200);assert.equal(h.apiCalls.at(-1).path,'/candidates?limit=50');assert.equal((await h.request('/api/team/candidates/'+CASE,{headers:{Cookie:sessionCookie}})).status,200);assert.equal(h.apiCalls.at(-1).path,'/candidates/'+CASE);});
+
+test('GM Submission Studio and funnel routes are allowlisted through the browser gateway',async()=>{
+ const h=harness(),{sessionCookie,data}=await h.login();
+ const reads=[
+  '/api/team/margin/history?job_id='+CASE+'&candidate_id='+CASE+'&limit=25',
+  '/api/team/submission-studio/templates?division=Rehabilitation&limit=50',
+  '/api/team/submission-studio/packages?job_id='+CASE+'&candidate_id='+CASE+'&limit=25',
+  '/api/team/funnel?limit=25',
+  '/api/team/funnel/'+CASE+'/'+CASE
+ ];
+ for(const path of reads)assert.equal((await h.request(path,{headers:{Cookie:sessionCookie}})).status,200,path);
+ const posts=[
+  '/api/team/submission-studio/bootstrap-templates',
+  '/api/team/submission-studio/jobs/'+CASE+'/candidates/'+CASE+'/prepare',
+  '/api/team/submission-studio/packages/'+CASE+'/items/'+CASE+'/review',
+  '/api/team/submission-studio/packages/'+CASE+'/finalize',
+  '/api/team/margin/w2-pay-package-snapshots',
+  '/api/team/margin/locums-pay-package-snapshots'
+ ];
+ for(const path of posts)assert.equal((await h.request(path,mutation(sessionCookie,data.csrf,{}))).status,200,path);
+ const puts=[
+  '/api/team/funnel/'+CASE+'/'+CASE+'/start-readiness',
+  '/api/team/funnel/'+CASE+'/'+CASE+'/start-readiness/items',
+  '/api/team/jobs/'+CASE+'/operational'
+ ];
+ for(const path of puts){const req=mutation(sessionCookie,data.csrf,{});req.method='PUT';assert.equal((await h.request(path,req)).status,200,path);}
+});
 test('pagination query is allowlisted bounded and single-valued',async()=>{const h=harness(),{sessionCookie}=await h.login();for(const q of ['limit=999','url=https://evil.example','limit=10&limit=20','after=bad'])assert.equal((await h.request('/api/team/cases?'+q,{headers:{Cookie:sessionCookie}})).status,400);assert.equal((await h.request('/api/team/cases?limit=50',{headers:{Cookie:sessionCookie}})).status,200);});
 test('backend sensitive error body is not returned',async()=>{let bad=false;const h=harness({api:async()=>bad?new Response('candidate report secret',{status:500}):Response.json({id:'one',role:'recruiter'})});const {sessionCookie}=await h.login();bad=true;const r=await h.request('/api/team/cases',{headers:{Cookie:sessionCookie}});assert.equal(r.status,503);assert.doesNotMatch(await r.text(),/candidate report/);});
 test('stale version error remains actionable without exposing backend body',async()=>{let bad=false;const h=harness({api:async()=>bad?new Response('private query',{status:409}):Response.json({id:'one',role:'manager'})});const {sessionCookie,data}=await h.login();bad=true;const r=await h.request('/api/team/cases/'+CASE+'/reassign',mutation(sessionCookie,data.csrf,{expected_version:1}));assert.equal(r.status,409);assert.match(await r.text(),/Reload/);});
