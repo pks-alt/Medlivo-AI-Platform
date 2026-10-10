@@ -54,9 +54,10 @@ def clean(row):
 
 
 class WorkspaceStore:
-    def __init__(self, engine, submission_ai=None):
+    def __init__(self, engine, submission_ai=None, submission_packet_generator=None):
         self.engine = engine
         self.submission_ai = submission_ai
+        self.submission_packet_generator = submission_packet_generator
 
     def _principal(self, conn, identity: Identity):
         def lookup():
@@ -132,6 +133,7 @@ class WorkspaceStore:
                 "business_role": principal["business_role"],
                 "system_admin": bool(principal["system_admin"]),
                 "submission_ai_enabled": self.submission_ai is not None,
+                "submission_packet_download_enabled": self.submission_packet_generator is not None,
             }
 
     def admin_teams(self, identity):
@@ -3931,6 +3933,110 @@ class WorkspaceStore:
         return self._global_mutate(
             identity, key, "submission_package.finalized", payload, apply
         )
+
+    def generate_submission_packet(self, identity, package_id):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["business_role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            if self.submission_packet_generator is None:
+                raise AccessError(503, "Submission packet download is not configured for this environment")
+
+            package = conn.execute(select(t.submission_packages).where(
+                t.submission_packages.c.tenant_id == principal["tenant_id"],
+                t.submission_packages.c.id == package_id,
+                t.submission_packages.c.recruiter_user_id == principal["id"],
+            )).mappings().first()
+            if package is None:
+                raise AccessError(404, "Submission package not found")
+            if package["status"] != "finalized":
+                raise AccessError(422, "Finalize the submission package before downloading it")
+
+            job = conn.execute(select(t.jobs).where(
+                t.jobs.c.tenant_id == principal["tenant_id"],
+                t.jobs.c.id == package["job_id"],
+            )).mappings().first()
+            candidate = conn.execute(select(t.candidates).where(
+                t.candidates.c.tenant_id == principal["tenant_id"],
+                t.candidates.c.id == package["candidate_id"],
+            )).mappings().first()
+            template = conn.execute(select(t.submission_templates).where(
+                t.submission_templates.c.tenant_id == principal["tenant_id"],
+                t.submission_templates.c.id == package["template_id"],
+            )).mappings().first()
+            if job is None or candidate is None or template is None:
+                raise AccessError(409, "Submission package source records are unavailable")
+
+            summary_item = conn.execute(select(t.submission_package_items).where(
+                t.submission_package_items.c.tenant_id == principal["tenant_id"],
+                t.submission_package_items.c.package_id == package_id,
+                t.submission_package_items.c.requirement_key == "candidate_summary",
+            )).mappings().first()
+            summary_value = summary_item.get("resolved_value") if summary_item else None
+            candidate_summary = (
+                str((summary_value or {}).get("text") or "").strip()
+                if isinstance(summary_value, dict) else ""
+            )
+            if not candidate_summary:
+                raise AccessError(422, "Reviewed candidate presentation is required before download")
+
+            ai_summary = package.get("ai_summary") or {}
+            resume_text = str(ai_summary.get("resume_markdown") or "").strip()
+            if not resume_text:
+                resume = conn.execute(select(t.resume_versions).where(
+                    t.resume_versions.c.tenant_id == principal["tenant_id"],
+                    t.resume_versions.c.candidate_id == candidate["id"],
+                ).order_by(
+                    t.resume_versions.c.is_primary.desc(),
+                    t.resume_versions.c.updated_at.desc(),
+                )).mappings().first()
+                resume_text = (resume.get("text_content") or "").strip() if resume else ""
+            if not resume_text:
+                raise AccessError(422, "Resume content is required before download")
+
+            licenses = conn.execute(select(t.candidate_licenses).where(
+                t.candidate_licenses.c.tenant_id == principal["tenant_id"],
+                t.candidate_licenses.c.candidate_id == candidate["id"],
+            )).mappings().all()
+
+            document_rows = conn.execute(select(
+                t.submission_package_items.c.label,
+                t.submission_package_items.c.requirement_id,
+                t.submission_template_requirements.c.required,
+                t.candidate_document_assets.c.storage_reference,
+                t.candidate_document_assets.c.title,
+                t.candidate_document_assets.c.document_type,
+            ).join(
+                t.submission_template_requirements,
+                t.submission_template_requirements.c.id == t.submission_package_items.c.requirement_id,
+            ).join(
+                t.candidate_document_assets,
+                t.candidate_document_assets.c.id == t.submission_package_items.c.document_asset_id,
+            ).where(
+                t.submission_package_items.c.tenant_id == principal["tenant_id"],
+                t.submission_package_items.c.package_id == package_id,
+                t.submission_package_items.c.document_asset_id.is_not(None),
+                t.submission_package_items.c.status.in_(
+                    ["matched", "approved", "ai_filled"]
+                ),
+            ).order_by(t.submission_package_items.c.display_order)).mappings().all()
+
+            context = {
+                "package": clean(package),
+                "template_name": template["name"],
+                "candidate": clean(candidate),
+                "job": clean(job),
+                "candidate_summary": candidate_summary,
+                "resume_text": resume_text,
+                "licenses": [clean(row) for row in licenses],
+                "supporting_documents": [clean(row) for row in document_rows],
+            }
+            try:
+                return self.submission_packet_generator.generate(context)
+            except ValueError as error:
+                raise AccessError(422, str(error)) from None
+            except Exception:
+                raise AccessError(503, "Submission packet could not be generated") from None
 
     def get_submission_package(self, identity, package_id):
         with self.engine.begin() as conn:
