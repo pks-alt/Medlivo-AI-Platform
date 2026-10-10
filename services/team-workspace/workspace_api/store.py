@@ -2835,6 +2835,163 @@ class WorkspaceStore:
             return after
         return self._global_mutate(identity, key, "job_intake.item.decision", payload, apply)
 
+    def list_submission_templates(self, identity, *, division=None, limit=200):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if not principal["system_admin"] and principal["business_role"] not in {
+                "executive", "delivery_manager"
+            }:
+                raise AccessError(403, "Submission template visibility required")
+            statement = select(
+                t.submission_templates,
+                t.customers.c.name.label("customer_name"),
+            ).outerjoin(
+                t.customers,
+                and_(
+                    t.customers.c.tenant_id == t.submission_templates.c.tenant_id,
+                    t.customers.c.id == t.submission_templates.c.customer_id,
+                ),
+            ).where(
+                t.submission_templates.c.tenant_id == principal["tenant_id"]
+            )
+            if division:
+                statement = statement.where(t.submission_templates.c.division == division)
+            rows = conn.execute(statement.order_by(
+                t.submission_templates.c.division,
+                t.submission_templates.c.name,
+                t.submission_templates.c.version.desc(),
+            ).limit(limit)).mappings().all()
+            result = []
+            for row in rows:
+                item = clean(row)
+                count = conn.execute(select(func.count()).select_from(
+                    t.submission_template_requirements
+                ).where(
+                    t.submission_template_requirements.c.tenant_id == principal["tenant_id"],
+                    t.submission_template_requirements.c.template_id == row["id"],
+                )).scalar_one()
+                item["requirement_count"] = count
+                result.append(item)
+            return {"items": result}
+
+    def create_submission_template(self, identity, key, value):
+        payload = value.model_dump(mode="json")
+
+        def apply(conn, principal):
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Admin access required")
+
+            if value.customer_id is not None:
+                customer = conn.execute(select(t.customers.c.id).where(
+                    t.customers.c.tenant_id == principal["tenant_id"],
+                    t.customers.c.id == str(value.customer_id),
+                )).first()
+                if customer is None:
+                    raise AccessError(422, "Customer not found")
+
+            parent_id = str(value.parent_template_id) if value.parent_template_id else None
+            if parent_id:
+                parent = conn.execute(select(t.submission_templates).where(
+                    t.submission_templates.c.tenant_id == principal["tenant_id"],
+                    t.submission_templates.c.id == parent_id,
+                )).mappings().first()
+                if parent is None:
+                    raise AccessError(422, "Parent submission template not found")
+                if parent["division"] != value.division:
+                    raise AccessError(422, "Parent template must use the same division")
+
+            logical = [
+                t.submission_templates.c.tenant_id == principal["tenant_id"],
+                t.submission_templates.c.division == value.division,
+                t.submission_templates.c.template_scope == value.template_scope,
+            ]
+            def same_or_null(column, raw):
+                return column.is_(None) if raw is None else column == raw
+
+            customer_id = str(value.customer_id) if value.customer_id else None
+            logical.extend([
+                same_or_null(t.submission_templates.c.customer_id, customer_id),
+                same_or_null(t.submission_templates.c.program_name, value.program_name),
+                same_or_null(t.submission_templates.c.profession, value.profession),
+                same_or_null(t.submission_templates.c.specialty, value.specialty),
+            ])
+            prior = conn.execute(select(t.submission_templates).where(
+                *logical
+            ).order_by(t.submission_templates.c.version.desc()).limit(1).with_for_update()).mappings().first()
+            version = (prior["version"] + 1) if prior else 1
+            timestamp = now()
+
+            if value.activate:
+                conn.execute(update(t.submission_templates).where(
+                    *logical,
+                    t.submission_templates.c.status == "active",
+                ).values(
+                    status="retired",
+                    effective_to=timestamp,
+                    updated_at=timestamp,
+                ))
+
+            template_id = uid()
+            row = dict(
+                id=template_id,
+                tenant_id=principal["tenant_id"],
+                name=value.name,
+                division=value.division,
+                customer_id=customer_id,
+                program_name=value.program_name,
+                profession=value.profession,
+                specialty=value.specialty,
+                template_scope=value.template_scope,
+                version=version,
+                status="active" if value.activate else "draft",
+                effective_from=timestamp if value.activate else None,
+                effective_to=None,
+                parent_template_id=parent_id,
+                resume_format_profile=value.resume_format_profile,
+                output_profile=value.output_profile,
+                ai_policy=value.ai_policy,
+                created_by=principal["id"],
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+            conn.execute(insert(t.submission_templates).values(**row))
+            seen = set()
+            for index, requirement in enumerate(value.requirements):
+                if requirement.requirement_key in seen:
+                    raise AccessError(422, "Requirement keys must be unique within a template")
+                seen.add(requirement.requirement_key)
+                conn.execute(insert(t.submission_template_requirements).values(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    template_id=template_id,
+                    requirement_key=requirement.requirement_key,
+                    label=requirement.label,
+                    requirement_type=requirement.requirement_type,
+                    category=requirement.category,
+                    lifecycle_stage=requirement.lifecycle_stage,
+                    sensitivity=requirement.sensitivity,
+                    fulfillment_strategy=requirement.fulfillment_strategy,
+                    required=requirement.required,
+                    source_preference=requirement.source_preference,
+                    validation_rule=requirement.validation_rule,
+                    output_rule=requirement.output_rule,
+                    display_order=requirement.display_order or (index + 1),
+                    created_at=timestamp,
+                ))
+
+            self._operational_audit(
+                conn, principal, "submission_template.created",
+                "submission_template", template_id, {}, clean(row)
+            )
+            return {
+                **clean(row),
+                "requirement_count": len(value.requirements),
+            }
+
+        return self._global_mutate(
+            identity, key, "submission_template.created", payload, apply
+        )
+
     def bootstrap_submission_templates(self, identity, key, value):
         payload = value.model_dump(mode="json")
 
