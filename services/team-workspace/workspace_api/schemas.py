@@ -443,3 +443,13 @@ class SubmissionTemplateBootstrapInput(StrictInput):
 
 class SubmissionPackagePrepareInput(StrictInput):
     program_name: str | None = Field(default=None, max_length=200)
+
+
+class SubmissionPackageItemReviewInput(StrictInput):
+    decision: Literal["approved", "waived", "not_applicable"]
+    recruiter_note: str | None = Field(default=None, max_length=2000)
+    resolved_value: dict | None = None
+
+
+class SubmissionPackageFinalizeInput(StrictInput):
+    confirmation: Literal["reviewed_and_ready"]
