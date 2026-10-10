@@ -15,9 +15,9 @@ def d(value):
 
 
 def test_ca_nursing_default_workbook_package_matches_weekly_inputs():
-    assumptions = seed_assumptions("nursing_rehab_ca_w2")
+    assumptions = seed_assumptions("nursing_allied_ca_w2")
     source = W2PayPackageInput(
-        profile="nursing_rehab_ca_w2",
+        profile="nursing_allied_ca_w2",
         division="nursing_allied",
         customer_type="msp_vms",
         contract_type="new_contract",
@@ -60,9 +60,9 @@ def test_ca_nursing_default_workbook_package_matches_weekly_inputs():
 
 
 def test_national_nursing_default_workbook_package_matches_weekly_inputs():
-    assumptions = seed_assumptions("nursing_rehab_national_w2")
+    assumptions = seed_assumptions("nursing_allied_national_w2")
     source = W2PayPackageInput(
-        profile="nursing_rehab_national_w2",
+        profile="nursing_allied_national_w2",
         division="nursing_allied",
         customer_type="msp_vms",
         contract_weeks=d(13),
@@ -94,9 +94,9 @@ def test_national_nursing_default_workbook_package_matches_weekly_inputs():
 
 
 def test_california_daily_ot_is_automatic():
-    assumptions = seed_assumptions("nursing_rehab_ca_w2")
+    assumptions = seed_assumptions("rehabilitation_ca_w2")
     source = W2PayPackageInput(
-        profile="nursing_rehab_ca_w2",
+        profile="rehabilitation_ca_w2",
         division="rehabilitation",
         customer_type="direct",
         contract_weeks=d(13),
@@ -116,9 +116,9 @@ def test_california_daily_ot_is_automatic():
 
 
 def test_california_double_time_is_automatic():
-    assumptions = seed_assumptions("nursing_rehab_ca_w2")
+    assumptions = seed_assumptions("rehabilitation_ca_w2")
     source = W2PayPackageInput(
-        profile="nursing_rehab_ca_w2",
+        profile="rehabilitation_ca_w2",
         division="rehabilitation",
         customer_type="direct",
         contract_weeks=d(13),
@@ -136,9 +136,9 @@ def test_california_double_time_is_automatic():
 
 
 def test_national_standard_ot_and_48_regular_rule_are_distinct():
-    assumptions = seed_assumptions("nursing_rehab_national_w2")
+    assumptions = seed_assumptions("nursing_allied_national_w2")
     common = dict(
-        profile="nursing_rehab_national_w2",
+        profile="nursing_allied_national_w2",
         division="nursing_allied",
         customer_type="direct",
         contract_weeks=d(13),
@@ -160,9 +160,9 @@ def test_national_standard_ot_and_48_regular_rule_are_distinct():
 
 
 def test_on_call_hours_do_not_receive_stipends():
-    assumptions = seed_assumptions("nursing_rehab_national_w2")
+    assumptions = seed_assumptions("nursing_allied_national_w2")
     source = W2PayPackageInput(
-        profile="nursing_rehab_national_w2",
+        profile="nursing_allied_national_w2",
         division="nursing_allied",
         customer_type="direct",
         contract_weeks=d(13),
@@ -183,9 +183,9 @@ def test_on_call_hours_do_not_receive_stipends():
 
 
 def test_callback_defaults_to_base_taxable_pay_rate():
-    assumptions = seed_assumptions("nursing_rehab_national_w2")
+    assumptions = seed_assumptions("rehabilitation_national_w2")
     source = W2PayPackageInput(
-        profile="nursing_rehab_national_w2",
+        profile="rehabilitation_national_w2",
         division="rehabilitation",
         customer_type="direct",
         contract_weeks=d(13),
@@ -201,9 +201,9 @@ def test_callback_defaults_to_base_taxable_pay_rate():
 
 
 def test_orientation_is_suppressed_for_extension():
-    assumptions = seed_assumptions("nursing_rehab_ca_w2")
+    assumptions = seed_assumptions("rehabilitation_ca_w2")
     source = W2PayPackageInput(
-        profile="nursing_rehab_ca_w2",
+        profile="rehabilitation_ca_w2",
         division="rehabilitation",
         customer_type="direct",
         contract_type="extension",
@@ -219,9 +219,9 @@ def test_orientation_is_suppressed_for_extension():
 
 
 def test_bonuses_are_loaded_with_payroll_and_workers_comp_burden():
-    assumptions = seed_assumptions("nursing_rehab_national_w2")
+    assumptions = seed_assumptions("nursing_allied_national_w2")
     source = W2PayPackageInput(
-        profile="nursing_rehab_national_w2",
+        profile="nursing_allied_national_w2",
         division="nursing_allied",
         customer_type="direct",
         contract_weeks=d(13),
@@ -238,9 +238,9 @@ def test_bonuses_are_loaded_with_payroll_and_workers_comp_burden():
 
 
 def test_missing_ot_bill_rate_fails_closed_when_california_ot_applies():
-    assumptions = seed_assumptions("nursing_rehab_ca_w2")
+    assumptions = seed_assumptions("rehabilitation_ca_w2")
     source = W2PayPackageInput(
-        profile="nursing_rehab_ca_w2",
+        profile="rehabilitation_ca_w2",
         division="rehabilitation",
         customer_type="direct",
         contract_weeks=d(13),
@@ -254,9 +254,9 @@ def test_missing_ot_bill_rate_fails_closed_when_california_ot_applies():
 
 
 def test_missing_double_time_bill_rate_fails_closed_when_dt_applies():
-    assumptions = seed_assumptions("nursing_rehab_ca_w2")
+    assumptions = seed_assumptions("rehabilitation_ca_w2")
     source = W2PayPackageInput(
-        profile="nursing_rehab_ca_w2",
+        profile="rehabilitation_ca_w2",
         division="rehabilitation",
         customer_type="direct",
         contract_weeks=d(13),
@@ -268,3 +268,88 @@ def test_missing_double_time_bill_rate_fails_closed_when_dt_applies():
     )
     with pytest.raises(ValueError, match="Double-time client bill rate"):
         build_w2_pay_package(source, assumptions)
+
+
+def test_prachi_ca_rehab_extension_workbook_regression():
+    assumptions = seed_assumptions("rehabilitation_ca_w2")
+    source = W2PayPackageInput(
+        profile="rehabilitation_ca_w2",
+        division="rehabilitation",
+        customer_type="msp_vms",
+        contract_type="extension",
+        candidate_source="other",
+        contract_weeks=d(13),
+        shift_length_hours=d(8),
+        shifts_per_week=d(5),
+        regular_client_bill_rate=d(90),
+        taxable_base_hourly_pay=d(24),
+        housing_stipend_per_hour=d(27),
+        meals_incidentals_stipend_per_hour=d(20),
+        completion_bonus=d(350),
+    )
+    package = build_w2_pay_package(source, assumptions)
+    assert package.gross_client_billing_per_week == d("3600.000000")
+    assert package.taxable_wages_per_week == d("960.000000")
+    assert package.recurring_non_taxable_cost_per_week == d("1880.000000")
+    assert package.orientation_one_time_cost == d("0.000000")
+    assert package.bonus_burden_one_time_cost == d("399.000000")
+
+    margin = calculate_margin(
+        package.to_margin_input(source, msp_fee_rate_override=d("0.03")),
+        assumptions,
+    )
+    assert abs(margin.gross_margin_per_week - d("157.0996923")) <= d("0.00001")
+    assert abs(margin.gross_margin_assignment - d("2042.296")) <= d("0.00001")
+
+
+def test_prachi_national_rehab_workbook_regression():
+    assumptions = seed_assumptions("rehabilitation_national_w2")
+    source = W2PayPackageInput(
+        profile="rehabilitation_national_w2",
+        division="rehabilitation",
+        customer_type="msp_vms",
+        contract_type="new_contract",
+        candidate_source="other",
+        contract_weeks=d(13),
+        shift_length_hours=d(12),
+        shifts_per_week=d(3),
+        regular_client_bill_rate=d(90),
+        taxable_base_hourly_pay=d(18),
+        housing_stipend_per_hour=d(28),
+        meals_incidentals_stipend_per_hour=d("11.6"),
+        on_call_client_bill_rate=d(7),
+        clinician_on_call_pay_rate=d(0),
+        callback_pay_rate=d(18),
+        orientation_hours=d(16),
+    )
+    package = build_w2_pay_package(source, assumptions)
+    assert package.gross_client_billing_per_week == d("3240.000000")
+    assert package.taxable_wages_per_week == d("648.000000")
+    assert package.recurring_non_taxable_cost_per_week == d("1425.600000")
+    assert package.orientation_one_time_cost == d("967.209600")
+
+    margin = calculate_margin(
+        package.to_margin_input(source, msp_fee_rate_override=d("0.05")),
+        assumptions,
+    )
+    assert abs(margin.gross_margin_per_week - d("530.3641231")) <= d("0.00001")
+    assert abs(margin.gross_margin_assignment - d("6894.7336")) <= d("0.00001")
+
+
+def test_division_specific_profile_mismatch_is_rejected():
+    assumptions = seed_assumptions("rehabilitation_ca_w2")
+    source = W2PayPackageInput(
+        profile="rehabilitation_ca_w2",
+        division="rehabilitation",
+        customer_type="direct",
+        contract_weeks=d(13),
+        shift_length_hours=d(8),
+        shifts_per_week=d(5),
+        regular_client_bill_rate=d(100),
+        taxable_base_hourly_pay=d(30),
+    )
+    package = build_w2_pay_package(source, assumptions)
+    with pytest.raises(ValueError, match="Rehabilitation profiles require"):
+        package.to_margin_input(
+            source.model_copy(update={"division": "nursing_allied"})
+        )
