@@ -68,6 +68,7 @@ with tempfile.TemporaryDirectory() as folder:
                 print('TEST sign-in result path:',urlparse(page.url).path,'error:',parse_qs(urlparse(page.url).query).get('error'),flush=True)
                 print('TEST synthetic page text:',page.locator('body').inner_text()[:2000],flush=True)
                 raise
+            page.locator('#noteForm').wait_for(state='visible')
             check(page.locator('#noteForm').is_visible(),'OAuth callback opens authorized work item')
             check(page.get_by_role('button',name='Team overview',exact=True).count()==0,'Recruiter does not see manager Team overview')
             page.get_by_role('button',name='Match Queue',exact=True).click()
