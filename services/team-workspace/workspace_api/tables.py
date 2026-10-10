@@ -172,6 +172,100 @@ submissions = Table(
 )
 
 
+
+
+submission_templates = Table(
+    "ws_submission_template", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), S("name", nullable=False),
+    S("division", nullable=False), U("customer_id"), S("program_name"), S("profession"), S("specialty"),
+    S("template_scope", nullable=False), Column("version", Integer, nullable=False),
+    S("status", nullable=False), D("effective_from"), D("effective_to"), U("parent_template_id"),
+    Column("resume_format_profile", JSON, nullable=False, default=dict),
+    Column("output_profile", JSON, nullable=False, default=dict),
+    Column("ai_policy", JSON, nullable=False, default=dict),
+    U("created_by", nullable=False), D("created_at", nullable=False), D("updated_at", nullable=False),
+    CheckConstraint("template_scope IN ('medlivo_default','division_default','customer','program','profession','specialty','job')"),
+    CheckConstraint("status IN ('draft','active','retired')"),
+    CheckConstraint("version > 0"),
+    ForeignKeyConstraint(["tenant_id", "customer_id"], ["customer.tenant_id", "customer.id"]),
+    ForeignKeyConstraint(["tenant_id", "created_by"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["parent_template_id"], ["ws_submission_template.id"]),
+)
+
+submission_template_requirements = Table(
+    "ws_submission_template_requirement", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("template_id", nullable=False),
+    S("requirement_key", nullable=False), S("label", nullable=False), S("requirement_type", nullable=False),
+    S("category", nullable=False), Column("required", Boolean, nullable=False),
+    Column("source_preference", JSON, nullable=False, default=list),
+    Column("validation_rule", JSON, nullable=False, default=dict),
+    Column("output_rule", JSON, nullable=False, default=dict),
+    Column("display_order", Integer, nullable=False), D("created_at", nullable=False),
+    UniqueConstraint("template_id", "requirement_key"),
+    ForeignKeyConstraint(["template_id"], ["ws_submission_template.id"]),
+)
+
+candidate_document_assets = Table(
+    "ws_candidate_document_asset", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
+    S("document_type", nullable=False), S("title", nullable=False), S("source_system"),
+    S("source_reference"), S("storage_reference"), Column("issue_date", Date),
+    Column("expiration_date", Date), S("verified_status", nullable=False), S("verified_source"),
+    Column("extracted_facts", JSON, nullable=False, default=dict),
+    Column("ai_classification", JSON, nullable=False, default=dict), S("content_hash"),
+    Column("is_current", Boolean, nullable=False), D("created_at", nullable=False), D("updated_at", nullable=False),
+    CheckConstraint("verified_status IN ('unverified','verified','conflict','expired','rejected')"),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+)
+
+submission_packages = Table(
+    "ws_submission_package", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
+    U("candidate_id", nullable=False), U("recruiter_user_id", nullable=False), U("template_id", nullable=False),
+    Column("template_version", Integer, nullable=False), S("status", nullable=False),
+    S("readiness_status", nullable=False), Column("readiness_score", Numeric(5,2), nullable=False),
+    Column("ai_summary", JSON, nullable=False, default=dict),
+    Column("validation_summary", JSON, nullable=False, default=dict),
+    Column("recruiter_edits", JSON, nullable=False, default=dict),
+    Column("generated_artifacts", JSON, nullable=False, default=list),
+    Column("version", Integer, nullable=False), D("finalized_at"), U("finalized_by"),
+    D("created_at", nullable=False), D("updated_at", nullable=False),
+    CheckConstraint("status IN ('draft','ai_prepared','needs_review','ready_to_submit','finalized','superseded')"),
+    CheckConstraint("readiness_status IN ('not_started','missing_required','needs_review','ready')"),
+    CheckConstraint("version > 0"),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["template_id"], ["ws_submission_template.id"]),
+    ForeignKeyConstraint(["tenant_id", "finalized_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+submission_package_items = Table(
+    "ws_submission_package_item", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("package_id", nullable=False),
+    U("requirement_id", nullable=False), S("requirement_key", nullable=False), S("label", nullable=False),
+    S("item_type", nullable=False), S("status", nullable=False), S("source_type"), S("source_reference"),
+    U("document_asset_id"), Column("resolved_value", JSON), Column("ai_confidence", Numeric(5,4)),
+    Column("conflict_detail", JSON), S("recruiter_note"), Column("display_order", Integer, nullable=False),
+    D("created_at", nullable=False), D("updated_at", nullable=False),
+    CheckConstraint("status IN ('missing','ai_filled','matched','conflict','needs_review','approved','waived','not_applicable')"),
+    ForeignKeyConstraint(["package_id"], ["ws_submission_package.id"]),
+    ForeignKeyConstraint(["requirement_id"], ["ws_submission_template_requirement.id"]),
+    ForeignKeyConstraint(["document_asset_id"], ["ws_candidate_document_asset.id"]),
+)
+
+submission_validation_results = Table(
+    "ws_submission_validation_result", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("package_id", nullable=False),
+    S("severity", nullable=False), S("code", nullable=False), S("field_key"), S("message", nullable=False),
+    Column("evidence", JSON, nullable=False, default=dict), S("resolution_status", nullable=False),
+    U("resolved_by"), D("resolved_at"), D("created_at", nullable=False),
+    CheckConstraint("severity IN ('info','warning','blocking')"),
+    CheckConstraint("resolution_status IN ('open','accepted','corrected','waived')"),
+    ForeignKeyConstraint(["package_id"], ["ws_submission_package.id"]),
+    ForeignKeyConstraint(["tenant_id", "resolved_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
 submission_projections = Table(
     "ws_submission_projection", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
