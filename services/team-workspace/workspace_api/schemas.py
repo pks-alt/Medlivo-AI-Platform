@@ -213,7 +213,6 @@ class MarginCalculationInput(StrictInput):
     other_recurring_cost_per_week: float = Field(default=0, ge=0)
     other_one_time_cost_assignment: float = Field(default=0, ge=0)
     employee_benefits_enabled: bool = False
-    msp_fee_rate_override: float | None = Field(default=None, ge=0, le=1)
     actual_worked_hours_per_week: float | None = Field(default=None, gt=0)
     shifts_per_week: float | None = Field(default=None, gt=0)
     commissionable_net_profit_override: float | None = None
