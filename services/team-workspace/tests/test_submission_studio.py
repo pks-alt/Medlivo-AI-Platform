@@ -1,9 +1,12 @@
 from datetime import date
 
 from sqlalchemy import insert, update
+from fastapi.testclient import TestClient
 
 from workspace_api import tables as t
-from workspace_api.store import now
+from workspace_api.app import build_app
+from workspace_api.store import now, WorkspaceStore
+from workspace_api.submission_ai import SubmissionAIResult
 
 
 def idn(n):
@@ -321,3 +324,85 @@ def test_customer_program_template_versions_and_outranks_division_default(client
     keys = {x["requirement_key"] for x in body["items"]}
     assert {"resume", "active_license", "candidate_summary", "professional_references"} <= keys
     assert body["readiness_status"] == "missing_required"
+
+
+class FakeSubmissionAI:
+    def compose(self, context):
+        assert "source" in context
+        assert "ssn" not in context["source"]
+        return SubmissionAIResult(
+            candidate_summary="Verified PT candidate with relevant rehabilitation experience and active New York licensure.",
+            resume_markdown="# Synthetic Candidate One, PT\n\n## Experience\nSource-grounded rehabilitation experience.",
+            claims=[
+                {"text": "Active New York licensure", "source_keys": ["license." + idn(1902)]},
+                {"text": "Physical Therapist", "source_keys": ["candidate.profession"]},
+            ],
+            warnings=["Review employment dates before final customer submission."],
+            provider="fake_vertex",
+            model="fake-model",
+        )
+
+
+def test_ai_composer_fails_closed_when_not_configured(client, headers, seeded):
+    seed_rehab_submission_ready(seeded)
+    client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(9970)},
+        json={"activate": True},
+    )
+    prepared = client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9971)},
+        json={},
+    )
+    assert prepared.status_code == 200
+    response = client.post(
+        f"/api/v1/team/submission-studio/packages/{prepared.json()['id']}/compose-ai",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9972)},
+        json={},
+    )
+    assert response.status_code == 503
+
+
+def test_ai_composer_creates_source_grounded_draft_but_does_not_auto_approve(
+    seeded, verifier, headers
+):
+    seed_rehab_submission_ready(seeded)
+    ai_client = TestClient(build_app(WorkspaceStore(seeded, submission_ai=FakeSubmissionAI()), verifier))
+    boot = ai_client.post(
+        "/api/v1/team/submission-studio/bootstrap-templates",
+        headers={**headers("admin-a"), "Idempotency-Key": idn(9980)},
+        json={"activate": True},
+    )
+    assert boot.status_code == 200
+    prepared = ai_client.post(
+        f"/api/v1/team/submission-studio/jobs/{idn(200)}/candidates/{idn(300)}/prepare",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9981)},
+        json={},
+    )
+    assert prepared.status_code == 200
+
+    drafted = ai_client.post(
+        f"/api/v1/team/submission-studio/packages/{prepared.json()['id']}/compose-ai",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9982)},
+        json={},
+    )
+    assert drafted.status_code == 200
+    body = drafted.json()
+    assert body["ai_summary"]["status"] == "draft_ready"
+    assert body["ai_summary"]["provider"] == "fake_vertex"
+    assert body["ai_summary"]["model"] == "fake-model"
+    assert body["readiness_status"] == "needs_review"
+    summary_item = next(x for x in body["items"] if x["requirement_key"] == "candidate_summary")
+    assert summary_item["status"] == "needs_review"
+    assert summary_item["resolved_value"]["ai_generated"] is True
+    assert "Verified PT candidate" in summary_item["resolved_value"]["text"]
+    resume_item = next(x for x in body["items"] if x["requirement_key"] == "resume")
+    assert "ai_resume_markdown" in resume_item["resolved_value"]
+
+    finalized = ai_client.post(
+        f"/api/v1/team/submission-studio/packages/{body['id']}/finalize",
+        headers={**headers("recruiter-a"), "Idempotency-Key": idn(9983)},
+        json={"confirmation": "reviewed_and_ready"},
+    )
+    assert finalized.status_code == 422
