@@ -381,6 +381,22 @@ def build_app(store, verifier):
             who, str(snapshot_id), str(idempotency_key), value
         )
 
+    @app.get(prefix + "/margin/history")
+    def margin_history(job_id: UUID | None = None, candidate_id: UUID | None = None,
+                       limit: int = Query(default=100, ge=1, le=200),
+                       who=Depends(identity)):
+        return store.list_margin_history(
+            who,
+            job_id=str(job_id) if job_id else None,
+            candidate_id=str(candidate_id) if candidate_id else None,
+            limit=limit,
+        )
+
+    @app.get(prefix + "/margin/management-summary")
+    def margin_management_summary(limit: int = Query(default=500, ge=1, le=1000),
+                                  who=Depends(identity)):
+        return store.margin_management_summary(who, limit=limit)
+
     @app.get(prefix + "/margin/negative-gm-exceptions")
     def negative_gm_exceptions(status: str = "pending",
                                limit: int = Query(default=100, ge=1, le=200),
