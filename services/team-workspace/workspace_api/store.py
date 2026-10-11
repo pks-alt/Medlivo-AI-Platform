@@ -140,8 +140,8 @@ class WorkspaceStore:
     def admin_teams(self, identity):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            if principal["role"] != "admin":
-                raise AccessError(403, "Administrator access required")
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Administrator access required")
             rows = conn.execute(
                 select(t.teams.c.id, t.teams.c.name, t.teams.c.division, t.teams.c.manager_user_id)
                 .where(t.teams.c.tenant_id == principal["tenant_id"])
@@ -153,8 +153,8 @@ class WorkspaceStore:
     def admin_users(self, identity):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            if principal["role"] != "admin":
-                raise AccessError(403, "Administrator access required")
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Administrator access required")
             google_identity = t.identities.alias("google_identity")
             rows = conn.execute(
                 select(
@@ -188,8 +188,8 @@ class WorkspaceStore:
         """Administrator-only operational view over canonical JobDiva-backed data."""
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            if principal["role"] != "admin":
-                raise AccessError(403, "Administrator access required")
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Administrator access required")
             tenant_id = principal["tenant_id"]
 
             def scalar(sql, **params):
@@ -354,8 +354,8 @@ class WorkspaceStore:
     def admin_audit(self, identity, *, limit=50):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            if principal["role"] != "admin":
-                raise AccessError(403, "Administrator access required")
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Administrator access required")
             actor = t.users.alias("admin_actor")
             target = t.users.alias("admin_target")
             rows = conn.execute(
