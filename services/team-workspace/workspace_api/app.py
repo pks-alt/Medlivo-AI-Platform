@@ -132,7 +132,7 @@ def build_app(store, verifier):
                 conn.execute(text("SELECT 1"))
                 db_inspector = inspect(conn)
                 schema_ready = all(
-                    db_inspector.has_table(name.rsplit(".", 1)[-1], schema="public" if conn.dialect.name == "postgresql" else None)
+                    db_inspector.has_table(name.rsplit(".", 1)[-1])
                     for name in required_schema
                 )
                 if not schema_ready:
