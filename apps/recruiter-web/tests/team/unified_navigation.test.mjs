@@ -20,3 +20,11 @@ test("Legacy My Work routes Weekly into the unified section", async () => {
   assert.match(ui, /href="\/weekly">Weekly<\/a>/);
   assert.doesNotMatch(ui, /data-weekly>/);
 });
+
+
+test("Friday Weekly report keeps the Excel export", async () => {
+  const page = await readFile(new URL("../../app/weekly/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /Download Excel \(\.xlsx\)/);
+  assert.match(page, /XLSX\.writeFile/);
+  assert.match(page, /Medlivo_Weekly_Status_/);
+});
