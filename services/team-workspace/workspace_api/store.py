@@ -750,9 +750,23 @@ class WorkspaceStore:
                 item["hard_gate_count"] = hard_gate_count
                 item["strong_match_count"] = strong_count
                 item["good_match_count"] = good_count
+                overlay = conn.execute(
+                    select(t.job_operational_overlays).where(
+                        t.job_operational_overlays.c.tenant_id == principal["tenant_id"],
+                        t.job_operational_overlays.c.job_id == row["id"],
+                    )
+                ).mappings().first()
                 item["shift"] = normalized.get("shift") or normalized.get("shift_name")
                 item["contract_type"] = normalized.get("contract_type") or normalized.get("employment_type")
                 item["openings"] = normalized.get("openings") or normalized.get("positions")
+                item["operational"] = clean(overlay) if overlay else {
+                    "client_priority": "normal",
+                    "job_priority": "standard",
+                    "operational_status": "active",
+                    "next_action": None,
+                    "due_at": None,
+                    "version": 0,
+                }
                 result_rows.append(item)
             return self._page(result_rows, limit)
 
@@ -916,9 +930,26 @@ class WorkspaceStore:
             strong_count = len([x for x in matches if x["match_status"] != "excluded" and float(x["overall_score"] or 0) >= 9])
             good_count = len([x for x in matches if x["match_status"] != "excluded" and 8 <= float(x["overall_score"] or 0) < 9])
 
+            operational = conn.execute(
+                select(t.job_operational_overlays).where(
+                    t.job_operational_overlays.c.tenant_id == principal["tenant_id"],
+                    t.job_operational_overlays.c.job_id == job_id,
+                )
+            ).mappings().first()
+
             payload = dict(job)
             payload.update({
                 "source": dict(source) if source else None,
+                "operational": clean(operational) if operational else {
+                    "client_priority": "normal",
+                    "job_priority": "standard",
+                    "operational_status": "active",
+                    "next_action": None,
+                    "due_at": None,
+                    "manager_note": None,
+                    "priority_reason": None,
+                    "version": 0,
+                },
                 "owner_name": owner_name,
                 "manager_name": manager_name,
                 "team_name": team_name,
