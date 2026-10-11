@@ -7,7 +7,7 @@ from fastapi import FastAPI, Depends, HTTPException, Header, Query, UploadFile, 
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from .auth import AuthenticationError, GoogleIdentityVerifier
 from .config import Settings
@@ -130,13 +130,11 @@ def build_app(store, verifier):
         try:
             with store.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-                schema_ready = conn.execute(
-                    text("""
-                        SELECT bool_and(to_regclass(name) IS NOT NULL)
-                        FROM unnest(CAST(:names AS text[])) AS required(name)
-                    """),
-                    {"names": list(required_schema)},
-                ).scalar_one()
+                db_inspector = inspect(conn)
+                schema_ready = all(
+                    db_inspector.has_table(name.rsplit(".", 1)[-1], schema="public" if conn.dialect.name == "postgresql" else None)
+                    for name in required_schema
+                )
                 if not schema_ready:
                     logger.error("workspace_readiness_schema_unavailable")
                     return JSONResponse(
