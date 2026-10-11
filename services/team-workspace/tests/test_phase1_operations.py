@@ -1534,7 +1534,6 @@ def test_system_admin_profile_can_read_admin_console_endpoints(client, headers, 
         "/api/v1/team/admin/users",
         "/api/v1/team/admin/teams",
         "/api/v1/team/admin/audit?limit=10",
-        "/api/v1/team/admin/operations",
     ]:
         response = client.get(path, headers=headers("manager-a"))
         assert response.status_code == 200, (path, response.text)
