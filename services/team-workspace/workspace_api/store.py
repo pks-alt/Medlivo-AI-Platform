@@ -489,8 +489,9 @@ class WorkspaceStore:
                     t.candidates.c.profession, t.candidates.c.specialty,
                     t.candidates.c.city, t.candidates.c.state,
                     t.candidates.c.lifecycle_status, t.candidates.c.profile_freshness,
+                    t.candidates.c.updated_at,
                     source.c.source_id.label("jobdiva_candidate_id"),
-                    source.c.enriched_at,
+                    source.c.enriched_at, source.c.source_updated_at,
                 )
                 .outerjoin(source, and_(
                     source.c.candidate_id == t.candidates.c.id,
@@ -499,10 +500,119 @@ class WorkspaceStore:
                 ))
                 .where(t.candidates.c.tenant_id == principal["tenant_id"])
             )
+
+            if principal["role"] == "recruiter":
+                owned_candidates = select(t.cases.c.candidate_id).where(
+                    t.cases.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.owner_user_id == principal["id"],
+                    t.cases.c.candidate_id.is_not(None),
+                )
+                statement = statement.where(t.candidates.c.id.in_(owned_candidates))
+            elif principal["role"] == "manager":
+                managed_teams = select(t.teams.c.id).where(
+                    t.teams.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+                managed_candidates = select(t.cases.c.candidate_id).where(
+                    t.cases.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.team_id.in_(managed_teams),
+                    t.cases.c.candidate_id.is_not(None),
+                )
+                statement = statement.where(t.candidates.c.id.in_(managed_candidates))
+            elif principal["role"] != "admin":
+                raise AccessError(403, "Workspace access required")
+
             if after:
                 statement = statement.where(t.candidates.c.id > after)
             rows = conn.execute(statement.order_by(t.candidates.c.id).limit(limit + 1)).mappings().all()
-            return self._page(rows, limit)
+
+            result_rows = []
+            for row in rows:
+                item = dict(row)
+                owner_case = conn.execute(
+                    select(
+                        t.cases.c.owner_user_id, t.cases.c.team_id,
+                        t.users.c.display_name.label("owner_name"),
+                        t.teams.c.name.label("team_name"),
+                        t.teams.c.division.label("division"),
+                    )
+                    .join(t.users, and_(
+                        t.users.c.id == t.cases.c.owner_user_id,
+                        t.users.c.tenant_id == t.cases.c.tenant_id,
+                    ))
+                    .join(t.teams, and_(
+                        t.teams.c.id == t.cases.c.team_id,
+                        t.teams.c.tenant_id == t.cases.c.tenant_id,
+                    ))
+                    .where(
+                        t.cases.c.tenant_id == principal["tenant_id"],
+                        t.cases.c.candidate_id == row["id"],
+                    )
+                    .order_by(t.cases.c.updated_at.desc()).limit(1)
+                ).mappings().first()
+
+                latest_availability = conn.execute(
+                    select(t.candidate_availability).where(
+                        t.candidate_availability.c.tenant_id == principal["tenant_id"],
+                        t.candidate_availability.c.candidate_id == row["id"],
+                    ).order_by(t.candidate_availability.c.created_at.desc()).limit(1)
+                ).mappings().first()
+                validation = conn.execute(
+                    select(t.qualifications.c.status).where(
+                        t.qualifications.c.tenant_id == principal["tenant_id"],
+                        t.qualifications.c.candidate_id == row["id"],
+                    ).order_by(t.qualifications.c.created_at.desc()).limit(1)
+                ).scalar_one_or_none()
+
+                strong_count = conn.execute(
+                    select(func.count()).select_from(t.matches).where(
+                        t.matches.c.tenant_id == principal["tenant_id"],
+                        t.matches.c.candidate_id == row["id"],
+                        t.matches.c.status != "excluded",
+                        t.matches.c.overall_score >= 9,
+                    )
+                ).scalar_one()
+                good_count = conn.execute(
+                    select(func.count()).select_from(t.matches).where(
+                        t.matches.c.tenant_id == principal["tenant_id"],
+                        t.matches.c.candidate_id == row["id"],
+                        t.matches.c.status != "excluded",
+                        t.matches.c.overall_score >= 8,
+                        t.matches.c.overall_score < 9,
+                    )
+                ).scalar_one()
+                active_license_count = conn.execute(
+                    select(func.count()).select_from(t.candidate_licenses).where(
+                        t.candidate_licenses.c.tenant_id == principal["tenant_id"],
+                        t.candidate_licenses.c.candidate_id == row["id"],
+                        func.lower(func.coalesce(t.candidate_licenses.c.status, "")) == "active",
+                    )
+                ).scalar_one()
+
+                checks = {
+                    "profile": bool(row["profession"] and (row["specialty"] or row["city"] or row["state"])),
+                    "source": bool(row["enriched_at"]),
+                    "license": active_license_count > 0,
+                    "availability": latest_availability is not None,
+                    "validation": validation in {"candidate_confirmed", "ready_for_recruiter"},
+                }
+                ready_count = sum(1 for value in checks.values() if value)
+                item["readiness_status"] = (
+                    "ready" if ready_count == len(checks)
+                    else "review" if ready_count >= 3
+                    else "information_missing"
+                )
+                item["owner_name"] = owner_case["owner_name"] if owner_case else None
+                item["team_name"] = owner_case["team_name"] if owner_case else None
+                item["division"] = owner_case["division"] if owner_case else None
+                item["availability"] = clean(latest_availability) if latest_availability else None
+                item["validation_status"] = validation or "not_screened"
+                item["active_license_count"] = active_license_count
+                item["strong_match_count"] = strong_count
+                item["good_match_count"] = good_count
+                result_rows.append(item)
+
+            return self._page(result_rows, limit)
 
     def get_candidate(self, identity, candidate_id):
         with self.engine.begin() as conn:
@@ -515,6 +625,47 @@ class WorkspaceStore:
             ).mappings().first()
             if candidate is None:
                 raise AccessError(404, "Candidate not found")
+
+            owner_case = conn.execute(
+                select(
+                    t.cases.c.owner_user_id, t.cases.c.team_id,
+                    t.users.c.display_name.label("owner_name"),
+                    t.teams.c.name.label("team_name"),
+                    t.teams.c.division.label("division"),
+                    t.teams.c.manager_user_id,
+                )
+                .join(t.users, and_(
+                    t.users.c.id == t.cases.c.owner_user_id,
+                    t.users.c.tenant_id == t.cases.c.tenant_id,
+                ))
+                .join(t.teams, and_(
+                    t.teams.c.id == t.cases.c.team_id,
+                    t.teams.c.tenant_id == t.cases.c.tenant_id,
+                ))
+                .where(
+                    t.cases.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.candidate_id == candidate_id,
+                )
+                .order_by(t.cases.c.updated_at.desc()).limit(1)
+            ).mappings().first()
+
+            if principal["role"] == "recruiter":
+                if owner_case is None or owner_case["owner_user_id"] != principal["id"]:
+                    raise AccessError(404, "Candidate not found")
+            elif principal["role"] == "manager":
+                if owner_case is None or not self._team_allowed(conn, principal, owner_case["team_id"]):
+                    raise AccessError(404, "Candidate not found")
+            elif principal["role"] != "admin":
+                raise AccessError(404, "Candidate not found")
+
+            manager_name = None
+            if owner_case and owner_case["manager_user_id"]:
+                manager_name = conn.execute(
+                    select(t.users.c.display_name).where(
+                        t.users.c.tenant_id == principal["tenant_id"],
+                        t.users.c.id == owner_case["manager_user_id"],
+                    )
+                ).scalar_one_or_none()
 
             source = conn.execute(
                 select(t.candidate_source_records.c.source_id,
@@ -611,9 +762,87 @@ class WorkspaceStore:
                 .limit(20)
             ).mappings().all()
 
+            exclusions = conn.execute(
+                select(
+                    t.match_exclusions.c.job_id, t.match_exclusions.c.reason_code,
+                    t.match_exclusions.c.reason_detail, t.match_exclusions.c.overridden,
+                    t.jobs.c.title.label("job_title"),
+                )
+                .join(t.jobs, and_(
+                    t.jobs.c.id == t.match_exclusions.c.job_id,
+                    t.jobs.c.tenant_id == t.match_exclusions.c.tenant_id,
+                ))
+                .where(
+                    t.match_exclusions.c.tenant_id == principal["tenant_id"],
+                    t.match_exclusions.c.candidate_id == candidate_id,
+                )
+                .order_by(t.match_exclusions.c.created_at.desc()).limit(25)
+            ).mappings().all()
+
+            submission_rows = conn.execute(
+                select(
+                    t.submissions.c.id, t.submissions.c.job_id, t.submissions.c.status,
+                    t.submissions.c.readiness_status, t.submissions.c.summary,
+                    t.submissions.c.approved_at, t.submissions.c.submitted_at,
+                    t.submissions.c.updated_at, t.jobs.c.title.label("job_title"),
+                )
+                .join(t.jobs, and_(
+                    t.jobs.c.id == t.submissions.c.job_id,
+                    t.jobs.c.tenant_id == t.submissions.c.tenant_id,
+                ))
+                .where(
+                    t.submissions.c.tenant_id == principal["tenant_id"],
+                    t.submissions.c.candidate_id == candidate_id,
+                )
+                .order_by(t.submissions.c.updated_at.desc()).limit(25)
+            ).mappings().all()
+
+            active_licenses = [x for x in licenses if str(x["status"] or "").lower() == "active"]
+            verified_credentials = [
+                x for x in list(licenses) + list(certifications)
+                if str(x["verification_status"] or "").lower() in {"verified", "confirmed", "active"}
+            ]
+            latest_availability = availability[0] if availability else None
+            validation_status = qualification["status"] if qualification else "not_screened"
+            readiness_checks = [
+                {"key": "profile", "label": "Professional profile identified", "ready": bool(candidate["profession"] and (candidate["specialty"] or candidate["city"] or candidate["state"]))},
+                {"key": "resume", "label": "Resume available", "ready": bool(resumes)},
+                {"key": "credentials", "label": "Active license or verified credential", "ready": bool(active_licenses or verified_credentials)},
+                {"key": "availability", "label": "Availability captured", "ready": bool(latest_availability)},
+                {"key": "validation", "label": "Candidate validation complete", "ready": validation_status in {"candidate_confirmed", "ready_for_recruiter"}},
+            ]
+            ready_count = sum(1 for item in readiness_checks if item["ready"])
+            readiness_status = (
+                "ready" if ready_count == len(readiness_checks)
+                else "review" if ready_count >= 3
+                else "information_missing"
+            )
+            eligible_matches = [x for x in best_jobs if x["match_status"] != "excluded"]
+            strong_count = len([x for x in eligible_matches if float(x["overall_score"] or 0) >= 9])
+            good_count = len([x for x in eligible_matches if 8 <= float(x["overall_score"] or 0) < 9])
+
             payload = dict(candidate)
             payload.update({
                 "source": dict(source) if source else None,
+                "owner": {
+                    "owner_name": owner_case["owner_name"] if owner_case else None,
+                    "team_name": owner_case["team_name"] if owner_case else None,
+                    "division": owner_case["division"] if owner_case else None,
+                    "manager_name": manager_name,
+                },
+                "readiness": {
+                    "status": readiness_status,
+                    "checks": readiness_checks,
+                    "active_license_count": len(active_licenses),
+                    "verified_credential_count": len(verified_credentials),
+                    "resume_count": len(resumes),
+                    "evidence_count": len(evidence),
+                },
+                "match_summary": {
+                    "strong": strong_count,
+                    "good": good_count,
+                    "excluded": len(exclusions),
+                },
                 "licenses": [dict(x) for x in licenses],
                 "certifications": [dict(x) for x in certifications],
                 "evidence": [dict(x) for x in evidence],
@@ -621,13 +850,15 @@ class WorkspaceStore:
                 "availability": [dict(x) for x in availability],
                 "preference": dict(preference) if preference else None,
                 "validation": {
-                    "status": qualification["status"] if qualification else "not_screened",
+                    "status": validation_status,
                     "summary": qualification["summary"] if qualification else None,
                     "job_id": qualification["job_id"] if qualification else None,
                     "completed_at": qualification["completed_at"] if qualification else None,
                     "answers": [dict(x) for x in answers],
                 },
-                "best_jobs": [dict(x) for x in best_jobs],
+                "best_jobs": [dict(x) for x in eligible_matches],
+                "exclusions": [dict(x) for x in exclusions],
+                "submissions": [dict(x) for x in submission_rows],
             })
             return clean(payload)
 
