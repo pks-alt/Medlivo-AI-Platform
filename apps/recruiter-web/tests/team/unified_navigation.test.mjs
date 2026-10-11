@@ -28,3 +28,15 @@ test("Friday Weekly report keeps the Excel export", async () => {
   assert.match(page, /XLSX\.writeFile/);
   assert.match(page, /Medlivo_Weekly_Status_/);
 });
+
+
+test("Submission to Start stays a delivery pipeline, not a count-only funnel", async () => {
+  const page = await readFile(new URL("../../app/funnel/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /Recruiting Delivery Pipeline/);
+  assert.match(page, /SUBMISSION → INTERVIEW/);
+  assert.match(page, /Starting Soon/);
+  assert.match(page, /At Risk/);
+  assert.match(page, /Candidate 360/);
+  assert.match(page, /Job 360/);
+  assert.match(page, /This does not automatically mean there was no recruiting activity/);
+});
