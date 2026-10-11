@@ -28,6 +28,7 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
       {href:"/team",label:"My Work",show:true},
       {href:"/jobs",label:"Jobs",show:true},
       {href:"/candidates",label:"Candidates",show:true},
+      {href:"/weekly",label:"Weekly",show:true},
       {href:"/funnel",label:"Submission to Start",show:true},
       {href:"/manager",label:"Manager",show:me?.business_role!=="recruiter"},
       {href:"/executive/margin",label:"Executive",show:me?.business_role==="executive"},
@@ -43,6 +44,7 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
     if(href==="/funnel")return pathname.startsWith("/funnel");
     if(href==="/jobs")return pathname.startsWith("/jobs");
     if(href==="/candidates")return pathname.startsWith("/candidates");
+    if(href==="/weekly")return pathname.startsWith("/weekly");
     if(href==="/manager")return pathname.startsWith("/manager");
     return pathname===href;
   };
