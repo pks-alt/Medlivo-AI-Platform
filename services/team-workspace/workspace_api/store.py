@@ -1642,6 +1642,8 @@ class WorkspaceStore:
                 notes=value.notes, updated_at=timestamp,
             )
             if existing:
+                if principal["role"] == "recruiter":
+                    raise AccessError(409, "Monday goals are locked after the first save; ask your Delivery Manager to adjust the commitment")
                 conn.execute(update(t.weekly_goals).where(where).values(**values))
                 return dict(existing, **values)
             row = dict(
@@ -1714,14 +1716,55 @@ class WorkspaceStore:
                     "qualified": actual["qualified_actual"] if actual else 0,
                     "responses": actual["responses_actual"] if actual else 0,
                 }
+                goal_metrics = ["submissions", "interviews", "closures"]
+                set_targets = [targets[key] for key in goal_metrics if targets[key] > 0]
+                attainment = [
+                    min(actuals[key] / targets[key], 1.0)
+                    for key in goal_metrics if targets[key] > 0
+                ]
+                pace = (sum(attainment) / len(attainment)) if attainment else None
+                if goal is None:
+                    delivery_status = "goal_not_set"
+                elif pace is None:
+                    delivery_status = "goal_set"
+                elif pace >= 0.85:
+                    delivery_status = "on_track"
+                elif pace >= 0.60:
+                    delivery_status = "needs_attention"
+                else:
+                    delivery_status = "at_risk"
+
                 items.append({
                     **dict(recruiter), "targets": targets, "actuals": actuals,
                     "notes": goal["notes"] if goal else None,
+                    "goal_set": goal is not None,
+                    "goal_locked": goal is not None,
+                    "goal_created_at": goal["created_at"] if goal else None,
+                    "goal_updated_at": goal["updated_at"] if goal else None,
+                    "delivery_status": delivery_status,
+                    "attainment": round(pace * 100, 1) if pace is not None else None,
                     "actuals_generated_at": actual["generated_at"] if actual else None,
                 })
+
+            team_totals = {
+                "recruiters": len(items),
+                "goals_set": sum(1 for item in items if item["goal_set"]),
+                "submissions_target": sum(item["targets"]["submissions"] for item in items),
+                "submissions_actual": sum(item["actuals"]["submissions"] for item in items),
+                "interviews_target": sum(item["targets"]["interviews"] for item in items),
+                "interviews_actual": sum(item["actuals"]["interviews"] for item in items),
+                "closures_target": sum(item["targets"]["closures"] for item in items),
+                "closures_actual": sum(item["actuals"]["closures"] for item in items),
+                "priority_jobs_target": sum(item["targets"]["priority_jobs"] for item in items),
+                "offers_actual": sum(item["actuals"]["offers"] for item in items),
+                "starts_actual": sum(item["actuals"]["starts"] for item in items),
+                "qualified_actual": sum(item["actuals"]["qualified"] for item in items),
+                "responses_actual": sum(item["actuals"]["responses"] for item in items),
+            }
             return {
                 "week_start": week_start.isoformat(),
                 "teams": [dict(r) for r in team_rows],
+                "totals": team_totals,
                 "recruiters": clean(items),
             }
 
@@ -2025,6 +2068,10 @@ class WorkspaceStore:
                     "responses": actual["responses_actual"] if actual else 0,
                 },
                 "notes": goal["notes"] if goal else None,
+                "goal_set": goal is not None,
+                "goal_locked": goal is not None,
+                "goal_created_at": goal["created_at"] if goal else None,
+                "goal_updated_at": goal["updated_at"] if goal else None,
                 "actuals_generated_at": actual["generated_at"] if actual else None,
             })
 

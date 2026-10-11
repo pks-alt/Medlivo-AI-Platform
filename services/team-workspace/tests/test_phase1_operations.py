@@ -92,6 +92,73 @@ def test_recruiter_sets_own_weekly_goal(client, headers):
     assert body["interviews_target"] == 5
     assert body["closures_target"] == 2
 
+def test_recruiter_monday_goal_locks_after_first_commit(client, headers):
+    payload = {
+        "week_start": "2026-10-05",
+        "submissions_target": 12,
+        "interviews_target": 5,
+        "closures_target": 2,
+        "priority_jobs_target": 8,
+        "notes": "Monday commitment",
+    }
+    first = client.put(
+        f"/api/v1/team/recruiters/{idn(10)}/weekly-goals",
+        headers=headers("recruiter-a"),
+        json=payload,
+    )
+    assert first.status_code == 200
+
+    changed = dict(payload, submissions_target=20)
+    second = client.put(
+        f"/api/v1/team/recruiters/{idn(10)}/weekly-goals",
+        headers=headers("recruiter-a"),
+        json=changed,
+    )
+    assert second.status_code == 409
+    assert "locked" in second.json()["detail"].lower()
+
+    progress = client.get(
+        f"/api/v1/team/recruiters/{idn(10)}/weekly-goals?week_start=2026-10-05",
+        headers=headers("recruiter-a"),
+    )
+    assert progress.status_code == 200
+    assert progress.json()["goal_set"] is True
+    assert progress.json()["goal_locked"] is True
+    assert progress.json()["targets"]["submissions"] == 12
+
+
+def test_manager_can_adjust_locked_monday_commitment(client, headers):
+    initial = client.put(
+        f"/api/v1/team/recruiters/{idn(10)}/weekly-goals",
+        headers=headers("recruiter-a"),
+        json={
+            "week_start": "2026-10-05",
+            "submissions_target": 12,
+            "interviews_target": 5,
+            "closures_target": 2,
+            "priority_jobs_target": 8,
+            "notes": "Monday commitment",
+        },
+    )
+    assert initial.status_code == 200
+
+    adjusted = client.put(
+        f"/api/v1/team/recruiters/{idn(10)}/weekly-goals",
+        headers=headers("manager-a"),
+        json={
+            "week_start": "2026-10-05",
+            "submissions_target": 14,
+            "interviews_target": 6,
+            "closures_target": 2,
+            "priority_jobs_target": 9,
+            "notes": "Manager adjustment after Monday review",
+        },
+    )
+    assert adjusted.status_code == 200
+    assert adjusted.json()["submissions_target"] == 14
+    assert adjusted.json()["notes"] == "Manager adjustment after Monday review"
+
+
 
 def test_recruiter_cannot_set_another_recruiters_goal(client, headers):
     response = client.put(
@@ -156,6 +223,15 @@ def test_manager_weekly_review_combines_goals_and_automatic_snapshot(client, hea
     assert item["actuals"]["submissions"] == 10
     assert item["actuals"]["interviews"] == 4
     assert item["actuals"]["closures"] == 2
+    assert item["goal_set"] is True
+    assert item["goal_locked"] is True
+    assert item["delivery_status"] == "on_track"
+    assert item["attainment"] > 80
+    totals = response.json()["totals"]
+    assert totals["goals_set"] == 1
+    assert totals["submissions_target"] == 12
+    assert totals["submissions_actual"] == 10
+    assert totals["starts_actual"] == 1
 
 
 def test_manager_cannot_review_other_team(client, headers):
