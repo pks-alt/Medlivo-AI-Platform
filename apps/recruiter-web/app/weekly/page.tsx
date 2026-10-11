@@ -46,6 +46,36 @@ export default function WeeklyPage(){
 
  const rows=managed?(data?.recruiters||[]):[];const totals=data?.totals||{};
  const recruiter=data||{},t=recruiter.targets||{},a=recruiter.actuals||{};
+
+ async function downloadExcel(){
+  const XLSX=await import("xlsx");
+  const exportRows=rows.map((r:any)=>({
+   "Week Starting":week,
+   "Recruiter":r.display_name||r.email,
+   "Status":statusLabel(r.delivery_status),
+   "Attainment %":r.attainment??"",
+   "Submissions Goal":r.goal_set?r.targets.submissions:"",
+   "Submissions Actual":r.actuals.submissions??0,
+   "Interviews Goal":r.goal_set?r.targets.interviews:"",
+   "Interviews Actual":r.actuals.interviews??0,
+   "Closures Goal":r.goal_set?r.targets.closures:"",
+   "Closures Actual":r.actuals.closures??0,
+   "Priority Jobs Goal":r.goal_set?r.targets.priority_jobs:"",
+   "Offers":r.actuals.offers??0,
+   "Starts":r.actuals.starts??0,
+   "Qualified":r.actuals.qualified??0,
+   "Responses":r.actuals.responses??0,
+   "Monday Focus":r.notes||""
+  }));
+  const ws=XLSX.utils.json_to_sheet(exportRows);
+  ws["!cols"]=[
+   {wch:14},{wch:24},{wch:18},{wch:14},{wch:18},{wch:18},{wch:18},{wch:18},
+   {wch:16},{wch:16},{wch:18},{wch:12},{wch:10},{wch:12},{wch:12},{wch:42}
+  ];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"Friday Status");
+  XLSX.writeFile(wb,`Medlivo_Weekly_Status_${week}.xlsx`);
+ }
  if(err&&!data)return <main className="page"><div className="adminError"><b>Weekly unavailable</b><span>{err}</span></div></main>;
  if(!me||!data)return <main className="page"><div className="adminLoading">Loading Weekly...</div></main>;
 
@@ -65,7 +95,7 @@ export default function WeeklyPage(){
     <div className="weeklyRecruiterGrid">{rows.map((r:any)=><article key={r.id} className="weeklyRecruiterCard"><div><b>{r.display_name||r.email}</b><span>{r.email}</span></div><strong className={"weeklyStatus "+(r.goal_set?"on_track":"goal_not_set")}>{r.goal_set?"Goal Set":"Goal Not Set"}</strong><div className="weeklyCommitments"><span><b>{r.targets.submissions}</b>Submissions</span><span><b>{r.targets.interviews}</b>Interviews</span><span><b>{r.targets.closures}</b>Closures</span><span><b>{r.targets.priority_jobs}</b>Priority Jobs</span></div><p>{r.notes||"No weekly focus recorded."}</p><button onClick={()=>setEdit(r)}>{r.goal_set?"Adjust Goals":"Set Goals"}</button></article>)}</div>
    </>:<>
     <section className="weeklySummaryGrid"><article><b>{totals.submissions_actual??0} / {totals.submissions_target??0}</b><span>Submissions</span></article><article><b>{totals.interviews_actual??0} / {totals.interviews_target??0}</b><span>Interviews</span></article><article><b>{totals.closures_actual??0} / {totals.closures_target??0}</b><span>Closures</span></article><article><b>{totals.offers_actual??0}</b><span>Offers</span></article><article><b>{totals.starts_actual??0}</b><span>Starts</span></article><article><b>{totals.qualified_actual??0}</b><span>Qualified</span></article><article><b>{totals.responses_actual??0}</b><span>Responses</span></article></section>
-    <section className="panelBox"><small>MONDAY GOAL VS FRIDAY ACTUAL</small><table className="adminTable"><thead><tr><th>Recruiter</th><th>Submissions</th><th>Interviews</th><th>Closures</th><th>Offers</th><th>Starts</th><th>Qualified</th><th>Responses</th></tr></thead><tbody>{rows.map((r:any)=>{const s=metric(r.targets.submissions,r.actuals.submissions,r.goal_set),i=metric(r.targets.interviews,r.actuals.interviews,r.goal_set),c=metric(r.targets.closures,r.actuals.closures,r.goal_set);return <tr key={r.id}><td><b>{r.display_name||r.email}</b><span className={"weeklyStatus "+r.delivery_status}>{statusLabel(r.delivery_status)}{r.attainment!=null?" · "+r.attainment+"%":""}</span></td><td><b>{s.main}</b><small>{s.sub}</small></td><td><b>{i.main}</b><small>{i.sub}</small></td><td><b>{c.main}</b><small>{c.sub}</small></td><td>{r.actuals.offers}</td><td>{r.actuals.starts}</td><td>{r.actuals.qualified}</td><td>{r.actuals.responses}</td></tr>})}</tbody></table></section>
+    <section className="panelBox"><div className="weeklyReportHead"><div><small>MONDAY GOAL VS FRIDAY ACTUAL</small><p className="sectionHelp">Download the Friday meeting report as an Excel workbook for management review or recordkeeping.</p></div><button className="button" type="button" onClick={downloadExcel}>Download Excel (.xlsx)</button></div><table className="adminTable"><thead><tr><th>Recruiter</th><th>Submissions</th><th>Interviews</th><th>Closures</th><th>Offers</th><th>Starts</th><th>Qualified</th><th>Responses</th></tr></thead><tbody>{rows.map((r:any)=>{const s=metric(r.targets.submissions,r.actuals.submissions,r.goal_set),i=metric(r.targets.interviews,r.actuals.interviews,r.goal_set),c=metric(r.targets.closures,r.actuals.closures,r.goal_set);return <tr key={r.id}><td><b>{r.display_name||r.email}</b><span className={"weeklyStatus "+r.delivery_status}>{statusLabel(r.delivery_status)}{r.attainment!=null?" · "+r.attainment+"%":""}</span></td><td><b>{s.main}</b><small>{s.sub}</small></td><td><b>{i.main}</b><small>{i.sub}</small></td><td><b>{c.main}</b><small>{c.sub}</small></td><td>{r.actuals.offers}</td><td>{r.actuals.starts}</td><td>{r.actuals.qualified}</td><td>{r.actuals.responses}</td></tr>})}</tbody></table></section>
    </>}
   </>:<>
    {mode==="monday"?<section className="weeklyRecruiterSelf">
