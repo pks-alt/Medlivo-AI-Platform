@@ -525,6 +525,12 @@ def test_recruiter_match_queue_shows_owned_jobs_and_explainable_matches(client, 
     assert job["jobdiva_job_id"] == "JD-PT-200"
     assert job["title"] == "Synthetic Physical Therapist"
     assert job["priority"] == 9
+    assert job["match_readiness"]["status"] in {"ready", "needs_review", "limited_data"}
+    assert len(job["match_readiness"]["checks"]) == 5
+    assert job["evaluation_summary"]["evaluated_count"] == 1
+    assert job["evaluation_summary"]["eligible_count"] == 1
+    assert job["evaluation_summary"]["excluded_count"] == 0
+    assert job["owner_name"] == "Synthetic recruiter-a"
     assert job["matches"][0]["score"] == 9.4
     assert job["matches"][0]["jobdiva_candidate_id"] == "JD-CAND-300"
     assert "Exact profession match" in job["matches"][0]["strengths"]
