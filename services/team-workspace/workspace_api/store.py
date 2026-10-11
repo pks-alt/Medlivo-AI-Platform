@@ -157,10 +157,17 @@ class WorkspaceStore:
                 raise AccessError(403, "Administrator access required")
             google_identity = t.identities.alias("google_identity")
             rows = conn.execute(
-                select(t.users.c.id, t.users.c.email, t.users.c.display_name, t.users.c.role, t.users.c.is_active,
-                       t.profiles.c.team_id, google_identity.c.user_id.label("google_identity_user_id"))
+                select(
+                    t.users.c.id, t.users.c.email, t.users.c.display_name, t.users.c.role, t.users.c.is_active,
+                    t.profiles.c.team_id,
+                    t.access_profiles.c.business_role, t.access_profiles.c.system_admin,
+                    google_identity.c.user_id.label("google_identity_user_id"),
+                )
                 .outerjoin(t.profiles, and_(t.profiles.c.user_id == t.users.c.id,
                                             t.profiles.c.tenant_id == t.users.c.tenant_id))
+                .outerjoin(t.access_profiles, and_(
+                    t.access_profiles.c.user_id == t.users.c.id,
+                    t.access_profiles.c.tenant_id == t.users.c.tenant_id))
                 .outerjoin(google_identity, and_(
                     google_identity.c.user_id == t.users.c.id,
                     google_identity.c.tenant_id == t.users.c.tenant_id,

@@ -213,12 +213,13 @@ def test_admin_routes_require_administrator_role(client, headers):
     assert response.status_code == 403
 
 
-def test_admin_user_list_exposes_only_identity_binding_status(client, headers):
+def test_admin_user_list_exposes_enterprise_access_without_google_subject(client, headers):
     response = client.get(ROOT + "/admin/users", headers=headers("admin-a"))
     assert response.status_code == 200
     items = response.json()["items"]
     assert items
     assert all(isinstance(row["identity_bound"], bool) for row in items)
+    assert all("business_role" in row and "system_admin" in row for row in items)
     assert all("subject" not in row and "google_subject" not in row for row in items)
 
 
