@@ -5,14 +5,30 @@ function monday(){
  const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");
  return `${y}-${m}-${day}`;
 }
-async function get(path:string){const r=await fetch("/api/team/"+path,{cache:"no-store",credentials:"same-origin"});if(!r.ok)throw new Error(path+" HTTP "+r.status);return r.json()}
+async function get(path:string){const r=await fetch("/api/team/"+path,{cache:"no-store",credentials:"same-origin"});const b=await r.json().catch(()=>({}));if(!r.ok)throw new Error(b.detail||path+" HTTP "+r.status);return b}
+async function optional(path:string){try{return {value:await get(path),error:""}}catch(e:any){return {value:null,error:e?.message||"Unavailable"}}}
 export default function ManagerPage(){
  const[d,setD]=useState<any>(null);const[e,setE]=useState("");
- useEffect(()=>{Promise.all([get("manager/overview"),get("manager/weekly-review?week_start="+monday()),get("manager/match-quality"),get("margin/management-summary"),get("funnel?limit=200")]).then(([overview,weekly,quality,margin,funnel])=>setD({overview,weekly,quality,margin,funnel})).catch(x=>setE(x.message))},[]);
- if(e)return <main className="page"><div className="adminError"><b>Manager view unavailable</b><span>{e}</span><p>This page requires a Manager or Admin account.</p></div></main>;
+ useEffect(()=>{(async()=>{try{
+   const overview=await get("manager/overview");
+   const [weekly,quality,margin,funnel]=await Promise.all([
+    optional("manager/weekly-review?week_start="+monday()),
+    optional("manager/match-quality"),
+    optional("margin/management-summary"),
+    optional("funnel?limit=200")
+   ]);
+   setD({overview,weekly:weekly.value||{recruiters:[]},quality:quality.value||{},margin:margin.value||{},funnel:funnel.value||{},warnings:[
+    weekly.error&&"Weekly review: "+weekly.error,
+    quality.error&&"Match quality: "+quality.error,
+    margin.error&&"Gross margin: "+margin.error,
+    funnel.error&&"Submission to Start: "+funnel.error
+   ].filter(Boolean)});
+  }catch(x:any){setE(x?.message||"Manager overview could not be loaded")}})()},[]);
+ if(e)return <main className="page"><div className="adminError"><b>Manager view unavailable</b><span>{e}</span><p>Your core manager scope could not be loaded. Secondary panels no longer take down the whole page.</p></div></main>;
  if(!d)return <main className="page"><div className="adminLoading">Loading Manager…</div></main>;
  const o=d.overview||{},q=d.quality||{},m=d.margin||{},mt=m.totals||{},f=d.funnel||{},ft=f.totals||{};
  return <main className="page managerPage"><div className="pageHead"><div><small>Manager command center</small><h1>Team Overview</h1><p>Workload, weekly performance, follow-ups and match quality.</p></div></div>
+  {(d.warnings||[]).length>0&&<div className="adminError"><b>Some manager data is temporarily unavailable</b><span>{d.warnings.join(" · ")}</span><p>The rest of the Manager command center remains available.</p></div>}
   <div className="adminMetricGrid"><article><strong>{o.totals?.active_recruiters??0}</strong><b>Active recruiters</b><span>In teams you manage</span></article><article><strong>{o.totals?.work_items??0}</strong><b>Work items</b><span>Current assigned workload</span></article><article><strong>{o.totals?.open_followups??0}</strong><b>Open follow-ups</b><span>{o.totals?.overdue_followups??0} overdue</span></article><article><strong>{q.feedback_count??0}</strong><b>Match feedback</b><span>Measurement-only pilot feedback</span></article><article><strong>{q.pilot_target?.minimum_feedback??100}</strong><b>Pilot target</b><span>Minimum feedback before ranking decisions</span></article><article><strong>{(q.negative_reasons||[])[0]?.key||"—"}</strong><b>Top gap reason</b><span>{(q.negative_reasons||[])[0]?.count||0} negative reviews</span></article></div>
   <section className="panelBox"><small>Submission to Start</small><div className="gmManagerGrid"><article><strong>{ft.submissions??0}</strong><b>Submitted</b><span>JobDiva source</span></article><article><strong>{ft.interviews??0}</strong><b>Interviews</b><span>Current team funnel</span></article><article><strong>{ft.offers??0}</strong><b>Offers</b><span>Offer activity</span></article><article><strong>{ft.placements??0}</strong><b>Placements</b><span>Pre-start / active placement</span></article><article><strong>{ft.at_risk_starts??0}</strong><b>At-risk starts</b><span>High or critical risk</span></article></div><div className="managerFunnelAction"><a className="linkButton" href="/funnel">Open Submission-to-Start Board</a></div></section>
   <section className="panelBox"><small>Gross Margin & Rate Packages</small><div className="gmManagerGrid"><article><strong>{mt.current_packages??0}</strong><b>Current packages</b><span>Latest recruiter version</span></article><article><strong>{((mt.average_gm_percent??0)*100).toFixed(1)}%</strong><b>Average GM</b><span>Across current packages</span></article><article><strong>{mt.finalized??0}</strong><b>Finalized rates</b><span>Recruiter-owned decisions</span></article><article><strong>{mt.discussion_required??0}</strong><b>Needs discussion</b><span>Commercial guidance required</span></article><article><strong>{mt.negative_gm??0}</strong><b>Negative GM</b><span>Executive exception path</span></article></div>{(m.recent||[]).length?<table className="adminTable"><thead><tr><th>Recruiter</th><th>Profile</th><th>GM</th><th>Status</th><th>Lifecycle</th></tr></thead><tbody>{m.recent.slice(0,12).map((x:any)=><tr key={x.id}><td>{x.recruiter_name}</td><td>{String(x.calculation_profile||"").replaceAll("_"," ")}</td><td>{((Number(x.result_payload?.gross_margin_percent||0))*100).toFixed(1)}%</td><td>{String(x.guideline_status||"").replaceAll("_"," ")}</td><td>{String(x.lifecycle_status||"").replaceAll("_"," ")}</td></tr>)}</tbody></table>:<div className="emptyState">No rate packages are available yet.</div>}</section>
