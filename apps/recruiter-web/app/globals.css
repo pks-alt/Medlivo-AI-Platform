@@ -198,3 +198,27 @@
  .adminWelcome,.adminPageIntro,.adminSectionHead{display:grid}
  .adminIdentity{text-align:left}
 }
+
+
+/* Unified Recruit AI application shell */
+.appShell{min-height:100vh;display:grid;grid-template-columns:230px minmax(0,1fr);background:#f4f7f9}
+.appSidebar{position:sticky;top:0;height:100vh;background:var(--navy);color:#fff;padding:22px 15px;display:flex;flex-direction:column;z-index:20}
+.appBrand{padding:4px 9px 24px;border-bottom:1px solid rgba(255,255,255,.09);margin-bottom:18px}
+.appBrand b{display:block;font-size:23px;letter-spacing:-.04em}.appBrand span{display:block;margin-top:3px;font-size:8px;letter-spacing:.16em;color:#a8c2d5;font-weight:850}
+.appSidebar nav{display:grid;gap:4px}.appSidebar nav>small{padding:0 10px 6px;font-size:7px;letter-spacing:.12em;color:#7890a7;font-weight:900}
+.appSidebar nav a{display:block;text-decoration:none;color:#adbdca;padding:10px 11px;border-radius:8px;font-size:11px;font-weight:750;border-left:3px solid transparent}
+.appSidebar nav a:hover,.appSidebar nav a.active{background:rgba(255,255,255,.09);color:#fff;border-left-color:var(--green)}
+.appSidebarFoot{margin-top:auto;border-top:1px solid rgba(255,255,255,.09);padding:16px 9px 2px;color:#a7bac9;font-size:8px;line-height:1.5}.appSidebarFoot b{font-size:8px;color:#dce7ef}.appSidebarFoot small{display:block;margin:5px 0 0 12px;color:#8197aa}.appStatusDot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:5px}
+.appCanvas{min-width:0;min-height:100vh}
+.appCanvas>.page{min-height:100vh}
+.appCanvas>.adminShell{min-height:100vh}
+.todayPage{max-width:1600px;margin:0 auto}
+.todayWelcome{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin-bottom:14px;box-shadow:0 4px 16px rgba(16,38,65,.025)}
+.todayWelcome small{font-size:8px;letter-spacing:.09em;font-weight:900;color:#5f7487}.todayWelcome h2{font-size:24px;color:#102641;margin:5px 0 7px}.todayWelcome p{font-size:10px;line-height:1.5;color:#6f8193;margin:0;max-width:760px}
+.todayMetricGrid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin-bottom:14px}
+.todayMetricGrid article{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px;display:grid;gap:4px}.todayMetricGrid article.attention{background:#fff7f5;border-color:#ecc6bf}.todayMetricGrid strong{font-size:24px;color:#102641}.todayMetricGrid b{font-size:10px;color:#24394e}.todayMetricGrid span{font-size:8.5px;color:#6f8193;line-height:1.4}
+.todayGrid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(300px,.8fr);gap:14px}.todayList{display:grid;gap:7px}.todayList a{display:flex;justify-content:space-between;gap:12px;align-items:center;border:1px solid #e2e9ee;border-radius:9px;padding:11px;text-decoration:none;color:#24394e}.todayList a:hover{border-color:#bfcdd7;background:#f8fafb}.todayList b,.todayList span{display:block}.todayList b{font-size:10px}.todayList span{font-size:8px;color:#6f8193;margin-top:2px}.todayList strong{font-size:8px;color:#9d4335;background:#fff0ed;border-radius:999px;padding:5px 7px}
+
+@media(max-width:1100px){.todayMetricGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.todayGrid{grid-template-columns:1fr}}
+@media(max-width:820px){.appShell{display:block}.appSidebar{position:static;height:auto;padding:12px 14px}.appBrand{padding:0 0 10px;margin:0 0 10px}.appSidebar nav{display:flex;gap:5px;overflow-x:auto;padding-bottom:3px}.appSidebar nav>small,.appSidebarFoot{display:none}.appSidebar nav a{white-space:nowrap;padding:8px 10px;border-left:0;border-bottom:2px solid transparent}.appSidebar nav a.active{border-left:0;border-bottom-color:var(--green)}}
+@media(max-width:620px){.todayMetricGrid{grid-template-columns:1fr}}
