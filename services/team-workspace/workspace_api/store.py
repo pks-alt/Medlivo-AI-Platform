@@ -754,7 +754,66 @@ class WorkspaceStore:
 
     def get_case(self, identity, case_id):
         with self.engine.begin() as conn:
-            return clean(self._case(conn, self._principal(conn, identity), case_id))
+            principal = self._principal(conn, identity)
+            case = self._case(conn, principal, case_id)
+            owner = t.users.alias("case_owner")
+            manager = t.users.alias("case_manager")
+            row = conn.execute(
+                select(
+                    t.cases,
+                    t.teams.c.name.label("team_name"),
+                    t.teams.c.division.label("division"),
+                    owner.c.display_name.label("owner_name"),
+                    manager.c.display_name.label("manager_name"),
+                    t.jobs.c.title.label("job_title"),
+                    t.jobs.c.status.label("job_status"),
+                    t.jobs.c.city.label("job_city"),
+                    t.jobs.c.state.label("job_state"),
+                    t.candidates.c.canonical_name.label("candidate_name"),
+                    t.customers.c.name.label("customer_name"),
+                )
+                .join(t.teams, and_(
+                    t.teams.c.id == t.cases.c.team_id,
+                    t.teams.c.tenant_id == t.cases.c.tenant_id,
+                ))
+                .join(owner, and_(
+                    owner.c.id == t.cases.c.owner_user_id,
+                    owner.c.tenant_id == t.cases.c.tenant_id,
+                ))
+                .outerjoin(manager, and_(
+                    manager.c.id == t.teams.c.manager_user_id,
+                    manager.c.tenant_id == t.teams.c.tenant_id,
+                ))
+                .outerjoin(t.jobs, and_(
+                    t.jobs.c.id == t.cases.c.job_id,
+                    t.jobs.c.tenant_id == t.cases.c.tenant_id,
+                ))
+                .outerjoin(t.candidates, and_(
+                    t.candidates.c.id == t.cases.c.candidate_id,
+                    t.candidates.c.tenant_id == t.cases.c.tenant_id,
+                ))
+                .outerjoin(t.customers, and_(
+                    t.customers.c.id == t.jobs.c.customer_id,
+                    t.customers.c.tenant_id == t.jobs.c.tenant_id,
+                ))
+                .where(
+                    t.cases.c.id == case["id"],
+                    t.cases.c.tenant_id == case["tenant_id"],
+                )
+            ).mappings().first()
+            next_follow_up = conn.execute(
+                select(t.tasks.c.id, t.tasks.c.title, t.tasks.c.due_at, t.tasks.c.status)
+                .where(
+                    t.tasks.c.tenant_id == principal["tenant_id"],
+                    t.tasks.c.case_id == case["id"],
+                    t.tasks.c.status == "open",
+                )
+                .order_by(t.tasks.c.due_at.asc(), t.tasks.c.id.asc())
+                .limit(1)
+            ).mappings().first()
+            result = dict(row or case)
+            result["next_follow_up"] = clean(next_follow_up) if next_follow_up is not None else None
+            return clean(result)
 
     def eligible_owners(self, identity, case_id):
         with self.engine.begin() as conn:
