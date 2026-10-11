@@ -622,7 +622,7 @@ def test_candidate_best_jobs_blocks_other_recruiter_owner(client, headers, seede
         f"/api/v1/team/candidates/{idn(300)}/best-jobs",
         headers=headers("recruiter-other"),
     )
-    assert response.status_code == 403
+    assert response.status_code == 404
 
 
 def test_candidate_best_jobs_allows_managed_team_manager(client, headers, seeded):
@@ -1026,6 +1026,13 @@ def test_candidate_360_combines_jobdiva_credentials_evidence_validation_and_best
     body = response.json()
     assert body["source"]["source_id"] == "JD-CAND-300"
     assert body["source"]["enrichment_version"] == "candidate-intelligence-v1"
+    assert body["owner"]["owner_name"] == "Synthetic recruiter-a"
+    assert body["owner"]["division"] == "Rehabilitation"
+    assert body["readiness"]["status"] in {"review", "information_missing"}
+    assert body["readiness"]["resume_count"] == 1
+    assert body["readiness"]["verified_credential_count"] == 2
+    assert body["match_summary"]["strong"] == 1
+    assert body["match_summary"]["good"] == 1
     assert body["licenses"][0]["license_type"] == "PT"
     assert body["certifications"][0]["certification_key"] == "bls"
     assert body["evidence"][0]["fact_key"] == "care_setting"
