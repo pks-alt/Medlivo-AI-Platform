@@ -140,7 +140,7 @@ class WorkspaceStore:
     def admin_teams(self, identity):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            if principal["role"] != "admin":
+            if not principal["system_admin"]:
                 raise AccessError(403, "Administrator access required")
             rows = conn.execute(
                 select(t.teams.c.id, t.teams.c.name, t.teams.c.division, t.teams.c.manager_user_id)
@@ -153,7 +153,7 @@ class WorkspaceStore:
     def admin_users(self, identity):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            if principal["role"] != "admin":
+            if not principal["system_admin"]:
                 raise AccessError(403, "Administrator access required")
             google_identity = t.identities.alias("google_identity")
             rows = conn.execute(
@@ -188,7 +188,7 @@ class WorkspaceStore:
         """Administrator-only operational view over canonical JobDiva-backed data."""
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            if principal["role"] != "admin":
+            if not principal["system_admin"]:
                 raise AccessError(403, "Administrator access required")
             tenant_id = principal["tenant_id"]
 
@@ -302,7 +302,7 @@ class WorkspaceStore:
         try:
             with self.engine.begin() as conn:
                 principal = self._principal(conn, identity)
-                if principal["role"] != "admin":
+                if not principal["system_admin"]:
                     raise AccessError(403, "Administrator access required")
                 replay = self._receipt(conn, principal, key, fingerprint)
                 if replay is not None:
@@ -315,7 +315,7 @@ class WorkspaceStore:
         except IntegrityError:
             with self.engine.begin() as conn:
                 principal = self._principal(conn, identity)
-                if principal["role"] != "admin":
+                if not principal["system_admin"]:
                     raise AccessError(403, "Administrator access required")
                 replay = self._receipt(conn, principal, key, fingerprint)
                 if replay is not None:
@@ -354,7 +354,7 @@ class WorkspaceStore:
     def admin_audit(self, identity, *, limit=50):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
-            if principal["role"] != "admin":
+            if not principal["system_admin"]:
                 raise AccessError(403, "Administrator access required")
             actor = t.users.alias("admin_actor")
             target = t.users.alias("admin_target")
