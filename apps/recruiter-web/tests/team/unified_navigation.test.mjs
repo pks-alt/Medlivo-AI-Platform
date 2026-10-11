@@ -62,3 +62,13 @@ test("Manager and Admin preserve the page when secondary data fails", async () =
   assert.match(admin, /Some administration data is temporarily unavailable/);
   assert.match(admin, /if\(!me\.system_admin\)/);
 });
+
+
+test("Admin operations read path is guarded by System Admin, not legacy admin role", async () => {
+  const store = await readFile(new URL("../../../../services/team-workspace/workspace_api/store.py", import.meta.url), "utf8");
+  const start = store.indexOf("def admin_operations_summary");
+  const end = store.indexOf("\n    def ", start + 10);
+  const block = store.slice(start, end > start ? end : undefined);
+  assert.match(block, /if not principal\["system_admin"\]/);
+  assert.doesNotMatch(block, /if principal\["role"\] != "admin"/);
+});
