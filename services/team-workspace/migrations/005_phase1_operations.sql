@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS public.ws_job_intake_item (
     status IN ('ready','review','duplicate','approved','synced','rejected','failed')
   ),
   CONSTRAINT ws_job_intake_item_row_ck CHECK (row_number > 0),
+  CONSTRAINT ws_job_intake_item_tenant_id_uq UNIQUE (tenant_id, id),
   CONSTRAINT ws_job_intake_item_batch_row_uq UNIQUE (tenant_id, batch_id, row_number)
 );
 
