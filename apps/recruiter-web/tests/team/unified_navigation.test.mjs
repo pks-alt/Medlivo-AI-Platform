@@ -40,3 +40,35 @@ test("Submission to Start stays a delivery pipeline, not a count-only funnel", a
   assert.match(page, /Job 360/);
   assert.match(page, /This does not automatically mean there was no recruiting activity/);
 });
+
+
+test("Manager and Weekly calculate Monday without UTC date rollover", async () => {
+  const manager = await readFile(new URL("../../app/manager/page.tsx", import.meta.url), "utf8");
+  const weekly = await readFile(new URL("../../app/weekly/page.tsx", import.meta.url), "utf8");
+  for (const source of [manager, weekly]) {
+    assert.match(source, /getFullYear\(\)/);
+    assert.match(source, /getMonth\(\)\+1/);
+  }
+  assert.doesNotMatch(manager, /return d\.toISOString\(\)\.slice\(0,10\)/);
+  assert.doesNotMatch(weekly, /return d\.toISOString\(\)\.slice\(0,10\)/);
+});
+
+test("Manager and Admin preserve the page when secondary data fails", async () => {
+  const manager = await readFile(new URL("../../app/manager/page.tsx", import.meta.url), "utf8");
+  const admin = await readFile(new URL("../../app/admin/page.tsx", import.meta.url), "utf8");
+  assert.match(manager, /optional\("manager\/weekly-review/);
+  assert.match(manager, /Some manager data is temporarily unavailable/);
+  assert.match(admin, /Promise\.all\(specs\.map/);
+  assert.match(admin, /Some administration data is temporarily unavailable/);
+  assert.match(admin, /if\(!me\.system_admin\)/);
+});
+
+
+test("Admin operations read path is guarded by System Admin, not legacy admin role", async () => {
+  const store = await readFile(new URL("../../../../services/team-workspace/workspace_api/store.py", import.meta.url), "utf8");
+  const start = store.indexOf("def admin_operations_summary");
+  const end = store.indexOf("\n    def ", start + 10);
+  const block = store.slice(start, end > start ? end : undefined);
+  assert.match(block, /if not principal\["system_admin"\]/);
+  assert.doesNotMatch(block, /if principal\["role"\] != "admin"/);
+});

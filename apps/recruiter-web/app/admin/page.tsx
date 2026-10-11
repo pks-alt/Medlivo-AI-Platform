@@ -39,11 +39,16 @@ export default function AdminPage(){
   const[statusFilter,setStatusFilter]=useState("all");
 
   useEffect(()=>{(async()=>{try{
-    const[me,ops,users,teams,audit,batches,mappings,pubs]=await Promise.all([
-      load("me"),load("admin/operations"),load("admin/users"),load("admin/teams"),load("admin/audit?limit=50"),
-      load("job-intake/batches?limit=25"),load("job-intake/mappings"),load("job-publications?limit=25")
-    ]);
-    setData({me,ops,users,teams,audit,batches,mappings,pubs});
+    const me=await load("me");
+    if(!me.system_admin)throw new Error("System Administrator access required");
+    const specs=[
+      ["ops","admin/operations",{}],["users","admin/users",{items:[]}],["teams","admin/teams",{items:[]}],["audit","admin/audit?limit=50",{items:[]}],
+      ["batches","job-intake/batches?limit=25",{items:[]}],["mappings","job-intake/mappings",{items:[]}],["pubs","job-publications?limit=25",{items:[]}]
+    ] as const;
+    const settled=await Promise.all(specs.map(async([key,path,fallback])=>{try{return {key,value:await load(path),error:""}}catch(e:any){return {key,value:fallback,error:e?.message||"Unavailable"}}}));
+    const values:any={me,warnings:[]};
+    for(const item of settled){values[item.key]=item.value;if(item.error)values.warnings.push(item.key+": "+item.error)}
+    setData(values);
   }catch(e:any){setError(e?.message||"Admin data could not be loaded");}})()},[]);
 
   const users=data?.users?.items||[];
@@ -104,6 +109,8 @@ export default function AdminPage(){
         <div><small>MEDLIVO RECRUIT AI · ENTERPRISE CONTROL</small><h1>{navGroups.flatMap(g=>g.items).find(x=>x.id===tab)?.label||"Administration"}</h1><p>System administration, access, integrations, configuration and governance. Recruiting performance remains in the operating workspaces.</p></div>
         <div className="adminIdentity"><span>Signed in as</span><b>{data.me.display_name||"System Admin"}</b><small>{data.me.business_role==="executive"?"Executive + ":""}System Admin</small></div>
       </header>
+
+      {(data.warnings||[]).length>0&&<div className="adminError"><b>Some administration data is temporarily unavailable</b><span>{data.warnings.join(" · ")}</span><p>The console remains available. Only the affected panels are using empty fallback data.</p></div>}
 
       {tab==="home"&&<>
         <section className="adminWelcome">

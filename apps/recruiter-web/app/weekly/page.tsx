@@ -3,8 +3,9 @@
 import {useEffect,useMemo,useState} from "react";
 
 function monday(){
- const d=new Date();const diff=(d.getDay()+6)%7;d.setDate(d.getDate()-diff);d.setHours(12,0,0,0);
- return d.toISOString().slice(0,10);
+ const d=new Date();const diff=(d.getDay()+6)%7;d.setDate(d.getDate()-diff);
+ const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),day=String(d.getDate()).padStart(2,"0");
+ return `${y}-${m}-${day}`;
 }
 async function api(path:string,options:RequestInit={}){
  const r=await fetch("/api/team/"+path,{cache:"no-store",credentials:"same-origin",...options});
