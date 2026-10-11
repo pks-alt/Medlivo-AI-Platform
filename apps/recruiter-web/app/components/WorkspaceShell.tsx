@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import {usePathname} from "next/navigation";
-import {useEffect,useMemo,useState} from "react";
+import {useEffect,useMemo,useState,type ReactNode} from "react";
 
 type Me={
   display_name?:string;
@@ -17,7 +17,7 @@ async function loadMe(){
   return r.json();
 }
 
-export default function WorkspaceShell({children}:{children:React.ReactNode}){
+export default function WorkspaceShell({children}:{children:ReactNode}){
   const pathname=usePathname();
   const[me,setMe]=useState<Me|null>(null);
   useEffect(()=>{loadMe().then(setMe).catch(()=>setMe(null))},[pathname]);
