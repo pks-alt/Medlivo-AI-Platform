@@ -1521,3 +1521,20 @@ def test_manager_cannot_mark_incomplete_intake_recruiting_ready(client, headers)
         },
     )
     assert response.status_code == 422
+
+
+def test_system_admin_profile_can_read_admin_console_endpoints(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(insert(t.access_profiles).values(
+            user_id=idn(12), tenant_id=idn(1), business_role="delivery_manager",
+            system_admin=True, created_at=now(), updated_at=now(),
+        ))
+
+    for path in [
+        "/api/v1/team/admin/users",
+        "/api/v1/team/admin/teams",
+        "/api/v1/team/admin/audit?limit=10",
+        "/api/v1/team/admin/operations",
+    ]:
+        response = client.get(path, headers=headers("manager-a"))
+        assert response.status_code == 200, (path, response.text)
