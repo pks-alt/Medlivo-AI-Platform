@@ -636,13 +636,17 @@ class WorkspaceStore:
             principal = self._principal(conn, identity)
             source = t.job_source_records.alias("job_source")
             customer = t.customers.alias("job_customer")
+            owner = t.users.alias("job_owner")
             statement = (
                 select(
                     t.jobs.c.id, t.jobs.c.title, t.jobs.c.profession, t.jobs.c.specialty,
                     t.jobs.c.division, t.jobs.c.city, t.jobs.c.state, t.jobs.c.start_date,
                     t.jobs.c.status, t.jobs.c.priority, t.jobs.c.owner_user_id,
+                    t.jobs.c.normalized_payload, t.jobs.c.updated_at,
                     source.c.source_id.label("jobdiva_job_id"), source.c.enriched_at,
+                    source.c.source_updated_at,
                     customer.c.name.label("customer_name"),
+                    owner.c.display_name.label("owner_name"),
                 )
                 .outerjoin(source, and_(
                     source.c.job_id == t.jobs.c.id,
@@ -653,12 +657,104 @@ class WorkspaceStore:
                     customer.c.id == t.jobs.c.customer_id,
                     customer.c.tenant_id == t.jobs.c.tenant_id,
                 ))
+                .outerjoin(owner, and_(
+                    owner.c.id == t.jobs.c.owner_user_id,
+                    owner.c.tenant_id == t.jobs.c.tenant_id,
+                ))
                 .where(t.jobs.c.tenant_id == principal["tenant_id"])
             )
+
+            if principal["role"] == "recruiter":
+                owned_case_jobs = select(t.cases.c.job_id).where(
+                    t.cases.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.owner_user_id == principal["id"],
+                    t.cases.c.job_id.is_not(None),
+                )
+                statement = statement.where(or_(
+                    t.jobs.c.owner_user_id == principal["id"],
+                    t.jobs.c.id.in_(owned_case_jobs),
+                ))
+            elif principal["role"] == "manager":
+                managed_teams = select(t.teams.c.id).where(
+                    t.teams.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+                managed_recruiters = select(t.profiles.c.user_id).where(
+                    t.profiles.c.tenant_id == principal["tenant_id"],
+                    t.profiles.c.team_id.in_(managed_teams),
+                )
+                managed_case_jobs = select(t.cases.c.job_id).where(
+                    t.cases.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.team_id.in_(managed_teams),
+                    t.cases.c.job_id.is_not(None),
+                )
+                statement = statement.where(or_(
+                    t.jobs.c.owner_user_id.in_(managed_recruiters),
+                    t.jobs.c.id.in_(managed_case_jobs),
+                ))
+            elif principal["role"] != "admin":
+                raise AccessError(403, "Workspace access required")
+
             if after:
                 statement = statement.where(t.jobs.c.id > after)
             rows = conn.execute(statement.order_by(t.jobs.c.id).limit(limit + 1)).mappings().all()
-            return self._page(rows, limit)
+
+            result_rows = []
+            for row in rows:
+                item = dict(row)
+                requirement_count = conn.execute(
+                    select(func.count()).select_from(t.job_requirements).where(
+                        t.job_requirements.c.tenant_id == principal["tenant_id"],
+                        t.job_requirements.c.job_id == row["id"],
+                    )
+                ).scalar_one()
+                hard_gate_count = conn.execute(
+                    select(func.count()).select_from(t.job_requirements).where(
+                        t.job_requirements.c.tenant_id == principal["tenant_id"],
+                        t.job_requirements.c.job_id == row["id"],
+                        t.job_requirements.c.is_hard_gate.is_(True),
+                    )
+                ).scalar_one()
+                strong_count = conn.execute(
+                    select(func.count()).select_from(t.matches).where(
+                        t.matches.c.tenant_id == principal["tenant_id"],
+                        t.matches.c.job_id == row["id"],
+                        t.matches.c.status != "excluded",
+                        t.matches.c.overall_score >= 9,
+                    )
+                ).scalar_one()
+                good_count = conn.execute(
+                    select(func.count()).select_from(t.matches).where(
+                        t.matches.c.tenant_id == principal["tenant_id"],
+                        t.matches.c.job_id == row["id"],
+                        t.matches.c.status != "excluded",
+                        t.matches.c.overall_score >= 8,
+                        t.matches.c.overall_score < 9,
+                    )
+                ).scalar_one()
+                normalized = row["normalized_payload"] if isinstance(row["normalized_payload"], dict) else {}
+                checks = {
+                    "profession": bool(row["profession"]),
+                    "specialty": bool(row["specialty"]),
+                    "division": bool(row["division"]),
+                    "location": bool(row["city"] or row["state"]),
+                    "requirements": requirement_count > 0,
+                }
+                ready_count = sum(1 for value in checks.values() if value)
+                item["match_readiness"] = (
+                    "ready" if ready_count == len(checks)
+                    else "needs_review" if ready_count >= 3
+                    else "limited_data"
+                )
+                item["requirement_count"] = requirement_count
+                item["hard_gate_count"] = hard_gate_count
+                item["strong_match_count"] = strong_count
+                item["good_match_count"] = good_count
+                item["shift"] = normalized.get("shift") or normalized.get("shift_name")
+                item["contract_type"] = normalized.get("contract_type") or normalized.get("employment_type")
+                item["openings"] = normalized.get("openings") or normalized.get("positions")
+                result_rows.append(item)
+            return self._page(result_rows, limit)
 
     def get_job(self, identity, job_id):
         with self.engine.begin() as conn:
@@ -676,6 +772,44 @@ class WorkspaceStore:
                 )
             ).mappings().first()
             if job is None:
+                raise AccessError(404, "Job not found")
+
+            if principal["role"] == "recruiter":
+                owned_case = conn.execute(
+                    select(t.cases.c.id).where(
+                        t.cases.c.tenant_id == principal["tenant_id"],
+                        t.cases.c.job_id == job_id,
+                        t.cases.c.owner_user_id == principal["id"],
+                    ).limit(1)
+                ).scalar_one_or_none()
+                if job["owner_user_id"] != principal["id"] and owned_case is None:
+                    raise AccessError(404, "Job not found")
+            elif principal["role"] == "manager":
+                managed_teams = select(t.teams.c.id).where(
+                    t.teams.c.tenant_id == principal["tenant_id"],
+                    t.teams.c.manager_user_id == principal["id"],
+                )
+                managed_recruiters = select(t.profiles.c.user_id).where(
+                    t.profiles.c.tenant_id == principal["tenant_id"],
+                    t.profiles.c.team_id.in_(managed_teams),
+                )
+                managed_case = conn.execute(
+                    select(t.cases.c.id).where(
+                        t.cases.c.tenant_id == principal["tenant_id"],
+                        t.cases.c.job_id == job_id,
+                        t.cases.c.team_id.in_(managed_teams),
+                    ).limit(1)
+                ).scalar_one_or_none()
+                owner_allowed = job["owner_user_id"] is not None and conn.execute(
+                    select(t.profiles.c.user_id).where(
+                        t.profiles.c.tenant_id == principal["tenant_id"],
+                        t.profiles.c.user_id == job["owner_user_id"],
+                        t.profiles.c.user_id.in_(managed_recruiters),
+                    ).limit(1)
+                ).scalar_one_or_none() is not None
+                if not owner_allowed and managed_case is None:
+                    raise AccessError(404, "Job not found")
+            elif principal["role"] != "admin":
                 raise AccessError(404, "Job not found")
 
             source = conn.execute(
@@ -732,13 +866,87 @@ class WorkspaceStore:
                 ).order_by(t.match_exclusions.c.created_at.desc()).limit(50)
             ).mappings().all()
 
+            owner_name = None
+            manager_name = None
+            team_name = None
+            if job["owner_user_id"]:
+                owner_row = conn.execute(
+                    select(t.users.c.display_name, t.teams.c.name.label("team_name"),
+                           t.teams.c.manager_user_id)
+                    .outerjoin(t.profiles, and_(
+                        t.profiles.c.user_id == t.users.c.id,
+                        t.profiles.c.tenant_id == t.users.c.tenant_id,
+                    ))
+                    .outerjoin(t.teams, and_(
+                        t.teams.c.id == t.profiles.c.team_id,
+                        t.teams.c.tenant_id == t.profiles.c.tenant_id,
+                    ))
+                    .where(
+                        t.users.c.tenant_id == principal["tenant_id"],
+                        t.users.c.id == job["owner_user_id"],
+                    )
+                ).mappings().first()
+                if owner_row:
+                    owner_name = owner_row["display_name"]
+                    team_name = owner_row["team_name"]
+                    if owner_row["manager_user_id"]:
+                        manager_name = conn.execute(
+                            select(t.users.c.display_name).where(
+                                t.users.c.tenant_id == principal["tenant_id"],
+                                t.users.c.id == owner_row["manager_user_id"],
+                            )
+                        ).scalar_one_or_none()
+
+            normalized = job["normalized_payload"] if isinstance(job["normalized_payload"], dict) else {}
+            requirement_count = len(requirements)
+            hard_gate_count = len([x for x in requirements if x["is_hard_gate"]])
+            readiness_checks = [
+                {"key": "profession", "label": "Profession identified", "ready": bool(job["profession"])},
+                {"key": "specialty", "label": "Specialty identified", "ready": bool(job["specialty"])},
+                {"key": "division", "label": "Division assigned", "ready": bool(job["division"])},
+                {"key": "location", "label": "Location identified", "ready": bool(job["city"] or job["state"])},
+                {"key": "requirements", "label": "Requirements normalized", "ready": requirement_count > 0},
+            ]
+            ready_count = sum(1 for item in readiness_checks if item["ready"])
+            readiness_status = (
+                "ready" if ready_count == len(readiness_checks)
+                else "needs_review" if ready_count >= 3
+                else "limited_data"
+            )
+            strong_count = len([x for x in matches if x["match_status"] != "excluded" and float(x["overall_score"] or 0) >= 9])
+            good_count = len([x for x in matches if x["match_status"] != "excluded" and 8 <= float(x["overall_score"] or 0) < 9])
+
             payload = dict(job)
             payload.update({
                 "source": dict(source) if source else None,
+                "owner_name": owner_name,
+                "manager_name": manager_name,
+                "team_name": team_name,
+                "job_dna": {
+                    "shift": normalized.get("shift") or normalized.get("shift_name"),
+                    "contract_type": normalized.get("contract_type") or normalized.get("employment_type"),
+                    "openings": normalized.get("openings") or normalized.get("positions"),
+                    "care_setting": normalized.get("care_setting") or normalized.get("setting"),
+                    "schedule": normalized.get("schedule"),
+                    "duration": normalized.get("duration") or normalized.get("contract_duration"),
+                    "emr": normalized.get("emr"),
+                    "call": normalized.get("call") or normalized.get("call_requirements"),
+                },
+                "match_readiness": {
+                    "status": readiness_status,
+                    "checks": readiness_checks,
+                    "requirement_count": requirement_count,
+                    "hard_gate_count": hard_gate_count,
+                },
+                "match_summary": {
+                    "strong": strong_count,
+                    "good": good_count,
+                    "excluded": len(exclusions),
+                },
                 "requirements": [dict(x) for x in requirements],
                 "hard_gates": [dict(x) for x in requirements if x["is_hard_gate"]],
                 "preferences": [dict(x) for x in requirements if not x["is_hard_gate"]],
-                "best_candidates": [dict(x) for x in matches],
+                "best_candidates": [dict(x) for x in matches if x["match_status"] != "excluded"],
                 "exclusions": [dict(x) for x in exclusions],
             })
             return clean(payload)
