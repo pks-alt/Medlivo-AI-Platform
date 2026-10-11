@@ -55,9 +55,24 @@ jobs:
           docker push "${API_IMAGE}"
           echo "API_IMAGE=${API_IMAGE}" >> "${GITHUB_ENV}"
 
-      - name: Deploy private API image only
+      - name: Deploy private API candidate with schema readiness gate
         run: |
-          gcloud run services update "${API_SERVICE}"             --project="${PROJECT_ID}"             --region="${REGION}"             --image="${API_IMAGE}"             --no-log-http             --quiet
+          gcloud run deploy "${API_SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${API_IMAGE}" \
+            --no-traffic \
+            --startup-probe="httpGet.path=/ready,httpGet.port=8080,timeoutSeconds=3,periodSeconds=5,failureThreshold=6" \
+            --no-log-http \
+            --quiet
+
+      - name: Promote schema-ready private API revision
+        run: |
+          gcloud run services update-traffic "${API_SERVICE}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --to-latest \
+            --quiet
 
       - name: Build and push private team web
         run: |

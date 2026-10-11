@@ -497,6 +497,7 @@ def test_workspace_readiness_checks_database(client):
         "workspace_enabled": True,
         "database_checked": True,
         "database_reachable": True,
+        "schema_ready": True,
     }
 
 

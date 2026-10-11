@@ -7,7 +7,7 @@ from fastapi import FastAPI, Depends, HTTPException, Header, Query, UploadFile, 
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
 from .auth import AuthenticationError, GoogleIdentityVerifier
 from .config import Settings
@@ -119,13 +119,44 @@ def build_app(store, verifier):
 
     @app.get("/ready")
     def ready():
+        required_schema = (
+            "public.ws_access_profile",
+            "public.ws_submission_projection",
+            "public.ws_start_readiness",
+            "public.ws_submission_template",
+            "public.ws_submission_package",
+            "public.ws_submission_validation_result",
+        )
         try:
             with store.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
+                db_inspector = inspect(conn)
+                schema_ready = all(
+                    db_inspector.has_table(name.rsplit(".", 1)[-1])
+                    for name in required_schema
+                )
+                if not schema_ready:
+                    logger.error("workspace_readiness_schema_unavailable")
+                    return JSONResponse(
+                        {
+                            "ok": False,
+                            "workspace_enabled": True,
+                            "database_checked": True,
+                            "database_reachable": True,
+                            "schema_ready": False,
+                        },
+                        status_code=503,
+                    )
         except SQLAlchemyError:
             logger.error("workspace_readiness_database_unavailable")
             return JSONResponse(
-                {"ok": False, "workspace_enabled": True, "database_checked": True, "database_reachable": False},
+                {
+                    "ok": False,
+                    "workspace_enabled": True,
+                    "database_checked": True,
+                    "database_reachable": False,
+                    "schema_ready": False,
+                },
                 status_code=503,
             )
         return {
@@ -133,6 +164,7 @@ def build_app(store, verifier):
             "workspace_enabled": True,
             "database_checked": True,
             "database_reachable": True,
+            "schema_ready": True,
         }
 
     prefix = "/api/v1/team"
