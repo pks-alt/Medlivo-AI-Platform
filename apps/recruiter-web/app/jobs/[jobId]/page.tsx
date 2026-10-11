@@ -3,38 +3,70 @@
 import Link from "next/link";
 import {useEffect,useState} from "react";
 
-async function load(id:string){
- const r=await fetch("/api/team/jobs/"+id,{cache:"no-store",credentials:"same-origin"});
+async function api(path:string,options:RequestInit={}){
+ const r=await fetch("/api/team/"+path,{cache:"no-store",credentials:"same-origin",...options});
  const b=await r.json().catch(()=>({}));
- if(!r.ok)throw new Error(b.detail||"Job HTTP "+r.status);
+ if(!r.ok)throw new Error(b.detail||path+" HTTP "+r.status);
  return b;
 }
 function band(v:number){return v>=9?"Strong":v>=8?"Good":v>0?"Needs Review":"Excluded"}
 function label(v:any){return String(v||"").replaceAll("_"," ").replace(/\b\w/g,m=>m.toUpperCase())}
+function priorityLabel(v:any){
+ const value=String(v||"standard");
+ return value==="hot"?"Hot":value==="priority"?"High":value==="hold"?"On Hold":"Standard";
+}
 
 export default function JobPage({params}:{params:Promise<{jobId:string}>}){
- const[j,setJ]=useState<any>(null),[e,setE]=useState("");
- useEffect(()=>{params.then(p=>load(p.jobId)).then(setJ).catch(x=>setE(x.message))},[params]);
- if(e)return <main className="page"><div className="adminError"><b>Job unavailable</b><span>{e}</span></div></main>;
- if(!j)return <main className="page"><div className="adminLoading">Loading Job 360...</div></main>;
+ const[j,setJ]=useState<any>(null),[me,setMe]=useState<any>(null),[e,setE]=useState(""),[working,setWorking]=useState(false),[saved,setSaved]=useState("");
+ const[form,setForm]=useState<any>(null);
+ async function refresh(id:string){
+   const[job,who]=await Promise.all([api("jobs/"+id),api("me")]);setJ(job);setMe(who);
+   const o=job.operational||{};
+   setForm({
+     client_priority:o.client_priority||"normal",job_priority:o.job_priority||"standard",
+     priority_reason:o.priority_reason||"",manager_note:o.manager_note||"",next_action:o.next_action||"",
+     due_at:o.due_at?new Date(o.due_at).toISOString().slice(0,16):"",
+     operational_status:o.operational_status||"active",expected_version:o.version||0
+   });
+ }
+ useEffect(()=>{params.then(p=>refresh(p.jobId)).catch(x=>setE(x.message))},[params]);
 
- const readiness=j.match_readiness||{},dna=j.job_dna||{},summary=j.match_summary||{};
+ async function saveOperational(){
+   if(!j||!form)return;
+   setWorking(true);setE("");setSaved("");
+   try{
+     const payload={...form,due_at:form.due_at?new Date(form.due_at).toISOString():null,
+       priority_reason:form.priority_reason.trim()||null,manager_note:form.manager_note.trim()||null,next_action:form.next_action.trim()||null};
+     await api("jobs/"+j.id+"/operational",{method:"PUT",headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(payload)});
+     await refresh(j.id);setSaved("Operational priority updated and audited.");
+   }catch(x:any){setE(x.message)}finally{setWorking(false)}
+ }
+
+ if(e&&!j)return <main className="page"><div className="adminError"><b>Job unavailable</b><span>{e}</span></div></main>;
+ if(!j||!me||!form)return <main className="page"><div className="adminLoading">Loading Job 360...</div></main>;
+
+ const readiness=j.match_readiness||{},dna=j.job_dna||{},summary=j.match_summary||{},operational=j.operational||{};
  const missing=(readiness.checks||[]).filter((x:any)=>!x.ready);
  const sourceCurrent=Boolean(j.source?.source_updated_at);
+ const canManage=["manager","admin"].includes(me.role);
+
  return <main className="page job360Page">
   <div className="pageHead">
    <div><small>{j.division||"Job"}{j.source?.source_id?" · JobDiva "+j.source.source_id:""}</small><h1>{j.title}</h1><p>{j.customer_name||"Customer pending"} · {[j.city,j.state].filter(Boolean).join(", ")||"Location pending"} · Start {j.start_date||"pending"}</p></div>
    <Link className="linkButton" href="/jobs">Back to Jobs</Link>
   </div>
 
+  {e&&<div className="adminError jobInlineError"><b>Could not save the latest change</b><span>{e}</span></div>}
+  {saved&&<div className="goodState jobSaveState">{saved}</div>}
+
   <section className="job360Hero">
     <div><small>JOB OVERVIEW</small><h2>{j.profession||"Profession pending"}{j.specialty?" · "+j.specialty:""}</h2><p>{j.customer_name||"Customer pending"} · {j.division||"Division pending"} · Owner {j.owner_name||"not assigned"}{j.manager_name?" · Delivery Manager "+j.manager_name:""}</p></div>
-    <span className={"readinessBadge "+(readiness.status||"limited_data")}>{readiness.status==="ready"?"Ready to Match":readiness.status==="needs_review"?"Ready with Review Items":"Not Ready"}</span>
+    <div className="job360Badges"><span className={"operationalPriority "+String(operational.job_priority||"standard")}>{priorityLabel(operational.job_priority)}</span><span className={"readinessBadge "+(readiness.status||"limited_data")}>{readiness.status==="ready"?"Ready to Match":readiness.status==="needs_review"?"Ready with Review Items":"Not Ready"}</span></div>
   </section>
 
   <div className="job360Facts">
-    <article><small>Status</small><b>{label(j.status||"open")}</b></article>
-    <article><small>Priority</small><b>{Number(j.priority||0)>=8?"High":Number(j.priority||0)>=4?"Standard":"Normal"}</b></article>
+    <article><small>Status</small><b>{label(operational.operational_status||j.status||"open")}</b></article>
+    <article><small>Client priority</small><b>{label(operational.client_priority||"normal")}</b></article>
     <article><small>Start</small><b>{j.start_date||"Pending"}</b></article>
     <article><small>Shift</small><b>{dna.shift||"Not confirmed"}</b></article>
     <article><small>Contract</small><b>{dna.contract_type||dna.duration||"Not confirmed"}</b></article>
@@ -42,6 +74,25 @@ export default function JobPage({params}:{params:Promise<{jobId:string}>}){
     <article><small>Care setting</small><b>{dna.care_setting||"Not confirmed"}</b></article>
     <article><small>EMR</small><b>{dna.emr||"Not confirmed"}</b></article>
   </div>
+
+  {(operational.next_action||operational.priority_reason||operational.due_at)&&<section className="jobNextAction">
+    <div><small>MANAGEMENT FOCUS</small><b>{operational.next_action||"Priority job review"}</b><span>{operational.priority_reason||"No priority reason recorded"}{operational.due_at?" · Due "+new Date(operational.due_at).toLocaleString():""}</span></div>
+    {operational.manager_note&&<p>{operational.manager_note}</p>}
+  </section>}
+
+  {canManage&&<section className="panelBox jobOperationalEditor"><small>DELIVERY MANAGER PRIORITY</small>
+    <p className="sectionHelp">Set operating priority and next action without changing the JobDiva requisition. Every save is version-checked and audited.</p>
+    <div className="jobOperationalForm">
+      <label><span>Job priority</span><select value={form.job_priority} onChange={x=>setForm({...form,job_priority:x.target.value})}><option value="hot">Hot</option><option value="priority">High</option><option value="standard">Standard</option><option value="hold">On Hold</option></select></label>
+      <label><span>Client priority</span><select value={form.client_priority} onChange={x=>setForm({...form,client_priority:x.target.value})}><option value="high">High</option><option value="normal">Normal</option><option value="low">Low</option></select></label>
+      <label><span>Operational status</span><select value={form.operational_status} onChange={x=>setForm({...form,operational_status:x.target.value})}><option value="active">Active</option><option value="hold">Hold</option><option value="closed">Closed</option></select></label>
+      <label><span>Due date / time</span><input type="datetime-local" value={form.due_at} onChange={x=>setForm({...form,due_at:x.target.value})}/></label>
+      <label className="wide"><span>Priority reason</span><input value={form.priority_reason} onChange={x=>setForm({...form,priority_reason:x.target.value})} placeholder="Why does this job need special focus?"/></label>
+      <label className="wide"><span>Next action</span><input value={form.next_action} onChange={x=>setForm({...form,next_action:x.target.value})} placeholder="Submit two qualified candidates"/></label>
+      <label className="wide"><span>Manager note</span><textarea value={form.manager_note} onChange={x=>setForm({...form,manager_note:x.target.value})} placeholder="Internal operating context for the recruiting team"/></label>
+      <button disabled={working} onClick={saveOperational}>{working?"Saving...":"Save Priority"}</button>
+    </div>
+  </section>}
 
   <section className="job360Grid">
     <div className="panelBox job360Readiness"><small>MATCH READINESS</small>
