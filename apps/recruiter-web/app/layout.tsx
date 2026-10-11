@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import WorkspaceShell from "./components/WorkspaceShell";
 
 export const metadata: Metadata = {
   title: "Medlivo Recruit AI",
@@ -11,7 +12,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><WorkspaceShell>{children}</WorkspaceShell></body>
     </html>
   );
 }

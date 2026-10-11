@@ -40,7 +40,7 @@ export default function ExecutiveMarginPage(){
  if(me.business_role!=="executive")return <main className="page"><div className="adminError"><b>Executive access required</b><span>This view contains company-level margin exceptions.</span></div></main>;
  const t=summary.totals||{};
  return <main className="page executiveMarginPage">
-  <div className="pageHead"><div><small>Executive · Gross Margin</small><h1>GM & Rate Exceptions</h1><p>Current recruiter rate packages, finalization status and the only hard approval queue: negative GM.</p></div><div className="pageActions"><a href="/">Today</a><a href="/manager">Manager</a><a href="/admin">Admin</a></div></div>
+  <div className="pageHead"><div><small>Executive · Gross Margin</small><h1>GM & Rate Exceptions</h1><p>Current recruiter rate packages, finalization status and the only hard approval queue: negative GM.</p></div></div>
 
   <div className="gmMetricGrid">
    <article><strong>{t.current_packages??0}</strong><b>Current packages</b><span>Latest version per job and candidate</span></article>

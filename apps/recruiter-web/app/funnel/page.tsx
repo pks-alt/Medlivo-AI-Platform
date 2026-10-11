@@ -19,7 +19,7 @@ export default function FunnelPage(){
  if(!data||!me)return <main className="page"><div className="adminLoading">Loading recruiting funnel…</div></main>;
  const t=data.totals||{};
  return <main className="page funnelPage">
-  <div className="pageHead"><div><small>Submission to Start</small><h1>Recruiting Funnel</h1><p>{me.business_role==="recruiter"?"Your submitted candidates and starts.":me.business_role==="delivery_manager"?"Your teams’ submitted candidates and starts.":"Company-wide submitted candidates and starts."}</p></div><div className="pageActions"><a href="/">Today</a>{me.business_role!=="recruiter"&&<a href="/manager">Manager</a>}</div></div>
+  <div className="pageHead"><div><small>Submission to Start</small><h1>Recruiting Funnel</h1><p>{me.business_role==="recruiter"?"Your submitted candidates and starts.":me.business_role==="delivery_manager"?"Your teams’ submitted candidates and starts.":"Company-wide submitted candidates and starts."}</p></div></div>
   <div className="funnelMetrics">
    <article><strong>{t.submissions??0}</strong><b>Submitted</b><span>JobDiva source</span></article>
    <article><strong>{t.interviews??0}</strong><b>Interview</b><span>Latest interview activity</span></article>
