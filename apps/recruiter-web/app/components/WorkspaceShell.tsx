@@ -25,6 +25,7 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
   const items=useMemo(()=>{
     const base=[
       {href:"/",label:"Today",show:true},
+      {href:"/team",label:"My Work",show:true},
       {href:"/jobs",label:"Jobs",show:true},
       {href:"/candidates",label:"Candidates",show:true},
       {href:"/funnel",label:"Submission to Start",show:true},
