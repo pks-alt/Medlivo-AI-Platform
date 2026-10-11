@@ -119,13 +119,46 @@ def build_app(store, verifier):
 
     @app.get("/ready")
     def ready():
+        required_schema = (
+            "public.ws_access_profile",
+            "public.ws_submission_projection",
+            "public.ws_start_readiness",
+            "public.ws_submission_template",
+            "public.ws_submission_package",
+            "public.ws_submission_validation_result",
+        )
         try:
             with store.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
+                schema_ready = conn.execute(
+                    text("""
+                        SELECT bool_and(to_regclass(name) IS NOT NULL)
+                        FROM unnest(CAST(:names AS text[])) AS required(name)
+                    """),
+                    {"names": list(required_schema)},
+                ).scalar_one()
+                if not schema_ready:
+                    logger.error("workspace_readiness_schema_unavailable")
+                    return JSONResponse(
+                        {
+                            "ok": False,
+                            "workspace_enabled": True,
+                            "database_checked": True,
+                            "database_reachable": True,
+                            "schema_ready": False,
+                        },
+                        status_code=503,
+                    )
         except SQLAlchemyError:
             logger.error("workspace_readiness_database_unavailable")
             return JSONResponse(
-                {"ok": False, "workspace_enabled": True, "database_checked": True, "database_reachable": False},
+                {
+                    "ok": False,
+                    "workspace_enabled": True,
+                    "database_checked": True,
+                    "database_reachable": False,
+                    "schema_ready": False,
+                },
                 status_code=503,
             )
         return {
@@ -133,6 +166,7 @@ def build_app(store, verifier):
             "workspace_enabled": True,
             "database_checked": True,
             "database_reachable": True,
+            "schema_ready": True,
         }
 
     prefix = "/api/v1/team"
