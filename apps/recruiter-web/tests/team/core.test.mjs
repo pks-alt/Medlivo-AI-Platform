@@ -46,6 +46,16 @@ test('login callback is single-use, including concurrent attempts',async()=>{con
 test('provider cancellation consumes state without token exchange',async()=>{const h=harness(),{url,loginCookie}=await h.begin();await h.request('/api/team/auth/callback?state='+url.searchParams.get('state')+'&error=access_denied',{headers:{Cookie:loginCookie}});assert.equal(h.store.logins.size,0);assert.equal(h.requests.length,0);});
 test('invalid identity or nonce fails closed',async()=>{const h=harness({verifyIdToken:async()=>{throw new Error('sensitive token')}});const {callback}=await h.login();assert.equal(callback.headers.get('location'),'/team?error=login&stage=identity');assert.equal(h.store.sessions.size,0);assert.equal(h.apiCalls.length,0);});
 test('unprovisioned account cannot create a session',async()=>{const h=harness({api:async()=>new Response('sensitive account',{status:403})});const {callback}=await h.login();assert.equal(callback.headers.get('location'),'/team?error=access');assert.equal(h.store.sessions.size,0);});
+test('workspace callback failures expose safe status references',async()=>{ for(const [status,stage] of [[401,'workspace_auth'],[503,'workspace_storage'],[404,'workspace_route'],[500,'workspace_other']]){ const h=harness({api:async()=>new Response('',{status})}); const {callback}=await h.login(); assert.equal(callback.headers.get('location'),'/team?error=login&stage='+stage); assert.equal(h.store.sessions.size,0); }});
+test('workspace callback failures expose only safe status references',async()=>{
+ for(const [status,stage] of [[401,'workspace_auth'],[503,'workspace_storage'],[404,'workspace_route'],[500,'workspace_other']]){
+  const h=harness({api:async()=>new Response('sensitive internal response',{status})});
+  const {callback}=await h.login();
+  assert.equal(callback.headers.get('location'),'/team?error=login&stage='+stage);
+  assert.equal(await callback.text(),'');
+  assert.equal(h.store.sessions.size,0);
+ }
+});
 test('provider failure body and secrets are not exposed',async()=>{const h=harness({fetcher:async()=>new Response('private-token-and-client-secret',{status:500})});const {callback}=await h.login();assert.equal(callback.headers.get('location'),'/team?error=login&stage=token');assert.equal(await callback.text(),'');});
 test('anonymous and duplicate session cookies cannot access data',async()=>{
  const h=harness();assert.equal((await h.request('/api/team/cases')).status,401);const {sessionCookie}=await h.login();assert.equal((await h.request('/api/team/cases',{headers:{Cookie:sessionCookie+'; '+sessionCookie}})).status,401);
