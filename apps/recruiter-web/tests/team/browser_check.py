@@ -120,7 +120,7 @@ with tempfile.TemporaryDirectory() as folder:
             page.get_by_text('Queue verification follow-up',exact=True).wait_for()
             check(True,'Recruiter-wide Follow-ups queue shows tasks across assigned work')
             page.get_by_role('button',name='Mark done',exact=True).click()
-            page.get_by_text('Follow-up updated.',exact=True).wait_for()
+            page.get_by_text('Queue verification follow-up',exact=True).wait_for(state='detached')
             check(page.get_by_text('Queue verification follow-up',exact=True).count()==0,'Completing a queue item removes it from the default open view')
             page.get_by_role('button',name='My work',exact=True).click()
             page.get_by_role('tab',name='Follow-ups',exact=True).wait_for()
