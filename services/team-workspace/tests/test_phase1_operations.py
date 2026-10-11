@@ -1071,6 +1071,11 @@ def test_job_360_combines_source_requirements_matches_and_exclusions(client, hea
     body = response.json()
     assert body["source"]["source_id"] == "JD-PT-200"
     assert body["source"]["enrichment_version"] == "job-intelligence-v1"
+    assert body["match_readiness"]["status"] == "ready"
+    assert body["match_readiness"]["requirement_count"] == 2
+    assert body["match_readiness"]["hard_gate_count"] == 1
+    assert body["match_summary"]["strong"] == 1
+    assert body["operational"]["job_priority"] == "standard"
     assert len(body["requirements"]) == 2
     assert body["hard_gates"][0]["canonical_key"] == "profession"
     assert body["preferences"][0]["canonical_key"] == "care_setting"
@@ -1104,6 +1109,14 @@ def test_delivery_manager_sets_hot_job_and_audit(client, headers, seeded):
     assert body["client_priority"] == "high"
     assert body["team_id"] == idn(30)
     assert body["version"] == 1
+
+    job360 = client.get(
+        f"/api/v1/team/jobs/{idn(200)}",
+        headers=headers("manager-a"),
+    )
+    assert job360.status_code == 200
+    assert job360.json()["operational"]["job_priority"] == "hot"
+    assert job360.json()["operational"]["next_action"] == "Submit qualified candidates"
 
     audit = client.get(
         f"/api/v1/team/manager/operational-audit?object_type=job&object_id={idn(200)}",
