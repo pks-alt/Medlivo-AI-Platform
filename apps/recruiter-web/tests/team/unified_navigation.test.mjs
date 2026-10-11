@@ -72,3 +72,17 @@ test("Admin operations read path is guarded by System Admin, not legacy admin ro
   assert.match(block, /if not principal\["system_admin"\]/);
   assert.doesNotMatch(block, /if principal\["role"\] != "admin"/);
 });
+
+
+test("Executive is a first-class command center, not margin-only", async () => {
+  const shell = await readFile(new URL("../../app/components/WorkspaceShell.tsx", import.meta.url), "utf8");
+  const page = await readFile(new URL("../../app/executive/page.tsx", import.meta.url), "utf8");
+  assert.match(shell, /href:"\/executive",label:"Executive"/);
+  assert.match(page, /Executive command center/);
+  assert.match(page, /Are we producing, converting, and protecting margin\?/);
+  assert.match(page, /DELIVERY RISK/);
+  assert.match(page, /WEEKLY EXECUTION/);
+  assert.match(page, /DIVISION PERFORMANCE/);
+  assert.match(page, /COMMERCIAL CONTROL/);
+  assert.match(page, /href="\/executive\/margin"/);
+});
