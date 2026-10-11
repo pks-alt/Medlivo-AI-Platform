@@ -70,6 +70,9 @@ with tempfile.TemporaryDirectory() as folder:
                 raise
             page.locator('#noteForm').wait_for(state='visible')
             check(page.locator('#noteForm').is_visible(),'OAuth callback opens authorized work item')
+            check(page.get_by_text('REHABILITATION TEAM ONLY',exact=True).is_visible(),'Work item shows explicit division-scoped visibility')
+            check(page.get_by_text('Synthetic Candidate One',exact=True).first.is_visible(),'Work item shows candidate business context')
+            check(page.get_by_text('Synthetic recruiter-a',exact=True).first.is_visible(),'Work item shows recruiter ownership')
             check(page.get_by_role('button',name='Team overview',exact=True).count()==0,'Recruiter does not see manager Team overview')
             page.get_by_role('button',name='Match Queue',exact=True).click()
             page.get_by_role('heading',name='Match Queue',exact=True).wait_for()
