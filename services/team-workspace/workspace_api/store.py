@@ -2820,13 +2820,13 @@ class WorkspaceStore:
                 .limit(1)
             ).mappings().first()
             if principal["role"] == "recruiter":
-                if owner_case is not None and owner_case["owner_user_id"] != principal["id"]:
-                    raise AccessError(403, "Candidate is owned by another recruiter")
+                if owner_case is None or owner_case["owner_user_id"] != principal["id"]:
+                    raise AccessError(404, "Candidate not found")
             elif principal["role"] == "manager":
-                if owner_case is not None and not self._team_allowed(conn, principal, owner_case["team_id"]):
-                    raise AccessError(403, "Candidate is outside your managed team")
+                if owner_case is None or not self._team_allowed(conn, principal, owner_case["team_id"]):
+                    raise AccessError(404, "Candidate not found")
             elif principal["role"] != "admin":
-                raise AccessError(403, "Workspace access required")
+                raise AccessError(404, "Candidate not found")
 
             excluded_count = conn.execute(
                 select(func.count()).select_from(t.matches).where(
