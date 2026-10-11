@@ -171,28 +171,48 @@ def test_candidates_pagination_is_bounded(client, headers):
     assert client.get(ROOT + "/candidates?limit=101", headers=headers()).status_code == 422
 
 
-def test_jobs_are_tenant_scoped_for_all_supported_roles(client, headers):
-    for subject in ("recruiter-a", "manager-a", "admin-a"):
-        response = client.get(ROOT + "/jobs", headers=headers(subject))
-        assert response.status_code == 200
-        assert [row["id"] for row in response.json()["items"]] == [idn(200), idn(201), idn(202)]
+def test_jobs_follow_role_and_team_scope(client, headers):
+    recruiter = client.get(ROOT + "/jobs", headers=headers("recruiter-a"))
+    assert recruiter.status_code == 200
+    assert [row["id"] for row in recruiter.json()["items"]] == [idn(200)]
+
+    manager = client.get(ROOT + "/jobs", headers=headers("manager-a"))
+    assert manager.status_code == 200
+    assert [row["id"] for row in manager.json()["items"]] == [idn(200), idn(201)]
+
+    admin = client.get(ROOT + "/jobs", headers=headers("admin-a"))
+    assert admin.status_code == 200
+    assert [row["id"] for row in admin.json()["items"]] == [idn(200), idn(201), idn(202)]
+
     foreign = client.get(ROOT + "/jobs", headers=headers("admin-foreign"))
     assert [row["id"] for row in foreign.json()["items"]] == [idn(203)]
 
 
-def test_job_detail_hides_foreign_and_unknown_ids(client, headers):
-    assert client.get(ROOT + "/jobs/" + idn(200), headers=headers()).json()["title"] == "Synthetic Physical Therapist"
-    for job_id in (203, 999):
-        response = client.get(ROOT + "/jobs/" + idn(job_id), headers=headers())
+def test_job_detail_enforces_scope_and_hides_foreign_or_other_team(client, headers):
+    own = client.get(ROOT + "/jobs/" + idn(200), headers=headers("recruiter-a"))
+    assert own.status_code == 200
+    assert own.json()["title"] == "Synthetic Physical Therapist"
+
+    managed = client.get(ROOT + "/jobs/" + idn(201), headers=headers("manager-a"))
+    assert managed.status_code == 200
+
+    for subject, job_id in (
+        ("recruiter-a", 201),
+        ("recruiter-a", 202),
+        ("manager-a", 202),
+        ("recruiter-a", 203),
+        ("recruiter-a", 999),
+    ):
+        response = client.get(ROOT + "/jobs/" + idn(job_id), headers=headers(subject))
         assert response.status_code == 404
         assert response.json() == {"detail": "Job not found"}
 
 
-def test_jobs_pagination_is_bounded(client, headers):
-    first = client.get(ROOT + "/jobs?limit=2", headers=headers()).json()
-    second = client.get(ROOT + "/jobs?limit=2&after=" + first["next_cursor"], headers=headers()).json()
-    assert [row["id"] for row in first["items"] + second["items"]] == [idn(200), idn(201), idn(202)]
-    assert client.get(ROOT + "/jobs?limit=101", headers=headers()).status_code == 422
+def test_jobs_pagination_is_bounded_within_scope(client, headers):
+    first = client.get(ROOT + "/jobs?limit=1", headers=headers("manager-a")).json()
+    second = client.get(ROOT + "/jobs?limit=1&after=" + first["next_cursor"], headers=headers("manager-a")).json()
+    assert [row["id"] for row in first["items"] + second["items"]] == [idn(200), idn(201)]
+    assert client.get(ROOT + "/jobs?limit=101", headers=headers("manager-a")).status_code == 422
 
 
 def test_hidden_and_nonexistent_return_same_result(client, headers):
