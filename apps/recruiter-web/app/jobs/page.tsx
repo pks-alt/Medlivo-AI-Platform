@@ -9,7 +9,7 @@ async function load(){
  if(!r.ok)throw new Error(b.detail||"Jobs HTTP "+r.status);
  return b;
 }
-const priorityLabel=(v:any)=>Number(v||0)>=8?"High":Number(v||0)>=4?"Standard":"Normal";
+const priorityLabel=(v:any)=>{const s=String(v||"standard");if(s==="hot")return "Hot";if(s==="priority")return "High";if(s==="hold")return "On Hold";return "Standard"};
 const readinessLabel=(v:any)=>v==="ready"?"Ready to Match":v==="needs_review"?"Ready with Review Items":"Not Ready";
 
 export default function JobsPage(){
@@ -45,9 +45,9 @@ export default function JobsPage(){
 
   <div className="jobsHubList">
     {items.map((j:any)=><article key={j.id} className="jobsHubCard">
-      <div className="jobsHubPrimary"><small>{j.division||"Unclassified"}{j.customer_name?" · "+j.customer_name:""}</small><h2>{j.title}</h2><p>{[j.profession,j.specialty,[j.city,j.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ")||"Job context incomplete"}</p><span>Owner: {j.owner_name||"Not assigned"} · Start {j.start_date||"pending"}</span></div>
+      <div className="jobsHubPrimary"><small>{j.division||"Unclassified"}{j.customer_name?" · "+j.customer_name:""}</small><h2>{j.title}</h2><p>{[j.profession,j.specialty,[j.city,j.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ")||"Job context incomplete"}</p><span>Owner: {j.owner_name||"Not assigned"} · Start {j.start_date||"pending"}{j.operational?.next_action?" · Next: "+j.operational.next_action:""}</span></div>
       <div className="jobsHubSignals">
-        <span><b>{priorityLabel(j.priority)}</b>Priority</span>
+        <span><b>{priorityLabel(j.operational?.job_priority)}</b>Priority</span>
         <span><b>{readinessLabel(j.match_readiness)}</b>Match readiness</span>
         <span><b>{j.strong_match_count??0}</b>Strong matches</span>
         <span><b>{j.good_match_count??0}</b>Good matches</span>
