@@ -12,6 +12,10 @@ async function get(path:string){
  if(!r.ok)throw new Error(b.detail||path+" HTTP "+r.status);
  return b;
 }
+async function optional(path:string){
+ try{return {ok:true,data:await get(path),error:""}}
+ catch(e:any){return {ok:false,data:null,error:e?.message||"Unavailable"}}
+}
 export default function Home(){
  const[me,setMe]=useState<any>(null);const[data,setData]=useState<any>(null);const[err,setErr]=useState("");
  useEffect(()=>{(async()=>{
@@ -24,14 +28,13 @@ export default function Home(){
     ]);
     setData({dash,priorities,queue});return;
   }
-  const requests=[
-    get("manager/overview"),
-    get("funnel?limit=200"),
-    get("margin/management-summary")
-  ];
-  if(who.system_admin||who.role==="admin")requests.push(get("admin/operations"));
-  const results=await Promise.all(requests);
-  setData({overview:results[0],funnel:results[1],margin:results[2],ops:results[3]||null});
+  const [overview,funnel,margin,ops]=await Promise.all([
+    optional("manager/overview"),
+    optional("funnel?limit=200"),
+    optional("margin/management-summary"),
+    (who.system_admin||who.role==="admin")?optional("admin/operations"):Promise.resolve({ok:false,data:null,error:"Not applicable"})
+  ]);
+  setData({overview:overview.data,funnel:funnel.data,margin:margin.data,ops:ops.data,sources:{overview,funnel,margin,ops}});
  })().catch(e=>setErr(e.message))},[]);
 
  if(err)return <main className="page"><div className="adminError"><b>Workspace unavailable</b><span>{err}</span><p>Use a provisioned Medlivo account.</p></div></main>;
@@ -39,27 +42,35 @@ export default function Home(){
 
  if(me.business_role!=="recruiter"){
    const o=data.overview||{},f=data.funnel||{},ft=f.totals||{},m=data.margin||{},mt=m.totals||{},ops=data.ops||{};
-   const canon=ops.canonical||{},src=ops.source_counts||{};
+   const canon=ops.canonical||{},src=ops.source_counts||{},sources=data.sources||{};
    const atRisk=(f.items||[]).filter((x:any)=>["high","critical"].includes(String(x.start_readiness?.risk_level||""))).slice(0,5);
+   const missing=[
+    !sources.overview?.ok&&"Recruiting operations",
+    !sources.funnel?.ok&&"Submission to Start",
+    !sources.margin?.ok&&"Gross Margin",
+    (me.system_admin||me.role==="admin")&&!sources.ops?.ok&&"Platform operations"
+   ].filter(Boolean);
+   const metric=(ok:boolean,value:any,suffix="")=>ok?String(value??0)+suffix:"—";
    return <main className="page todayPage">
     <div className="pageHead"><div><small>{me.business_role==="executive"?"Executive command center":"Management command center"}</small><h1>Today</h1><p>What needs attention across recruiting, starts, commercial performance and platform operations.</p></div><span className="sourcePill">LIVE MEDLIVO WORKSPACE</span></div>
 
     <section className="todayWelcome"><small>{me.business_role==="executive"?"EXECUTIVE WORKSPACE":"MANAGEMENT WORKSPACE"}</small><h2>Welcome, {me.display_name||"team member"}.</h2><p>Use the navigation on the left to move through the application. This page is your operating summary, not a launcher.</p></section>
+    {missing.length>0&&<div className="todayDataNotice"><b>Some dashboard data is unavailable</b><span>{missing.join(" · ")}</span><p>The rest of Today is still available. This can be caused by role scope or a temporary service issue.</p></div>}
 
     <div className="todayMetricGrid">
-      <article><strong>{o.totals?.active_recruiters??0}</strong><b>Active recruiters</b><span>Current managed recruiting capacity</span></article>
-      <article><strong>{o.totals?.overdue_followups??0}</strong><b>Overdue follow-ups</b><span>Work needing immediate attention</span></article>
-      <article><strong>{ft.submissions??0}</strong><b>Submitted</b><span>Current Submission-to-Start funnel</span></article>
-      <article className={(ft.at_risk_starts??0)>0?"attention":""}><strong>{ft.at_risk_starts??0}</strong><b>At-risk starts</b><span>High or critical start risk</span></article>
-      <article><strong>{((Number(mt.average_gm_percent||0))*100).toFixed(1)}%</strong><b>Average GM</b><span>Across current rate packages</span></article>
-      <article className={(mt.negative_gm??0)>0?"attention":""}><strong>{mt.negative_gm??0}</strong><b>Negative GM</b><span>Commercial exceptions needing review</span></article>
-      {data.ops&&<article><strong>{canon.open_jobs??0}</strong><b>Open jobs</b><span>{src.jobs_enriched??0} JobDiva jobs enriched</span></article>}
-      {data.ops&&<article><strong>{canon.strong_matches??0}</strong><b>Strong matches</b><span>High-confidence matches available</span></article>}
+      <article><strong>{metric(Boolean(sources.overview?.ok),o.totals?.active_recruiters)}</strong><b>Active recruiters</b><span>Current managed recruiting capacity</span></article>
+      <article><strong>{metric(Boolean(sources.overview?.ok),o.totals?.overdue_followups)}</strong><b>Overdue follow-ups</b><span>Work needing immediate attention</span></article>
+      <article><strong>{metric(Boolean(sources.funnel?.ok),ft.submissions)}</strong><b>Submitted</b><span>Current Submission-to-Start funnel</span></article>
+      <article className={sources.funnel?.ok&&(ft.at_risk_starts??0)>0?"attention":""}><strong>{metric(Boolean(sources.funnel?.ok),ft.at_risk_starts)}</strong><b>At-risk starts</b><span>High or critical start risk</span></article>
+      <article><strong>{sources.margin?.ok?((Number(mt.average_gm_percent||0))*100).toFixed(1)+"%":"—"}</strong><b>Average GM</b><span>Across current rate packages</span></article>
+      <article className={sources.margin?.ok&&(mt.negative_gm??0)>0?"attention":""}><strong>{metric(Boolean(sources.margin?.ok),mt.negative_gm)}</strong><b>Negative GM</b><span>Commercial exceptions needing review</span></article>
+      {(me.system_admin||me.role==="admin")&&<article><strong>{metric(Boolean(sources.ops?.ok),canon.open_jobs)}</strong><b>Open jobs</b><span>{sources.ops?.ok?(src.jobs_enriched??0)+" JobDiva jobs enriched":"Platform data unavailable"}</span></article>}
+      {(me.system_admin||me.role==="admin")&&<article><strong>{metric(Boolean(sources.ops?.ok),canon.strong_matches)}</strong><b>Strong matches</b><span>High-confidence matches available</span></article>}
     </div>
 
     <div className="todayGrid">
       <section className="panelBox"><small>STARTS NEEDING ATTENTION</small>
-        {atRisk.length?<div className="todayList">{atRisk.map((x:any)=><Link key={x.id} href={"/funnel/"+x.job_id+"/"+x.candidate_id}><div><b>{x.candidate_name||"Candidate"}</b><span>{x.job_title||"Job"} · {x.recruiter_name||"Recruiter"}</span></div><strong>{String(x.start_readiness?.risk_level||"risk").toUpperCase()}</strong></Link>)}</div>:<div className="goodState">No high or critical start risks are currently visible.</div>}
+        {!sources.funnel?.ok?<div className="emptyState">Submission-to-Start data is unavailable for this role or session.</div>:atRisk.length?<div className="todayList">{atRisk.map((x:any)=><Link key={x.id} href={"/funnel/"+x.job_id+"/"+x.candidate_id}><div><b>{x.candidate_name||"Candidate"}</b><span>{x.job_title||"Job"} · {x.recruiter_name||"Recruiter"}</span></div><strong>{String(x.start_readiness?.risk_level||"risk").toUpperCase()}</strong></Link>)}</div>:<div className="goodState">No high or critical start risks are currently visible.</div>}
       </section>
       <section className="panelBox"><small>RECRUITING OPERATIONS</small>
         <div className="adminRows">
