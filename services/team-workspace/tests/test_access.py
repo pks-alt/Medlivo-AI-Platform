@@ -200,6 +200,19 @@ def test_hidden_and_nonexistent_return_same_result(client, headers):
     assert results == [{"detail": "Work item not found"}] * 3
 
 
+def test_case_detail_exposes_business_context_without_internal_identity_subjects(client, headers):
+    response = client.get(ROOT + "/cases/" + idn(100), headers=headers())
+    assert response.status_code == 200
+    item = response.json()
+    assert item["division"] == "Rehabilitation"
+    assert item["team_name"] == "Synthetic rehab"
+    assert item["owner_name"] == "Synthetic recruiter-a"
+    assert item["manager_name"] == "Synthetic manager-a"
+    assert item["job_title"] == "Synthetic Physical Therapist"
+    assert item["candidate_name"] == "Synthetic Candidate One"
+    assert "google_subject" not in item and "subject" not in item
+
+
 def test_cross_tenant_admin_cannot_read_notes(client, headers):
     assert client.get(CASE + "/notes", headers=headers("admin-foreign")).status_code == 404
 
