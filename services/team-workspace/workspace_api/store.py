@@ -2088,6 +2088,77 @@ class WorkspaceStore:
                     .limit(1)
                 ).scalar_one_or_none()
 
+                owner_name = None
+                if job["owner_user_id"]:
+                    owner_name = conn.execute(
+                        select(t.users.c.display_name).where(
+                            t.users.c.tenant_id == principal["tenant_id"],
+                            t.users.c.id == job["owner_user_id"],
+                        )
+                    ).scalar_one_or_none()
+
+                customer_name = None
+                if job["customer_id"]:
+                    customer_name = conn.execute(
+                        select(t.customers.c.name).where(
+                            t.customers.c.tenant_id == principal["tenant_id"],
+                            t.customers.c.id == job["customer_id"],
+                        )
+                    ).scalar_one_or_none()
+
+                requirement_rows = conn.execute(
+                    select(
+                        t.job_requirements.c.requirement_type,
+                        t.job_requirements.c.canonical_key,
+                        t.job_requirements.c.is_hard_gate,
+                    ).where(
+                        t.job_requirements.c.tenant_id == principal["tenant_id"],
+                        t.job_requirements.c.job_id == job["id"],
+                    )
+                ).mappings().all()
+                requirement_count = len(requirement_rows)
+                hard_gate_count = sum(1 for row in requirement_rows if row["is_hard_gate"])
+
+                all_match_rows = conn.execute(
+                    select(t.matches.c.status, t.matches.c.explanation).where(
+                        t.matches.c.tenant_id == principal["tenant_id"],
+                        t.matches.c.job_id == job["id"],
+                    )
+                ).mappings().all()
+                evaluated_count = len(all_match_rows)
+                excluded_count = sum(1 for row in all_match_rows if row["status"] == "excluded")
+                eligible_count = evaluated_count - excluded_count
+                exclusion_reasons = {}
+                for evaluated in all_match_rows:
+                    if evaluated["status"] != "excluded":
+                        continue
+                    explanation = evaluated["explanation"] or {}
+                    gates = explanation.get("gates", []) if isinstance(explanation, dict) else []
+                    failed_reasons = [
+                        str(gate.get("reason") or gate.get("key"))
+                        for gate in gates
+                        if isinstance(gate, dict) and gate.get("passed") is False
+                    ]
+                    if not failed_reasons and isinstance(explanation, dict):
+                        failed_reasons = [str(gap) for gap in (explanation.get("gaps") or [])[:1]]
+                    for reason in failed_reasons[:2]:
+                        exclusion_reasons[reason] = exclusion_reasons.get(reason, 0) + 1
+
+                normalized = job["normalized_payload"] if isinstance(job["normalized_payload"], dict) else {}
+                readiness_checks = [
+                    {"key": "profession", "label": "Profession identified", "ready": bool(job["profession"])},
+                    {"key": "specialty", "label": "Specialty identified", "ready": bool(job["specialty"])},
+                    {"key": "division", "label": "Division assigned", "ready": bool(job["division"])},
+                    {"key": "location", "label": "Location identified", "ready": bool(job["city"] or job["state"])},
+                    {"key": "requirements", "label": "Job requirements normalized", "ready": requirement_count > 0},
+                ]
+                readiness_ready = sum(1 for item in readiness_checks if item["ready"])
+                readiness_status = (
+                    "ready" if readiness_ready == len(readiness_checks)
+                    else "needs_review" if readiness_ready >= 3
+                    else "limited_data"
+                )
+
                 match_rows = conn.execute(
                     select(t.matches, t.candidates)
                     .join(t.candidates, and_(
@@ -2216,6 +2287,32 @@ class WorkspaceStore:
                     "status": job["status"],
                     "priority": job["priority"],
                     "owner_user_id": job["owner_user_id"],
+                    "owner_name": owner_name,
+                    "customer_name": customer_name,
+                    "updated_at": job["updated_at"],
+                    "job_context": {
+                        "shift": normalized.get("shift") or normalized.get("shift_name"),
+                        "contract_type": normalized.get("contract_type") or normalized.get("employment_type"),
+                        "openings": normalized.get("openings") or normalized.get("positions"),
+                    },
+                    "match_readiness": {
+                        "status": readiness_status,
+                        "checks": readiness_checks,
+                        "requirement_count": requirement_count,
+                        "hard_gate_count": hard_gate_count,
+                    },
+                    "evaluation_summary": {
+                        "evaluated_count": evaluated_count,
+                        "eligible_count": eligible_count,
+                        "excluded_count": excluded_count,
+                        "exclusion_reasons": [
+                            {"reason": reason, "count": count}
+                            for reason, count in sorted(
+                                exclusion_reasons.items(),
+                                key=lambda item: (-item[1], item[0]),
+                            )[:5]
+                        ],
+                    },
                     "matches": match_items,
                 })
 
