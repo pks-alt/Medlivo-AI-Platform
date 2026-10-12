@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import {usePathname,useSearchParams} from "next/navigation";
+import {usePathname} from "next/navigation";
 import {useEffect,useMemo,useState,type ReactNode} from "react";
 
 type Me={
@@ -19,9 +19,9 @@ async function loadMe(){
 
 export default function WorkspaceShell({children}:{children:ReactNode}){
   const pathname=usePathname();
-  const searchParams=useSearchParams();
+  const[section,setSection]=useState("");
   const[me,setMe]=useState<Me|null>(null);
-  useEffect(()=>{loadMe().then(setMe).catch(()=>setMe(null))},[pathname]);
+  useEffect(()=>{loadMe().then(setMe).catch(()=>setMe(null));setSection(new URLSearchParams(window.location.search).get("section")||"")},[pathname]);
 
   const items=useMemo(()=>{
     const base=[
@@ -41,7 +41,7 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
 
   const active=(href:string)=>{
     if(href==="/")return pathname==="/";
-    if(href==="/team?section=intake")return pathname==="/team"&&searchParams.get("section")==="intake";
+    if(href==="/team?section=intake")return pathname==="/team"&&section==="intake";
     if(href==="/admin")return pathname.startsWith("/admin");
     if(href==="/executive")return pathname.startsWith("/executive");
     if(href==="/funnel")return pathname.startsWith("/funnel");
@@ -49,7 +49,7 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
     if(href==="/candidates")return pathname.startsWith("/candidates");
     if(href==="/weekly")return pathname.startsWith("/weekly");
     if(href==="/manager")return pathname.startsWith("/manager");
-    if(href==="/team")return pathname==="/team"&&searchParams.get("section")!=="intake";
+    if(href==="/team")return pathname==="/team"&&section!=="intake";
     return pathname===href;
   };
 
