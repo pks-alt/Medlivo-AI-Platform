@@ -98,3 +98,13 @@ test("Job Intake exposes governed AI JD review instead of dead-end review rows",
   assert.match(ui, /data-intake-item-review/);
   assert.match(ui, /\/ai-draft/);
 });
+
+
+test("Job Intake is visible from the global application navigation", async () => {
+  const shell = await readFile(new URL("../../app/components/WorkspaceShell.tsx", import.meta.url), "utf8");
+  const ui = await readFile(new URL("../../lib/team/ui.mjs", import.meta.url), "utf8");
+  assert.match(shell, /href:"\/team\?section=intake",label:"Job Intake"/);
+  assert.match(shell, /searchParams\.get\("section"\)==="intake"/);
+  assert.match(ui, /section==='intake'&&managed\(\)/);
+  assert.match(ui, /await drawJobIntake\(\);return;/);
+});
