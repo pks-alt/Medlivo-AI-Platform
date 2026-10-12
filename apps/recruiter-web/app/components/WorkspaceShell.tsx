@@ -31,7 +31,7 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
       {href:"/weekly",label:"Weekly",show:true},
       {href:"/funnel",label:"Submission to Start",show:true},
       {href:"/manager",label:"Manager",show:me?.business_role!=="recruiter"},
-      {href:"/executive/margin",label:"Executive",show:me?.business_role==="executive"},
+      {href:"/executive",label:"Executive",show:me?.business_role==="executive"},
       {href:"/admin",label:"Admin",show:Boolean(me?.system_admin||me?.role==="admin")},
     ];
     return base.filter(x=>x.show);
@@ -40,7 +40,7 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
   const active=(href:string)=>{
     if(href==="/")return pathname==="/";
     if(href==="/admin")return pathname.startsWith("/admin");
-    if(href==="/executive/margin")return pathname.startsWith("/executive");
+    if(href==="/executive")return pathname.startsWith("/executive");
     if(href==="/funnel")return pathname.startsWith("/funnel");
     if(href==="/jobs")return pathname.startsWith("/jobs");
     if(href==="/candidates")return pathname.startsWith("/candidates");
