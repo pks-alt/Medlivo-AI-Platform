@@ -109,3 +109,15 @@ test("Job Intake is visible from the global application navigation", async () =>
   assert.match(ui, /section==='intake'&&managed\(\)/);
   assert.match(ui, /await drawJobIntake\(\);return;/);
 });
+
+
+test("Job Intake approval hands off visibly to Job Approval", async () => {
+  const shell = await readFile(new URL("../../app/components/WorkspaceShell.tsx", import.meta.url), "utf8");
+  const ui = await readFile(new URL("../../lib/team/ui.mjs", import.meta.url), "utf8");
+  assert.match(shell, /href:"\/team\?section=approvals",label:"Job Approval"/);
+  assert.match(ui, /Open Job Approval/);
+  assert.match(ui, /data-open-intake-publication/);
+  assert.match(ui, /HUMAN APPROVED AI DRAFT/);
+  assert.match(ui, /section==='approvals'&&managed\(\)/);
+  assert.match(ui, /Reviewed JD accepted and sent to Job Approval/);
+});

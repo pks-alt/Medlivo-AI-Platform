@@ -34,27 +34,18 @@ def _decimal_value(value: Any):
         return None
 
 
-def analyze_intake_job(normalized: dict[str, Any], *, division: str, source_id: str,
-                       customer_name: str) -> dict[str, Any]:
-    """Bridge direct-customer intake into the canonical Job Intelligence service.
-
-    This module only adapts intake field names. All readiness, conflict,
-    provenance and standardized-JD rules remain owned by job-intelligence.
-    """
+def build_intake_job(normalized: dict[str, Any], *, division: str, source_id: str,
+                     customer_name: str) -> NormalizedJob:
     canonical_division = DIVISION_MAP.get(division)
     if canonical_division is None:
         raise ValueError("Unsupported Medlivo division")
 
     title = str(normalized.get("title") or "").strip()
     if not title:
-        # The intake validator will already route this row to review. A
-        # placeholder is used only to satisfy the strict canonical model while
-        # preserving the missing-title error; it is never approved as source data.
         title = "Missing job title"
 
     bill_rate = _decimal_value(normalized.get("bill_rate"))
-
-    job = NormalizedJob(
+    return NormalizedJob(
         source=SourceRef(system="direct_customer", source_id=source_id),
         status="open",
         title=title,
@@ -76,6 +67,17 @@ def analyze_intake_job(normalized: dict[str, Any], *, division: str, source_id: 
         rate_unit="hour" if bill_rate is not None else "unknown",
         description_text=normalized.get("description"),
         source_fields=dict(normalized),
+    )
+
+
+def analyze_intake_job(normalized: dict[str, Any], *, division: str, source_id: str,
+                       customer_name: str) -> dict[str, Any]:
+    """Bridge direct-customer intake into the canonical Job Intelligence service."""
+    job = build_intake_job(
+        normalized,
+        division=division,
+        source_id=source_id,
+        customer_name=customer_name,
     )
 
     review = analyze_job(job)
