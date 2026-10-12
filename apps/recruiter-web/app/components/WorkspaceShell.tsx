@@ -30,6 +30,7 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
       {href:"/jobs",label:"Jobs",show:true},
       {href:"/candidates",label:"Candidates",show:true},
       {href:"/team?section=intake",label:"Job Intake",show:me?.business_role!=="recruiter"},
+      {href:"/team?section=approvals",label:"Job Approval",show:me?.business_role!=="recruiter"},
       {href:"/weekly",label:"Weekly",show:true},
       {href:"/funnel",label:"Submission to Start",show:true},
       {href:"/manager",label:"Manager",show:me?.business_role!=="recruiter"},
@@ -42,6 +43,7 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
   const active=(href:string)=>{
     if(href==="/")return pathname==="/";
     if(href==="/team?section=intake")return pathname==="/team"&&section==="intake";
+    if(href==="/team?section=approvals")return pathname==="/team"&&section==="approvals";
     if(href==="/admin")return pathname.startsWith("/admin");
     if(href==="/executive")return pathname.startsWith("/executive");
     if(href==="/funnel")return pathname.startsWith("/funnel");
@@ -49,7 +51,7 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
     if(href==="/candidates")return pathname.startsWith("/candidates");
     if(href==="/weekly")return pathname.startsWith("/weekly");
     if(href==="/manager")return pathname.startsWith("/manager");
-    if(href==="/team")return pathname==="/team"&&section!=="intake";
+    if(href==="/team")return pathname==="/team"&&!["intake","approvals"].includes(section);
     return pathname===href;
   };
 
