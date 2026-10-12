@@ -1661,3 +1661,70 @@ def test_job_intake_ai_draft_requires_human_review_and_preserves_provenance(seed
     )
     assert detail.status_code == 200
     assert detail.json()["history"][0]["action"] == "draft.created"
+
+
+
+def test_job_content_standards_are_versioned_and_active_version_replaces_matching_role(seeded, verifier, headers):
+    test_client = TestClient(build_app(WorkspaceStore(seeded), verifier))
+    payload = {
+        "division": "Rehabilitation",
+        "profession": "Physical Therapist",
+        "specialty": "Physical Therapy",
+        "care_setting": "Skilled Nursing",
+        "display_title": "Physical Therapist",
+        "status": "active",
+        "content": {
+            "candidate_intro": "Join Medlivo for a rehabilitation contract assignment.",
+            "responsibilities": ["Evaluate patients and deliver skilled physical therapy services."],
+            "required_qualifications": ["Physical Therapist professional background."],
+            "preferred_qualifications": [],
+            "licensure_certification": ["Active license as required for the assignment state."],
+            "assignment_overview": None,
+            "about_medlivo": None,
+            "candidate_cta": "Apply to connect with a Medlivo recruiter.",
+            "seo_title": None,
+            "seo_description": None,
+        },
+    }
+    first = test_client.post(
+        "/api/v1/team/job-content-standards",
+        headers=headers("manager-a"),
+        json=payload,
+    )
+    assert first.status_code == 201
+    assert first.json()["version"] == 1
+    assert first.json()["status"] == "active"
+
+    payload["content"]["candidate_intro"] = "Updated approved Medlivo PT introduction."
+    second = test_client.post(
+        "/api/v1/team/job-content-standards",
+        headers=headers("manager-a"),
+        json=payload,
+    )
+    assert second.status_code == 201
+    assert second.json()["version"] == 2
+
+    listed = test_client.get(
+        "/api/v1/team/job-content-standards?division=Rehabilitation",
+        headers=headers("manager-a"),
+    )
+    assert listed.status_code == 200
+    matching = [
+        item for item in listed.json()["items"]
+        if item["profession"] == "Physical Therapist"
+        and item["specialty"] == "Physical Therapy"
+        and item["care_setting"] == "Skilled Nursing"
+    ]
+    assert len(matching) == 2
+    assert [item["status"] for item in matching].count("active") == 1
+    assert max(item["version"] for item in matching) == 2
+
+    active = test_client.get(
+        "/api/v1/team/job-content-standards/active"
+        "?division=Rehabilitation&profession=Physical%20Therapist"
+        "&specialty=Physical%20Therapy&care_setting=Skilled%20Nursing",
+        headers=headers("manager-a"),
+    )
+    assert active.status_code == 200
+    assert active.json()["version"] == 2
+    assert active.json()["content"]["candidate_intro"].startswith("Updated approved")

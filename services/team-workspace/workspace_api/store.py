@@ -6939,3 +6939,102 @@ class WorkspaceStore:
         return self._global_mutate(
             identity, key, "margin.snapshot.finalized", payload, apply
         )
+
+
+    def list_job_content_standards(self, identity, *, division=None, limit=200):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            query = select(t.job_content_standards).where(
+                t.job_content_standards.c.tenant_id == principal["tenant_id"]
+            )
+            if division:
+                query = query.where(t.job_content_standards.c.division == division)
+            rows = conn.execute(
+                query.order_by(
+                    t.job_content_standards.c.division,
+                    t.job_content_standards.c.profession,
+                    t.job_content_standards.c.specialty,
+                    t.job_content_standards.c.version.desc(),
+                ).limit(limit)
+            ).mappings().all()
+            return {"items": [clean(row) for row in rows]}
+
+    def create_job_content_standard(self, identity, key, value):
+        payload = value.model_dump(mode="json")
+
+        def apply(conn, principal):
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Delivery Manager access required")
+            latest_version = conn.execute(select(func.max(t.job_content_standards.c.version)).where(
+                t.job_content_standards.c.tenant_id == principal["tenant_id"],
+                t.job_content_standards.c.division == value.division,
+                t.job_content_standards.c.profession == value.profession,
+                t.job_content_standards.c.specialty.is_(None) if value.specialty is None
+                    else t.job_content_standards.c.specialty == value.specialty,
+                t.job_content_standards.c.care_setting.is_(None) if value.care_setting is None
+                    else t.job_content_standards.c.care_setting == value.care_setting,
+            )).scalar_one_or_none() or 0
+            timestamp = now()
+            row = {
+                "id": uid(),
+                "tenant_id": principal["tenant_id"],
+                "division": value.division,
+                "profession": value.profession,
+                "specialty": value.specialty,
+                "care_setting": value.care_setting,
+                "display_title": value.display_title,
+                "version": latest_version + 1,
+                "status": value.status,
+                "content": value.content.model_dump(mode="json"),
+                "created_by": principal["id"],
+                "created_at": timestamp,
+                "updated_at": timestamp,
+            }
+            if value.status == "active":
+                active_match = [
+                    t.job_content_standards.c.tenant_id == principal["tenant_id"],
+                    t.job_content_standards.c.division == value.division,
+                    t.job_content_standards.c.profession == value.profession,
+                    t.job_content_standards.c.status == "active",
+                    (
+                        t.job_content_standards.c.specialty.is_(None)
+                        if value.specialty is None
+                        else t.job_content_standards.c.specialty == value.specialty
+                    ),
+                    (
+                        t.job_content_standards.c.care_setting.is_(None)
+                        if value.care_setting is None
+                        else t.job_content_standards.c.care_setting == value.care_setting
+                    ),
+                ]
+                conn.execute(update(t.job_content_standards).where(
+                    *active_match
+                ).values(status="retired", updated_at=timestamp))
+            conn.execute(insert(t.job_content_standards).values(**row))
+            self._operational_audit(
+                conn, principal, "job_content_standard.created", "job_content_standard", row["id"],
+                None, row, reason="Job Content Standard version created",
+            )
+            return clean(row)
+
+        return self._global_mutate(identity, key, "job_content_standard.created", payload, apply)
+
+    def get_active_job_content_standard(self, identity, *, division, profession, specialty=None, care_setting=None):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            query = select(t.job_content_standards).where(
+                t.job_content_standards.c.tenant_id == principal["tenant_id"],
+                t.job_content_standards.c.division == division,
+                t.job_content_standards.c.profession == profession,
+                t.job_content_standards.c.status == "active",
+            )
+            if specialty:
+                query = query.where(t.job_content_standards.c.specialty == specialty)
+            if care_setting:
+                query = query.where(t.job_content_standards.c.care_setting == care_setting)
+            row = conn.execute(
+                query.order_by(t.job_content_standards.c.version.desc()).limit(1)
+            ).mappings().first()
+            if row is None:
+                raise AccessError(404, "No active Job Content Standard found")
+            return clean(row)
