@@ -3468,7 +3468,7 @@ class WorkspaceStore:
             draft = {
                 "type": "jd_draft",
                 "status": "ai_suggested",
-                "generated_at": now(),
+                "generated_at": now().isoformat(),
                 "provider": result.provider,
                 "model": result.model,
                 "job_description": result.job_description,
