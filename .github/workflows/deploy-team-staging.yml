@@ -56,16 +56,32 @@ jobs:
           docker push "${API_IMAGE}"
           echo "API_IMAGE=${API_IMAGE}" >> "${GITHUB_ENV}"
 
+      - name: Verify staging migration identity
+        run: |
+          MIGRATION_SA="medlivo-team-schema-staging@${PROJECT_ID}.iam.gserviceaccount.com"
+          MIGRATION_SECRET="medlivo-team-staging-migration-database-url"
+          if ! gcloud iam service-accounts describe "${MIGRATION_SA}" --project="${PROJECT_ID}" --quiet >/dev/null 2>&1; then
+            echo "::error::Missing dedicated staging migration service account: ${MIGRATION_SA}"
+            echo "::error::Create the one-time migration identity before releasing schema changes."
+            exit 1
+          fi
+          if ! gcloud secrets describe "${MIGRATION_SECRET}" --project="${PROJECT_ID}" --quiet >/dev/null 2>&1; then
+            echo "::error::Missing staging migration database secret: ${MIGRATION_SECRET}"
+            echo "::error::The runtime database credential must never be used for schema migration."
+            exit 1
+          fi
+
       - name: Apply reviewed workspace migration 014
         run: |
           MIGRATION_JOB="medlivo-team-schema-staging"
+          MIGRATION_SA="medlivo-team-schema-staging@${PROJECT_ID}.iam.gserviceaccount.com"
           gcloud run jobs deploy "${MIGRATION_JOB}" \
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --image="${API_IMAGE}" \
-            --service-account="${API_SERVICE}@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --service-account="${MIGRATION_SA}" \
             --set-cloudsql-instances="${PROJECT_ID}:${REGION}:medlivo-ai-postgres" \
-            --set-secrets="WORKSPACE_DATABASE_URL=medlivo-team-staging-api-database-url:latest" \
+            --set-secrets="WORKSPACE_DATABASE_URL=medlivo-team-staging-migration-database-url:latest" \
             --command="python" \
             --args="-m,workspace_api.migrate,/app/migrations/014_job_content_standards.sql" \
             --max-retries=0 \
@@ -83,6 +99,7 @@ jobs:
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --image="${API_IMAGE}" \
+            --update-env-vars="MEDLIVO_RELEASE_SHA=${GITHUB_SHA}" \
             --no-traffic \
             --startup-probe="httpGet.path=/ready,httpGet.port=8080,timeoutSeconds=3,periodSeconds=5,failureThreshold=6" \
             --no-log-http \
@@ -105,12 +122,22 @@ jobs:
 
       - name: Deploy private web image only
         run: |
-          gcloud run services update "${WEB_SERVICE}"             --project="${PROJECT_ID}"             --region="${REGION}"             --image="${WEB_IMAGE}"             --no-log-http             --quiet
+          gcloud run services update "${WEB_SERVICE}"             --project="${PROJECT_ID}"             --region="${REGION}"             --image="${WEB_IMAGE}"             --update-env-vars="MEDLIVO_RELEASE_SHA=${GITHUB_SHA}"             --no-log-http             --quiet
 
       - name: Show deployed revisions
         run: |
           gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format='value(status.latestReadyRevisionName,status.url)'
           gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format='value(status.latestReadyRevisionName,status.url)'
+
+      - name: Verify deployed release SHA
+        run: |
+          API_SHA="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="MEDLIVO_RELEASE_SHA") | .value // empty')"
+          WEB_SHA="$(gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="MEDLIVO_RELEASE_SHA") | .value // empty')"
+          if [ "${API_SHA}" != "${GITHUB_SHA}" ] || [ "${WEB_SHA}" != "${GITHUB_SHA}" ]; then
+            echo "::error::Staging release SHA mismatch. API=${API_SHA} WEB=${WEB_SHA} expected=${GITHUB_SHA}"
+            exit 1
+          fi
+          echo "STAGING_RELEASE_SHA=${GITHUB_SHA}"
 
       - name: Show non-secret staging routing configuration
         run: |
