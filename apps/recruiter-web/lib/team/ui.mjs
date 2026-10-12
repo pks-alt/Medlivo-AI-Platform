@@ -667,7 +667,13 @@ async function boot(){
    else login('Sign-in could not be completed. Please start again.'+(codes[stage]?' Reference '+codes[stage]+'.':''));
    return;
  }
- try{session=await call('/session');shell();await Promise.all([loadCases(),drawDailyPriorities()]);if(cases.length)await loadCase(cases[0].id);}
+ try{
+   session=await call('/session');shell();
+   const section=params.get('section');
+   if(section==='intake'&&managed()){await drawJobIntake();return;}
+   await Promise.all([loadCases(),drawDailyPriorities()]);
+   if(cases.length)await loadCase(cases[0].id);
+ }
  catch(error){if(!session)login(error.message);else msg(error.message);}
 }
 boot();
