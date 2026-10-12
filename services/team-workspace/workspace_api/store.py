@@ -1914,7 +1914,31 @@ class WorkspaceStore:
                 t.job_intake_items.c.tenant_id == principal["tenant_id"],
                 t.job_intake_items.c.batch_id == batch_id,
             ).order_by(t.job_intake_items.c.row_number).limit(limit)).mappings().all()
-            return {"batch": clean(batch), "items": [clean(row) for row in rows]}
+            item_ids = [row["id"] for row in rows]
+            publication_by_item = {}
+            if item_ids:
+                publication_rows = conn.execute(select(
+                    t.job_publications.c.id,
+                    t.job_publications.c.intake_item_id,
+                    t.job_publications.c.recruiting_status,
+                    t.job_publications.c.website_status,
+                    t.job_publications.c.updated_at,
+                ).where(
+                    t.job_publications.c.tenant_id == principal["tenant_id"],
+                    t.job_publications.c.intake_item_id.in_(item_ids),
+                ).order_by(t.job_publications.c.updated_at.desc())).mappings().all()
+                for publication in publication_rows:
+                    publication_by_item.setdefault(publication["intake_item_id"], publication)
+            items = []
+            for row in rows:
+                item = clean(row)
+                publication = publication_by_item.get(row["id"])
+                if publication:
+                    item["job_publication_id"] = publication["id"]
+                    item["publication_recruiting_status"] = publication["recruiting_status"]
+                    item["publication_website_status"] = publication["website_status"]
+                items.append(item)
+            return {"batch": clean(batch), "items": items}
 
 
     def upload_job_intake_xlsx(self, identity, key, *, customer_name, division, source_filename, team_id, content):
