@@ -490,3 +490,26 @@ class SubmissionTemplateCreateInput(StrictInput):
     output_profile: dict = Field(default_factory=dict)
     ai_policy: dict = Field(default_factory=dict)
     requirements: list[SubmissionTemplateRequirementInput] = Field(min_length=1, max_length=200)
+
+
+class JobContentStandardContent(StrictInput):
+    candidate_intro: str = Field(min_length=1, max_length=4000)
+    responsibilities: list[str] = Field(default_factory=list, max_length=30)
+    required_qualifications: list[str] = Field(default_factory=list, max_length=30)
+    preferred_qualifications: list[str] = Field(default_factory=list, max_length=30)
+    licensure_certification: list[str] = Field(default_factory=list, max_length=30)
+    assignment_overview: str | None = Field(default=None, max_length=4000)
+    about_medlivo: str | None = Field(default=None, max_length=4000)
+    candidate_cta: str | None = Field(default=None, max_length=2000)
+    seo_title: str | None = Field(default=None, max_length=200)
+    seo_description: str | None = Field(default=None, max_length=500)
+
+
+class JobContentStandardInput(StrictInput):
+    division: Literal["Rehabilitation", "Nursing & Allied", "Locum Tenens"]
+    profession: str = Field(min_length=1, max_length=200)
+    specialty: str | None = Field(default=None, max_length=200)
+    care_setting: str | None = Field(default=None, max_length=200)
+    display_title: str = Field(min_length=1, max_length=200)
+    status: Literal["draft", "active", "retired"] = "draft"
+    content: JobContentStandardContent
