@@ -1728,3 +1728,89 @@ def test_job_content_standards_are_versioned_and_active_version_replaces_matchin
     assert active.status_code == 200
     assert active.json()["version"] == 2
     assert active.json()["content"]["candidate_intro"].startswith("Updated approved")
+
+
+
+def test_batch_jd_preparation_uses_active_medlivo_standard_and_flags_unmatched_roles(seeded, verifier, headers):
+    test_client = TestClient(build_app(WorkspaceStore(seeded), verifier))
+
+    standard = test_client.post(
+        "/api/v1/team/job-content-standards",
+        headers=headers("manager-a"),
+        json={
+            "division": "Rehabilitation",
+            "profession": "Physical Therapist",
+            "specialty": "Physical Therapy",
+            "care_setting": None,
+            "display_title": "Physical Therapist",
+            "status": "active",
+            "content": {
+                "candidate_intro": "Medlivo is seeking a Physical Therapist for a contract assignment.",
+                "responsibilities": ["Evaluate patients and provide skilled physical therapy services."],
+                "required_qualifications": ["Physical Therapist professional background."],
+                "preferred_qualifications": [],
+                "licensure_certification": ["Active license as required for the assignment state."],
+                "assignment_overview": None,
+                "about_medlivo": None,
+                "candidate_cta": "Apply to connect with a Medlivo recruiter.",
+                "seo_title": None,
+                "seo_description": None,
+            },
+        },
+    )
+    assert standard.status_code == 201
+
+    created = test_client.post(
+        "/api/v1/team/job-intake/batches",
+        headers=headers("manager-a"),
+        json={
+            "customer_name": "Rockport",
+            "division": "Rehabilitation",
+            "source_filename": "multi-role.xlsx",
+            "mapping": {
+                "Title": "title", "Profession": "profession", "Specialty": "specialty",
+                "City": "city", "State": "state", "Start": "start_date"
+            },
+        },
+    )
+    batch_id = created.json()["id"]
+    processed = test_client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/rows",
+        headers=headers("manager-a"),
+        json={"rows": [
+            {
+                "Title": "Contract PT", "Profession": "Physical Therapist",
+                "Specialty": "Physical Therapy", "City": "Seattle", "State": "WA",
+                "Start": "2026-11-01"
+            },
+            {
+                "Title": "Contract OT", "Profession": "Occupational Therapist",
+                "Specialty": "Occupational Therapy", "City": "Tacoma", "State": "WA",
+                "Start": "2026-11-08"
+            },
+        ]},
+    )
+    assert processed.status_code == 200
+
+    prepared = test_client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/prepare-standards",
+        headers=headers("manager-a"),
+        json={},
+    )
+    assert prepared.status_code == 200
+    body = prepared.json()
+    assert body["prepared"] == 1
+    assert len(body["missing_standard"]) == 1
+    assert body["missing_standard"][0]["profession"] == "Occupational Therapist"
+    assert body["human_approval_required"] is True
+
+    refreshed = test_client.get(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items",
+        headers=headers("manager-a"),
+    ).json()["items"]
+    pt = next(item for item in refreshed if item["normalized_job"]["profession"] == "Physical Therapist")
+    draft = pt["ai_suggestions"][0]
+    assert draft["provenance"] == "medlivo_standard"
+    assert draft["standard_version"] == 1
+    assert draft["job_description"].startswith("Medlivo is seeking")
+    assert pt["status"] != "approved"

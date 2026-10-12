@@ -133,3 +133,12 @@ test("Job Content Standards has a dedicated management route", async () => {
   assert.match(ui, /Website-style preview/);
   assert.match(ui, /section==='standards'&&managed\(\)/);
 });
+
+
+test("Job Intake prepares all JDs from approved Medlivo standards", async () => {
+  const ui = await readFile(new URL("../../lib/team/ui.mjs", import.meta.url), "utf8");
+  assert.match(ui, /Prepare All JDs/);
+  assert.match(ui, /prepare-standards/);
+  assert.match(ui, /Medlivo Standard Ready/);
+  assert.match(ui, /need a Job Content Standard/);
+});
