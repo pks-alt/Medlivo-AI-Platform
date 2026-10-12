@@ -10,7 +10,8 @@ from sqlalchemy.exc import IntegrityError
 from . import tables as t
 from .auth import Identity
 from .job_intake import process_rows, parse_xlsx, suggest_mapping
-from .intake_intelligence import analyze_intake_job
+from .intake_intelligence import analyze_intake_job, build_intake_job
+from job_intelligence import build_publishable_draft
 from margin_engine import (
     CostAssumptionSet, MarginInput, W2PayPackageInput, LocumsPayPackageInput,
     build_w2_pay_package, build_locums_pay_package, calculate_margin, seed_assumptions,
@@ -3604,7 +3605,123 @@ class WorkspaceStore:
                 t.job_intake_items.c.id == item_id,
             ).values(**updates))
 
+            publication_id = None
+            if value.decision == "approved":
+                publish_job = build_intake_job(
+                    final_values,
+                    division=batch["division"],
+                    source_id=str(final_values.get("requisition_id") or f"{batch_id}:{item['row_number']}"),
+                    customer_name=batch["customer_name"],
+                )
+                publishable = build_publishable_draft(publish_job)
+                enhanced_snapshot = publishable.model_dump(
+                    mode="json",
+                    exclude={"quality", "readiness"},
+                )
+                description_provenance = standardized_internal_jd.get("description_provenance")
+                approved_description = str(final_values.get("description") or "").strip()
+                if approved_description:
+                    enhanced_snapshot.setdefault("sections", []).append({
+                        "key": "reviewed_jd",
+                        "heading": "Reviewed Job Description",
+                        "content": approved_description,
+                        "provenance": (
+                            "human_approved_ai_draft"
+                            if description_provenance == "human_approved_ai_draft"
+                            else "source_confirmed"
+                        ),
+                        "requires_confirmation": False,
+                    })
+                quality_score = publishable.quality.model_dump(mode="json")
+                readiness = publishable.readiness
+
+                existing_publication = conn.execute(select(t.job_publications).where(
+                    t.job_publications.c.tenant_id == principal["tenant_id"],
+                    t.job_publications.c.intake_item_id == item_id,
+                ).order_by(t.job_publications.c.created_at.desc())).mappings().first()
+
+                if existing_publication is not None:
+                    if (
+                        existing_publication["recruiting_status"] != "pending"
+                        or existing_publication["website_status"] != "pending"
+                    ):
+                        raise AccessError(
+                            409,
+                            "This intake job already entered the approval workflow; reopen it from Job Approval",
+                        )
+                    publication_id = existing_publication["id"]
+                    publication_version = existing_publication["version"] + 1
+                    conn.execute(update(t.job_publications).where(
+                        t.job_publications.c.tenant_id == principal["tenant_id"],
+                        t.job_publications.c.id == publication_id,
+                    ).values(
+                        team_id=batch["team_id"],
+                        source_snapshot=final_values,
+                        enhanced_snapshot=enhanced_snapshot,
+                        quality_score=quality_score,
+                        readiness=readiness,
+                        version=publication_version,
+                        updated_at=timestamp,
+                    ))
+                    conn.execute(insert(t.job_publication_audit).values(
+                        id=uid(), tenant_id=principal["tenant_id"],
+                        publication_id=publication_id, actor_user_id=principal["id"],
+                        action="draft.updated",
+                        details={"source": "job_intake", "intake_item_id": item_id},
+                        created_at=timestamp,
+                    ))
+                else:
+                    publication_id = uid()
+                    conn.execute(insert(t.job_publications).values(
+                        id=publication_id,
+                        tenant_id=principal["tenant_id"],
+                        team_id=batch["team_id"],
+                        job_id=None,
+                        intake_item_id=item_id,
+                        source_snapshot=final_values,
+                        enhanced_snapshot=enhanced_snapshot,
+                        quality_score=quality_score,
+                        readiness=readiness,
+                        recruiting_status="pending",
+                        website_status="pending",
+                        recruiting_approved_by=None,
+                        recruiting_approved_at=None,
+                        website_approved_by=None,
+                        website_approved_at=None,
+                        version=1,
+                        created_by=principal["id"],
+                        created_at=timestamp,
+                        updated_at=timestamp,
+                    ))
+                    conn.execute(insert(t.job_publication_audit).values(
+                        id=uid(), tenant_id=principal["tenant_id"],
+                        publication_id=publication_id, actor_user_id=principal["id"],
+                        action="draft.created",
+                        details={"source": "job_intake", "intake_item_id": item_id},
+                        created_at=timestamp,
+                    ))
+
+            status_counts = dict(conn.execute(
+                select(t.job_intake_items.c.status, func.count().label("count"))
+                .where(
+                    t.job_intake_items.c.tenant_id == principal["tenant_id"],
+                    t.job_intake_items.c.batch_id == batch_id,
+                )
+                .group_by(t.job_intake_items.c.status)
+            ).all())
+            conn.execute(update(t.job_intake_batches).where(
+                t.job_intake_batches.c.tenant_id == principal["tenant_id"],
+                t.job_intake_batches.c.id == batch_id,
+            ).values(
+                ready_count=status_counts.get("ready", 0) + status_counts.get("approved", 0),
+                review_count=status_counts.get("review", 0),
+                duplicate_count=status_counts.get("duplicate", 0),
+                updated_at=timestamp,
+            ))
+
             after = dict(item, **updates)
+            if publication_id is not None:
+                after["job_publication_id"] = publication_id
             self._operational_audit(
                 conn, principal, "job_intake.item." + new_status, "job_intake_item", item_id,
                 clean(item), after, reason=value.reason,
