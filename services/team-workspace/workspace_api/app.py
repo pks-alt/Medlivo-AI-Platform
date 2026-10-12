@@ -247,6 +247,14 @@ def build_app(store, verifier):
             who, str(batch_id), str(item_id), str(idempotency_key)
         )
 
+    @app.post(prefix + "/job-intake/batches/{batch_id}/ai-drafts")
+    def generate_job_intake_ai_drafts_for_batch(batch_id: UUID,
+                                                idempotency_key: UUID = Header(),
+                                                who=Depends(identity)):
+        return store.generate_job_intake_ai_drafts_for_batch(
+            who, str(batch_id), str(idempotency_key)
+        )
+
     @app.get(prefix + "/job-intake/mappings")
     def job_intake_mappings(division: str | None = None, who=Depends(identity)):
         return store.list_customer_job_mappings(who, division=division)
