@@ -248,6 +248,16 @@ def build_app(store, verifier):
             who, str(batch_id), str(item_id), str(idempotency_key)
         )
 
+    @app.post(prefix + "/job-intake/batches/{batch_id}/prepare-standards")
+    def prepare_job_intake_batch_from_standards(
+        batch_id: UUID,
+        idempotency_key: UUID = Header(),
+        who=Depends(identity),
+    ):
+        return store.prepare_job_intake_batch_from_standards(
+            who, str(batch_id), str(idempotency_key)
+        )
+
     @app.get(prefix + "/job-intake/mappings")
     def job_intake_mappings(division: str | None = None, who=Depends(identity)):
         return store.list_customer_job_mappings(who, division=division)
