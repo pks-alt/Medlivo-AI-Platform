@@ -121,3 +121,12 @@ test("Job Intake approval hands off visibly to Job Approval", async () => {
   assert.match(ui, /section==='approvals'&&managed\(\)/);
   assert.match(ui, /Reviewed JD accepted and sent to Job Approval/);
 });
+
+
+test("Job Intake can prepare AI JDs for the whole batch", async () => {
+  const ui = await readFile(new URL("../../lib/team/ui.mjs", import.meta.url), "utf8");
+  assert.match(ui, /Prepare All JDs/);
+  assert.match(ui, /data-generate-batch-intake-jds/);
+  assert.match(ui, /\/job-intake\/batches\/.*\/ai-drafts/);
+  assert.match(ui, /Review exceptions and accept each JD before Job Approval/);
+});
