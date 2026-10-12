@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir /deps/margin-engine
 
 COPY services/team-workspace/pyproject.toml ./
 COPY services/team-workspace/workspace_api ./workspace_api
+COPY services/team-workspace/migrations ./migrations
 RUN pip install --no-cache-dir . && useradd --uid 10001 --create-home appuser
 
 USER appuser
