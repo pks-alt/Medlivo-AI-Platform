@@ -31,3 +31,11 @@ CREATE TABLE IF NOT EXISTS public.ws_job_content_standard (
 CREATE INDEX IF NOT EXISTS idx_ws_job_content_standard_lookup
   ON public.ws_job_content_standard
   (tenant_id, division, profession, specialty, care_setting, status, version DESC);
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='medlivo_team_api_runtime') THEN
+    EXECUTE 'GRANT SELECT, INSERT, UPDATE ON public.ws_job_content_standard TO medlivo_team_api_runtime';
+  END IF;
+END
+$$;
