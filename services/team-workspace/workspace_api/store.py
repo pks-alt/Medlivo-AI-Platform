@@ -6942,8 +6942,8 @@ class WorkspaceStore:
 
 
     def list_job_content_standards(self, identity, *, division=None, limit=200):
-        principal = self._principal(identity)
         with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
             query = select(t.job_content_standards).where(
                 t.job_content_standards.c.tenant_id == principal["tenant_id"]
             )
@@ -7020,8 +7020,8 @@ class WorkspaceStore:
         return self._global_mutate(identity, key, "job_content_standard.created", payload, apply)
 
     def get_active_job_content_standard(self, identity, *, division, profession, specialty=None, care_setting=None):
-        principal = self._principal(identity)
         with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
             query = select(t.job_content_standards).where(
                 t.job_content_standards.c.tenant_id == principal["tenant_id"],
                 t.job_content_standards.c.division == division,
