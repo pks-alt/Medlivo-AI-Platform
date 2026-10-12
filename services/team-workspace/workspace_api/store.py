@@ -3567,7 +3567,7 @@ class WorkspaceStore:
                     failed.append({
                         "item_id": item["id"],
                         "row_number": item["row_number"],
-                        "message": exc.detail if hasattr(exc, "detail") else str(exc),
+                        "message": exc.message,
                     })
                     continue
                 conn.execute(update(t.job_intake_items).where(
