@@ -2,10 +2,13 @@ from datetime import date, timedelta
 from uuid import uuid4
 from io import BytesIO
 from openpyxl import Workbook
+from fastapi.testclient import TestClient
 
 from workspace_api import tables as t
 from sqlalchemy import insert, update, select
-from workspace_api.store import now
+from workspace_api.store import now, WorkspaceStore
+from workspace_api.app import build_app
+from workspace_api.job_intake_ai import JobIntakeAIResult
 
 
 def idn(n):
@@ -1537,3 +1540,87 @@ def test_system_admin_profile_can_read_admin_console_endpoints(client, headers, 
     ]:
         response = client.get(path, headers=headers("manager-a"))
         assert response.status_code == 200, (path, response.text)
+
+
+def test_job_intake_ai_draft_requires_human_review_and_preserves_provenance(seeded, verifier, headers):
+    class FakeJobIntakeAI:
+        def compose(self, context):
+            assert context["source_description_present"] is False
+            return JobIntakeAIResult(
+                job_description="Provide physical therapy services consistent with the confirmed rehabilitation assignment and facility setting.",
+                responsibilities=["Evaluate patients and provide therapy within the assigned care setting."],
+                required_qualifications=["Physical Therapist professional background."],
+                preferred_qualifications=[],
+                schedule_summary=None,
+                warnings=["Confirm any customer-specific productivity or documentation requirements."],
+                provider="test_provider",
+                model="test_model",
+            )
+
+    test_client = TestClient(build_app(
+        WorkspaceStore(seeded, job_intake_ai=FakeJobIntakeAI()),
+        verifier,
+    ))
+    created = test_client.post(
+        "/api/v1/team/job-intake/batches",
+        headers=headers("manager-a"),
+        json={
+            "customer_name": "Synthetic Rehab Customer",
+            "division": "Rehabilitation",
+            "source_filename": "missing-jd.xlsx",
+            "mapping": {
+                "Title": "title", "Profession": "profession", "Specialty": "specialty",
+                "City": "city", "State": "state", "Start": "start_date"
+            },
+        },
+    )
+    assert created.status_code == 201
+    batch_id = created.json()["id"]
+    processed = test_client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/rows",
+        headers=headers("manager-a"),
+        json={"rows": [{
+            "Title": "Contract PT", "Profession": "Physical Therapist",
+            "Specialty": "Physical Therapy", "City": "Seattle", "State": "WA",
+            "Start": "2026-11-01"
+        }]},
+    )
+    assert processed.status_code == 200
+    item = test_client.get(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items",
+        headers=headers("manager-a"),
+    ).json()["items"][0]
+    assert item["ai_suggestions"] == []
+
+    drafted = test_client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items/{item['id']}/ai-draft",
+        headers=headers("manager-a"),
+        json={},
+    )
+    assert drafted.status_code == 200
+    draft = drafted.json()["ai_suggestions"][0]
+    assert draft["status"] == "ai_suggested"
+    assert draft["job_description"].startswith("Provide physical therapy")
+    assert drafted.json()["status"] != "approved"
+
+    reviewed_text = draft["job_description"] + "\n\nResponsibilities\n• " + draft["responsibilities"][0]
+    accepted = test_client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items/{item['id']}/decision",
+        headers=headers("manager-a"),
+        json={
+            "decision": "approved",
+            "final_approved_values": {
+                **item["normalized_job"],
+                "description": reviewed_text,
+            },
+            "bill_rate_state": item["bill_rate_state"],
+            "recruiting_readiness": item["recruiting_readiness"],
+            "commercial_readiness": item["commercial_readiness"],
+            "reason": "Manager reviewed and accepted AI JD",
+        },
+    )
+    assert accepted.status_code == 200
+    body = accepted.json()
+    assert body["status"] == "approved"
+    assert body["standardized_internal_jd"]["description_provenance"] == "human_approved_ai_draft"
+    assert body["standardized_internal_jd"]["source_description"] == reviewed_text

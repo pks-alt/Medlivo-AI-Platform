@@ -55,10 +55,11 @@ def clean(row):
 
 
 class WorkspaceStore:
-    def __init__(self, engine, submission_ai=None, submission_packet_generator=None):
+    def __init__(self, engine, submission_ai=None, submission_packet_generator=None, job_intake_ai=None):
         self.engine = engine
         self.submission_ai = submission_ai
         self.submission_packet_generator = submission_packet_generator
+        self.job_intake_ai = job_intake_ai
 
     def _principal(self, conn, identity: Identity):
         def lookup():
@@ -287,7 +288,7 @@ class WorkspaceStore:
             return clean({
                 "source_system": "jobdiva",
                 "read_only": True,
-                "generated_at": now(),
+                "generated_at": now().isoformat(),
                 "checkpoints": checkpoints,
                 "latest_runs": latest_runs,
                 "source_counts": source_counts,
@@ -3415,6 +3416,86 @@ class WorkspaceStore:
             return row
         return self._global_mutate(identity, key, "job.assignment.changed", payload, apply)
 
+    def generate_job_intake_ai_draft(self, identity, batch_id, item_id, key):
+        payload = {"batch_id": batch_id, "item_id": item_id}
+
+        def apply(conn, principal):
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Delivery Manager access required")
+            if self.job_intake_ai is None:
+                raise AccessError(503, "Job Intake AI drafting is not configured")
+
+            batch = conn.execute(select(t.job_intake_batches).where(
+                t.job_intake_batches.c.tenant_id == principal["tenant_id"],
+                t.job_intake_batches.c.id == batch_id,
+            )).mappings().first()
+            if batch is None:
+                raise AccessError(404, "Job intake batch not found")
+            if batch["team_id"] is not None and not self._team_allowed(conn, principal, batch["team_id"]):
+                raise AccessError(403, "Job intake batch is outside your scope")
+
+            item = conn.execute(select(t.job_intake_items).where(
+                t.job_intake_items.c.tenant_id == principal["tenant_id"],
+                t.job_intake_items.c.batch_id == batch_id,
+                t.job_intake_items.c.id == item_id,
+            ).with_for_update()).mappings().first()
+            if item is None:
+                raise AccessError(404, "Job intake item not found")
+            if item["status"] in {"synced", "failed"}:
+                raise AccessError(409, "This intake item can no longer be drafted")
+
+            normalized = dict(item["normalized_job"] or {})
+            source_description = str(normalized.get("description") or "").strip()
+            context = {
+                "customer_name": batch["customer_name"],
+                "division": batch["division"],
+                "source_job": normalized,
+                "standardized_source_facts": item["standardized_internal_jd"] or {},
+                "missing_fields": item["missing_fields"] or [],
+                "conflicts": item["conflicts"] or [],
+                "source_description_present": bool(source_description),
+                "source_description": source_description or None,
+                "instruction": (
+                    "If a usable source description exists, improve structure without changing facts. "
+                    "If it is missing or too thin, draft a complete internal recruiting JD using the confirmed facts "
+                    "plus clearly AI-suggested standard responsibilities and qualifications."
+                ),
+            }
+            try:
+                result = self.job_intake_ai.compose(context)
+            except Exception:
+                raise AccessError(502, "Job Intake AI could not generate a draft. Try again or continue with source facts.") from None
+            draft = {
+                "type": "jd_draft",
+                "status": "ai_suggested",
+                "generated_at": now().isoformat(),
+                "provider": result.provider,
+                "model": result.model,
+                "job_description": result.job_description,
+                "responsibilities": result.responsibilities,
+                "required_qualifications": result.required_qualifications,
+                "preferred_qualifications": result.preferred_qualifications,
+                "schedule_summary": result.schedule_summary,
+                "warnings": result.warnings,
+            }
+            timestamp = now()
+            conn.execute(update(t.job_intake_items).where(
+                t.job_intake_items.c.tenant_id == principal["tenant_id"],
+                t.job_intake_items.c.id == item_id,
+            ).values(ai_suggestions=[draft], updated_at=timestamp))
+            after = dict(item)
+            after["ai_suggestions"] = [draft]
+            after["updated_at"] = timestamp
+            self._operational_audit(
+                conn, principal, "job_intake.ai_jd.generated", "job_intake_item", item_id,
+                {"ai_suggestions": item["ai_suggestions"]}, {"ai_suggestions": [draft]},
+                reason="Manager requested AI JD draft",
+            )
+            return clean(after)
+
+        return self._global_mutate(identity, key, "job_intake.ai_jd.generated", payload, apply)
+
+
     def decide_job_intake_item(self, identity, batch_id, item_id, key, value):
         payload = {
             "batch_id": batch_id,
@@ -3485,6 +3566,17 @@ class WorkspaceStore:
                         )
 
                 standardized_internal_jd = final_review["standardized_internal_jd"]
+                ai_drafts = [
+                    x for x in (item["ai_suggestions"] or [])
+                    if isinstance(x, dict) and x.get("type") == "jd_draft"
+                ]
+                approved_description = str(final_values.get("description") or "").strip()
+                if ai_drafts and approved_description:
+                    latest_ai_description = str(ai_drafts[-1].get("job_description") or "").strip()
+                    source_description = str((item["normalized_job"] or {}).get("description") or "").strip()
+                    if approved_description != source_description:
+                        standardized_internal_jd["description_provenance"] = "human_approved_ai_draft"
+                        standardized_internal_jd["source_description"] = approved_description
                 conflicts = final_review["conflicts"]
                 missing_fields = final_review["missing_fields"]
             else:

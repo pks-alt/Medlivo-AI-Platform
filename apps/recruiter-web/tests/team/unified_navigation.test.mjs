@@ -86,3 +86,15 @@ test("Executive is a first-class command center, not margin-only", async () => {
   assert.match(page, /COMMERCIAL CONTROL/);
   assert.match(page, /href="\/executive\/margin"/);
 });
+
+
+test("Job Intake exposes governed AI JD review instead of dead-end review rows", async () => {
+  const ui = await readFile(new URL("../../lib/team/ui.mjs", import.meta.url), "utf8");
+  assert.match(ui, /AI Draft Needed/);
+  assert.match(ui, /Generate AI Draft/);
+  assert.match(ui, /Review and edit JD/);
+  assert.match(ui, /Accept Reviewed JD/);
+  assert.match(ui, /Human Approved AI Draft provenance/);
+  assert.match(ui, /data-intake-item-review/);
+  assert.match(ui, /\/ai-draft/);
+});
