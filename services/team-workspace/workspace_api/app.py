@@ -1,6 +1,7 @@
 """Factory for a separate private service; existing recruiter API is untouched."""
 from contextlib import asynccontextmanager
 import logging
+import os
 from uuid import UUID
 from datetime import date
 from fastapi import FastAPI, Depends, HTTPException, Header, Query, UploadFile, File, Form, Response
@@ -116,7 +117,7 @@ def build_app(store, verifier):
 
     @app.get("/health")
     def health():
-        return {"ok": True, "workspace_enabled": True, "database_checked": False}
+        return {"ok": True, "workspace_enabled": True, "database_checked": False, "release_sha": os.environ.get("MEDLIVO_RELEASE_SHA", "unknown")}
 
     @app.get("/ready")
     def ready():
