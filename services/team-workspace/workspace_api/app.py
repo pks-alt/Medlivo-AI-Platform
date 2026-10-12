@@ -22,7 +22,7 @@ from .schemas import (
     ApprovalDecisionInput, StartReadinessUpdate, StartReadinessItemInput,
     SubmissionTemplateBootstrapInput, SubmissionPackagePrepareInput,
     SubmissionPackageItemReviewInput, SubmissionPackageFinalizeInput,
-    SubmissionTemplateCreateInput,
+    SubmissionTemplateCreateInput, JobContentStandardInput,
 )
 from .store import WorkspaceStore, AccessError
 from .submission_ai import VertexGeminiSubmissionAIComposer
@@ -127,6 +127,7 @@ def build_app(store, verifier):
             "public.ws_submission_template",
             "public.ws_submission_package",
             "public.ws_submission_validation_result",
+            "public.ws_job_content_standard",
         )
         try:
             with store.engine.connect() as conn:
@@ -272,6 +273,38 @@ def build_app(store, verifier):
             raise HTTPException(422, "week_start must be a Monday")
         return store.weekly_review(
             who, week_start, team_id=str(team_id) if team_id is not None else None
+        )
+
+    @app.get(prefix + "/job-content-standards")
+    def job_content_standards(
+        division: str | None = None,
+        limit: int = Query(default=200, ge=1, le=500),
+        who=Depends(identity),
+    ):
+        return store.list_job_content_standards(who, division=division, limit=limit)
+
+    @app.post(prefix + "/job-content-standards", status_code=201)
+    def create_job_content_standard(
+        value: JobContentStandardInput,
+        idempotency_key: UUID = Header(),
+        who=Depends(identity),
+    ):
+        return store.create_job_content_standard(who, str(idempotency_key), value)
+
+    @app.get(prefix + "/job-content-standards/active")
+    def active_job_content_standard(
+        division: str,
+        profession: str,
+        specialty: str | None = None,
+        care_setting: str | None = None,
+        who=Depends(identity),
+    ):
+        return store.get_active_job_content_standard(
+            who,
+            division=division,
+            profession=profession,
+            specialty=specialty,
+            care_setting=care_setting,
         )
 
     @app.get(prefix + "/job-publications")
