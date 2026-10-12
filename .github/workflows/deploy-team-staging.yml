@@ -56,6 +56,27 @@ jobs:
           docker push "${API_IMAGE}"
           echo "API_IMAGE=${API_IMAGE}" >> "${GITHUB_ENV}"
 
+      - name: Apply reviewed workspace migration 014
+        run: |
+          MIGRATION_JOB="medlivo-team-schema-staging"
+          gcloud run jobs deploy "${MIGRATION_JOB}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${API_IMAGE}" \
+            --service-account="${API_SERVICE}@${PROJECT_ID}.iam.gserviceaccount.com" \
+            --set-cloudsql-instances="${PROJECT_ID}:${REGION}:medlivo-ai-postgres" \
+            --set-secrets="WORKSPACE_DATABASE_URL=medlivo-team-staging-api-database-url:latest" \
+            --command="python" \
+            --args="-m,workspace_api.migrate,/app/migrations/014_job_content_standards.sql" \
+            --max-retries=0 \
+            --task-timeout=300s \
+            --quiet
+          gcloud run jobs execute "${MIGRATION_JOB}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --wait \
+            --quiet
+
       - name: Deploy private API candidate with schema readiness gate
         run: |
           gcloud run deploy "${API_SERVICE}" \
