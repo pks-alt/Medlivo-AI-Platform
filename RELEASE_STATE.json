@@ -1,9 +1,10 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-10-10",
+  "updated_at": "2026-10-12",
   "canonical_repository": "pks-alt/Medlivo-AI-Platform",
   "canonical_branch": "main",
-  "baseline_main_sha": "2fbfe8a5bdfd5674a94b7b2627073ea177daa80b",
+  "baseline_main_sha": "4b77fbf016166764c44516cc16be3a62a43ba4dc",
+  "evidence_scope": "repository and inspected GitHub run only; not live cloud acceptance",
   "governing_documents": {
     "engineering_operating_model": "docs/ENGINEERING_OPERATING_MODEL.md",
     "current_platform_state": "docs/CURRENT_PLATFORM_STATE.md",
@@ -11,21 +12,22 @@
     "next_development_slice": "docs/NEXT_DEVELOPMENT_SLICE.md"
   },
   "schema_state": {
-    "team_workspace_latest_named_migration": "013_submission_studio.sql"
+    "team_workspace_latest_named_migration": "014_job_content_standards.sql",
+    "applied_staging_migration": "not_verified"
   },
   "major_capabilities": {
-    "jobdiva_read_connector": "active_read_only",
-    "job_intelligence": "active",
-    "candidate_intelligence": "active",
-    "matching_engine": "active",
-    "recruiter_workspace": "active",
-    "manager_workspace": "active",
-    "pay_package_margin": "active",
-    "submission_studio": "active",
+    "jobdiva_read_connector": "existing_foundation_acceptance_pending",
+    "job_intelligence": "existing_foundation_acceptance_pending",
+    "candidate_intelligence": "existing_foundation_acceptance_pending",
+    "matching_engine": "existing_foundation_acceptance_pending",
+    "recruiter_workspace": "existing_foundation_acceptance_pending",
+    "manager_workspace": "existing_foundation_acceptance_pending",
+    "pay_package_margin": "existing_foundation_acceptance_pending",
+    "submission_studio": "existing_foundation_acceptance_pending",
+    "submission_to_start_funnel": "existing_foundation_acceptance_pending",
+    "start_readiness": "existing_foundation_acceptance_pending",
     "submission_ai_composer": "implemented_config_gated",
     "submission_packet_download": "implemented_config_gated",
-    "submission_to_start_funnel": "active",
-    "start_readiness": "active",
     "jobdiva_writeback": "disabled",
     "autonomous_outreach": "disabled"
   },
@@ -34,19 +36,37 @@
     "region": "us-west1",
     "web_service": "medlivo-team-web-staging",
     "api_service": "medlivo-team-api-staging",
-    "web_revision": "medlivo-team-web-staging-00015-pgc",
-    "api_revision": "medlivo-team-api-staging-00013-ss8",
+    "web_revision": null,
+    "api_revision": null,
     "web_origin": "https://medlivo-team-web-staging-brgq5tymca-uw.a.run.app",
     "api_origin": "https://medlivo-team-api-staging-brgq5tymca-uw.a.run.app",
-    "workspace_enabled": true,
-    "full_recruiter_app_image": true,
-    "browser_acceptance": "pending_auth_gate_pr_80"
+    "workspace_enabled": null,
+    "full_recruiter_app_image": null,
+    "browser_acceptance": "not_verified",
+    "last_inspected_run_id": 38205046744,
+    "last_inspected_job_id": 114666565678,
+    "last_inspected_run_conclusion": "failure",
+    "failed_step": "Verify staging migration identity",
+    "migration_resource_existence": "not_verified",
+    "serving_release_verified": false
+  },
+  "historical_document_record": {
+    "recorded_date": "2026-10-10",
+    "web_revision": "medlivo-team-web-staging-00015-pgc",
+    "api_revision": "medlivo-team-api-staging-00013-ss8",
+    "note": "Preserved historical document values; not current live evidence."
+  },
+  "repository_controls": {
+    "branch_reports_protected": false,
+    "listed_ruleset_count": 0,
+    "protection_admin_read": "403_resource_not_accessible_by_integration",
+    "settings_changed": false
   },
   "in_progress": [
     {
-      "pull_request": 80,
-      "capability": "full_app_authentication_gate",
-      "status": "ci_rerun_after_browser_wait_fix"
+      "capability": "staging_preflight_evidence",
+      "branch": "fix/staging-preflight-evidence",
+      "status": "proposed_change_not_live_diagnostic"
     }
   ],
   "source_of_truth_policy": {
@@ -55,7 +75,8 @@
     "medlivo_second_ats_allowed": false
   },
   "notes": [
-    "Feature configuration values that are intentionally secret or not independently verified are not recorded here.",
-    "Update this file after meaningful capability merges or staging/release changes."
+    "No schema, identity, provider or production-launch boundary changed.",
+    "A metadata diagnostic does not verify DB grants, migration success or the serving release.",
+    "No production launch before Phase 2 acceptance and PK approval."
   ]
 }

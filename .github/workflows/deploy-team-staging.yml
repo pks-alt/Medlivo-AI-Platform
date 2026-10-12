@@ -12,6 +12,12 @@ on:
       - "services/margin-engine/**"
       - "infrastructure/team-staging/**"
   workflow_dispatch:
+    inputs:
+      diagnostics_only:
+        description: "Read migration metadata only; no builds, migrations or deployment"
+        type: boolean
+        default: true
+        required: true
 
 permissions:
   contents: read
@@ -46,32 +52,23 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v3
 
+      - name: Verify staging migration identity
+        run: python3 infrastructure/team-staging/migration_preflight.py --inventory
+
       - name: Configure Artifact Registry
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
         run: gcloud auth configure-docker "${REGION}-docker.pkg.dev" --quiet
 
       - name: Build and push private API
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
         run: |
           API_IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${GAR_REPOSITORY}/${API_SERVICE}:${GITHUB_SHA}"
           docker build -f infrastructure/team-staging/Dockerfile.api -t "${API_IMAGE}" .
           docker push "${API_IMAGE}"
           echo "API_IMAGE=${API_IMAGE}" >> "${GITHUB_ENV}"
 
-      - name: Verify staging migration identity
-        run: |
-          MIGRATION_SA="medlivo-team-schema-staging@${PROJECT_ID}.iam.gserviceaccount.com"
-          MIGRATION_SECRET="medlivo-team-staging-migration-database-url"
-          if ! gcloud iam service-accounts describe "${MIGRATION_SA}" --project="${PROJECT_ID}" --quiet >/dev/null 2>&1; then
-            echo "::error::Missing dedicated staging migration service account: ${MIGRATION_SA}"
-            echo "::error::Create the one-time migration identity before releasing schema changes."
-            exit 1
-          fi
-          if ! gcloud secrets describe "${MIGRATION_SECRET}" --project="${PROJECT_ID}" --quiet >/dev/null 2>&1; then
-            echo "::error::Missing staging migration database secret: ${MIGRATION_SECRET}"
-            echo "::error::The runtime database credential must never be used for schema migration."
-            exit 1
-          fi
-
       - name: Apply reviewed workspace migration 014
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
         run: |
           MIGRATION_JOB="medlivo-team-schema-staging"
           MIGRATION_SA="medlivo-team-schema-staging@${PROJECT_ID}.iam.gserviceaccount.com"
@@ -94,6 +91,7 @@ jobs:
             --quiet
 
       - name: Deploy private API candidate with schema readiness gate
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
         run: |
           gcloud run deploy "${API_SERVICE}" \
             --project="${PROJECT_ID}" \
@@ -106,6 +104,7 @@ jobs:
             --quiet
 
       - name: Promote schema-ready private API revision
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
         run: |
           gcloud run services update-traffic "${API_SERVICE}" \
             --project="${PROJECT_ID}" \
@@ -114,6 +113,7 @@ jobs:
             --quiet
 
       - name: Build and push private team web
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
         run: |
           WEB_IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${GAR_REPOSITORY}/${WEB_SERVICE}:${GITHUB_SHA}"
           docker build -f apps/recruiter-web/Dockerfile -t "${WEB_IMAGE}" apps/recruiter-web
@@ -121,15 +121,18 @@ jobs:
           echo "WEB_IMAGE=${WEB_IMAGE}" >> "${GITHUB_ENV}"
 
       - name: Deploy private web image only
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
         run: |
           gcloud run services update "${WEB_SERVICE}"             --project="${PROJECT_ID}"             --region="${REGION}"             --image="${WEB_IMAGE}"             --update-env-vars="MEDLIVO_RELEASE_SHA=${GITHUB_SHA}"             --no-log-http             --quiet
 
       - name: Show deployed revisions
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
         run: |
           gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format='value(status.latestReadyRevisionName,status.url)'
           gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format='value(status.latestReadyRevisionName,status.url)'
 
       - name: Verify deployed release SHA
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
         run: |
           API_SHA="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="MEDLIVO_RELEASE_SHA") | .value // empty')"
           WEB_SHA="$(gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="MEDLIVO_RELEASE_SHA") | .value // empty')"
@@ -140,6 +143,7 @@ jobs:
           echo "STAGING_RELEASE_SHA=${GITHUB_SHA}"
 
       - name: Show non-secret staging routing configuration
+        if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
         run: |
           WEB_ORIGIN="$(gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="TEAM_APP_ORIGIN") | .value // empty')"
           API_ORIGIN="$(gcloud run services describe "${WEB_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="TEAM_API_URL") | .value // empty')"

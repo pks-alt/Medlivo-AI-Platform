@@ -1,62 +1,53 @@
 # Next Development Slice
 
-**Current next slice:** Stabilize staging authentication and complete real browser acceptance.
+## M0: prove the existing staging release
 
-## Why this is next
+Keep `pks-alt/Medlivo-AI-Platform`. No new repository, broad rewrite, provider replacement or altered release boundary. Start from the current source baseline and identify blockers with evidence. Application-test success and successful deployment are separate states.
 
-The current product has enough Phase 1 capability that adding another major feature before validating the deployed browser experience would create unnecessary risk and architectural drift.
+### Current targeted change
 
-The immediate goal is to prove that the current full application works as one coherent system.
+Replace the misleading migration-resource error with safe metadata diagnostics. Add `diagnostics_only` to the existing manual workflow, defaulting to true. Run offline regression tests in the existing unfiltered `platform-control` job. This changes error reporting and introduces a no-change inspection mode, not a migration bypass.
 
-## Scope
+### Review and execution order
 
-1. Finish PR #80 authentication gate.
-2. Confirm protected routes redirect unauthenticated users to `/team`.
-3. Confirm Google sign-in callback returns to an authenticated full application session.
-4. Verify staging uses the full `apps/recruiter-web` image.
-5. Verify the exact staging web origin and API origin.
-6. Run recruiter browser walkthrough.
-7. Run Delivery Manager browser walkthrough.
-8. Verify Executive/Admin entry points.
-9. Verify no unexpected JobDiva writeback or outreach path is enabled.
-10. Capture usability issues from the browser review.
-11. Fix only the issues required for a coherent nontechnical user experience.
-12. Update `CURRENT_PLATFORM_STATE.md`, `PHASE1_COMPLETION_MATRIX.md`, and `RELEASE_STATE.json` when the slice is complete.
+1. Review this scoped PR and its exact-head checks. Do not merge failed tests or present the PR as deployed.
+2. A repository administrator reviews main-branch enforcement: require PRs and independent approval, dismiss stale approvals, require resolved review conversations, block force pushes/deletion, and review bypass rights. Inspect existing check names and path triggers before selecting required checks. The current connection's administration read returned HTTP 403; settings have NOT been applied.
+3. Confirm an independent eligible reviewer. GitHub authors cannot approve their own PRs. PK's product approval is not a fabricated GitHub review from another account.
+4. Before merging, after review, use **Deploy private team staging → Run workflow → fix/staging-preflight-evidence → diagnostics_only=true**. The existing workflow already supports manual dispatch on main; select the reviewed branch to use this proposed diagnostic input. The existing WIF connection runs fixed metadata reads only. No build, migration, deployment or traffic update runs in this mode. A failed diagnostic remains red and reports why; a green diagnostic is NOT a deployed release.
+5. Review both resource lookups and visible inventories. Permission/unavailable/unknown results are not proof of absence. Alternative names require verification and an approved mapping, not automatic substitution or recreation.
+6. Establish the actual migration-only database role, grants and schema state through authorized operator evidence. A manual SQL action does not bypass a remaining release preflight. Do not use runtime credentials for DDL.
+7. Keep the PR unmerged until prerequisites and review controls are resolved: merging still triggers the existing normal deployment on a main push. Only after prerequisites are verified, approve merge and the existing deployment path (`diagnostics_only=false` for a manual deploy). Keep migration, readiness, same-release API/web and traffic gates.
+8. Record actual serving revisions, image digests, commit, schema checks and authenticated recruiter/manager browser acceptance. Environment-variable SHA agreement alone is not complete proof.
+9. Update the control records with the observed evidence. Do not ask users to reupload workbooks to diagnose a failed deployment.
 
-## Browser walkthrough
+## Running the reviewed diagnostic branch
 
-### Recruiter
+An authorized operator with existing GitHub CLI access can run:
 
-`Sign In → Today → Jobs → Candidate Match → Pay Package → Submission Studio → AI Draft/Review → Finalize/Download → Submission to Start → Start Readiness`
+```sh
+gh workflow run deploy-team-staging.yml \
+  --repo pks-alt/Medlivo-AI-Platform \
+  --ref fix/staging-preflight-evidence \
+  -f diagnostics_only=true
+```
 
-### Delivery Manager
+Do not paste access tokens into chat. If existing WIF trust prevents a non-main diagnostic run, do not expand that trust or merge just to bypass it. An authorized operator can review and run the same fixed metadata-only Python script in the existing Google Cloud Shell session. Capture the sanitized report; neither route creates resources. This PR does not change WIF policy or repository visibility.
 
-`Sign In → Manager → Team Workload → Submission to Start → At-Risk Starts → Start Readiness`
+Official manual-dispatch reference: https://docs.github.com/actions/managing-workflow-runs/manually-running-a-workflow
 
-### Executive / System Admin
+## Required-check activation caveat
 
-Verify:
-
-- company-wide margin view
-- negative-GM exception visibility
-- company-wide funnel visibility
-- GM configuration
-- Submission Studio template administration
-- access/admin boundaries
+`platform-control` runs on every PR and main push and now includes offline preflight regression tests. Other application workflows may be path-filtered; this check is not a substitute for all applicable app tests. Review and implement an appropriate always-emitted gate before making conditional checks universally required. GitHub settings changes must be verified by readback and an authorized blocked-merge/direct-push test; a checklist is not enforcement.
 
 ## Exit criteria
 
-This slice is complete only when:
+- Authorized main-branch controls are verified, not only proposed.
+- Migration prerequisite failure is explained without guessing.
+- No unnecessary accounts, secrets or databases are recreated.
+- Reviewed schema execution and actual serving release are evidenced.
+- Recruiter and manager protected browser paths pass on that release.
+- No unapproved JobDiva mutation, live messaging or publication is enabled.
 
-- CI is green
-- current `main` is deployed to private staging
-- authentication works in the real browser
-- recruiter and manager walkthroughs complete without critical workflow breaks
-- known issues are documented
-- platform-state and release-state files are current
+## After M0
 
-## What follows
-
-Only after this slice is complete should the next major functional capability begin.
-
-The next capability should be selected from the current product roadmap based on highest operational value and user feedback, while following `docs/ENGINEERING_OPERATING_MODEL.md`.
+Complete Module 01 in the same codebase: approved real-data scope → source identity and full enrichment → shared Job Content Standards → source-independent matching readiness → both matching directions → browser acceptance. The master and module documents remain product review drafts, not an automatic launch approval. No production launch before Phase 2.

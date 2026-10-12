@@ -1,73 +1,29 @@
 # Phase 1 Completion Matrix
 
-**Purpose:** Show what is complete, what is in validation, and what remains before Medlivo considers Phase 1 operationally ready.
+**Evidence reconciliation: 2026-10-12.** Previous “Complete” labels described implementation foundations, not verified deployment or real-data acceptance. This table supersedes the old PR #80 blocker entry without claiming a new login test was performed.
 
-| Capability | Status | Notes |
+| Capability | Repository position | Acceptance state |
 | --- | --- | --- |
-| Canonical job/candidate foundation | Complete | JobDiva-backed canonical identities and evidence model |
-| JobDiva read connector | Complete foundation | Read-only; real-data validation remains an operational activity |
-| Job Intelligence | Complete foundation | Normalization and job-side intelligence |
-| Candidate Intelligence | Complete foundation | Resume/fact extraction and evidence |
-| Deterministic hard gates | Complete | Human-readable exclusion reasons |
-| Explainable matching | Complete | Job→Candidates and Candidate→Jobs |
-| Recruiter Daily Priorities / Match Queue | Complete | Production app |
-| Recruiter notes/follow-ups/activity | Complete | Shared audited workspace |
-| Manager workload / assignment / goals | Complete | Operational manager layer |
-| Direct Rehab intake | Complete foundation | XLSX/manual intake path |
-| Pay Package & GM | Complete | Six governed calculation profiles |
-| Recruiter rate ownership | Complete | Guidance model; negative GM Executive exception |
-| Submission Studio templates | Complete | Versioned config, division/channel rules |
-| Candidate document wallet/assets | Complete foundation | Metadata, verification/freshness/jurisdiction |
-| Submission package preparation | Complete | Deterministic readiness and versioning |
-| AI submission drafting | Complete foundation | Source-grounded; recruiter review required |
-| Submission artifact generation | Complete foundation | PDF/ZIP/GCS-only retrieval; config-gated |
-| Submission → Interview → Offer → Placement projections | Complete foundation | JobDiva remains source of truth |
-| Start Readiness engine | Complete | Medlivo overlay with audit/versioning |
-| Funnel Board / Start Readiness UI | Complete | Recruiter/manager/executive scope |
-| Full recruiter-web staging image | Complete | Full app now deployed to private staging |
-| Full-app authentication gate | In validation | PR #80; redirects unauthenticated protected routes to /team |
-| Private staging browser acceptance | Blocked on auth gate | Must pass after PR #80 deploy |
-| Real JobDiva funnel mapping validation | Pending operational validation | Requires staging/read contract verification |
-| Real-data recruiter UAT | Pending | Use bounded/synthetic-first rollout rules |
-| Autonomous outreach | Phase 2 | Not enabled in Phase 1 |
-| SMS/email/voice agents | Phase 2 | Not enabled in Phase 1 |
-| Automated scheduling | Phase 2 | Not enabled in Phase 1 |
-| Automated compliance reminders | Phase 2 | Not enabled in Phase 1 |
-| Predictive drop/conversion/stall models | Phase 2 | Not enabled in Phase 1 |
-| Controlled JobDiva writeback | Phase 2 / separate authorization | Must remain disabled until approved |
+| Canonical jobs/candidates and JobDiva read connector | Existing foundations retained | Real-data completeness not verified |
+| Job Intelligence and Candidate Intelligence | Existing models, normalization and evidence | Enrichment and source coverage require validation |
+| Job Content Standards and Excel intake | Existing standards/approval foundations | Shared JobDiva path, aliases and durable exceptions remain gaps |
+| Deterministic matching and both recommendation directions | Existing implementation retained | Unknown-credential and direct-job selection corrections required |
+| Recruiter priorities, notes, tasks, assignment and manager goals | Existing workflow foundations | Real-data, ownership and outcome reconciliation pending |
+| Pay Package & GM and recruiter rate ownership | Existing governed profiles retained | Real inputs and exception-flow acceptance pending |
+| Submission Studio, candidate documents, grounded AI drafts and PDF/ZIP packages | Existing config-gated foundations | End-to-end document and approval acceptance pending |
+| Submission → Start projections and readiness overlays | Existing foundations retained | JobDiva activity mapping and browser acceptance pending |
+| Private staging API/web release | Inspected run 38205046744 failed at migration preflight | Not accepted; serving release/schema not verified |
+| Accurate metadata-only preflight | Targeted fix and offline tests proposed | Live diagnostic not executed by this change |
+| GitHub review enforcement | Main reports unprotected; no rulesets listed | Administrator configuration/readback required; connector returned 403 for protection administration |
+| Role-specific browser UAT | Existing paths retained | Not rerun in this evidence review |
+| Current-state/release records | Reconciled to inspected evidence | Must update after actual deployment results |
 
 ## Phase 1 exit discipline
 
-Phase 1 is not considered operationally ready merely because code is merged.
+Code presence, passed PR checks, merged main, deployed artifacts, accepted browser workflows and production authorization are distinct states. Require actual serving API/web revisions and schema proof, recruiter/manager/admin walkthroughs, real-data reconciliation, critical-defect closure and preserved read-only/consent/security boundaries.
 
-Required before declaring the phase ready for internal use:
+## Phase 2 scope retained
 
-1. Current `main` is green.
-2. Private staging deploys the same application architecture as production.
-3. Authentication works end to end.
-4. Recruiter browser walkthrough passes.
-5. Delivery Manager browser walkthrough passes.
-6. Executive/admin visibility is verified.
-7. JobDiva read-only boundaries are confirmed.
-8. No unauthorized writeback/outreach path is enabled.
-9. Current platform/release state docs are updated.
-10. Known critical/high staging defects are resolved or explicitly accepted.
+Controlled email/SMS/voice agents, follow-up and scheduling automation, compliance reminders, human handoff, extension/redeployment, predictive risk/conversion signals, trusted-data recruiter-quality analytics and separately authorized JobDiva writeback remain tracked. Evidence-dependent capabilities may not be silently deferred. Provider-specific permissions and testing remain prerequisites.
 
-## Product expansion after Phase 1
-
-Phase 2 adds more initiative and automation, but it must follow the same engineering operating model.
-
-Examples:
-
-- automated candidate outreach
-- SMS/email/voice agents
-- interview scheduling
-- automated follow-up
-- compliance reminders
-- predictive risk/conversion intelligence
-- extension strategy
-- redeployment campaigns
-- recruiter quality/ranking after trusted data
-- candidate satisfaction input
-- controlled JobDiva writeback
-- future marketplace capabilities
+**No production go-live after Phase 1 alone.** Phase 2 acceptance and PK launch approval remain required. The diagnostic fix does not enable live communication, ATS writes or automatic publication.

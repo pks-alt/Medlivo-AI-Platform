@@ -22,3 +22,5 @@ jobs:
           python-version: "3.13"
       - name: Validate canonical platform controls
         run: python3 scripts/check_platform_control.py
+      - name: Test staging preflight without cloud credentials
+        run: python3 -m unittest discover -s infrastructure/team-staging/tests -p 'test_migration_preflight.py' -v
