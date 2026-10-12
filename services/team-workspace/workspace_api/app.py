@@ -26,6 +26,7 @@ from .schemas import (
 )
 from .store import WorkspaceStore, AccessError
 from .submission_ai import VertexGeminiSubmissionAIComposer
+from .job_intake_ai import VertexGeminiJobIntakeAIComposer
 from .submission_artifacts import GCSDocumentResolver, SubmissionPacketGenerator
 
 
@@ -238,6 +239,13 @@ def build_app(store, verifier):
     @app.get(prefix + "/job-intake/batches/{batch_id}/items")
     def job_intake_items(batch_id: UUID, limit: int = Query(default=200, ge=1, le=500), who=Depends(identity)):
         return store.list_job_intake_items(who, str(batch_id), limit=limit)
+
+    @app.post(prefix + "/job-intake/batches/{batch_id}/items/{item_id}/ai-draft")
+    def generate_job_intake_ai_draft(batch_id: UUID, item_id: UUID,
+                                     idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.generate_job_intake_ai_draft(
+            who, str(batch_id), str(item_id), str(idempotency_key)
+        )
 
     @app.get(prefix + "/job-intake/mappings")
     def job_intake_mappings(division: str | None = None, who=Depends(identity)):
@@ -660,6 +668,14 @@ def create_app():
             location=settings.submission_ai_location,
             model=settings.submission_ai_model,
         )
+    job_intake_ai = None
+    if settings.submission_ai_enabled:
+        job_intake_ai = VertexGeminiJobIntakeAIComposer(
+            project=settings.submission_ai_project,
+            location=settings.submission_ai_location,
+            model=settings.submission_ai_model,
+        )
+
     submission_packet_generator = None
     if settings.submission_packet_download_enabled:
         allowed_buckets = {
@@ -675,6 +691,7 @@ def create_app():
             engine,
             submission_ai=submission_ai,
             submission_packet_generator=submission_packet_generator,
+            job_intake_ai=job_intake_ai,
         ),
         GoogleIdentityVerifier(settings.google_client_id, settings.google_hosted_domain),
     )
