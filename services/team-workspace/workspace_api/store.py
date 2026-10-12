@@ -3521,6 +3521,123 @@ class WorkspaceStore:
         return self._global_mutate(identity, key, "job_intake.ai_jd.generated", payload, apply)
 
 
+    def prepare_job_intake_batch_from_standards(self, identity, batch_id, key):
+        payload = {"batch_id": batch_id}
+
+        def apply(conn, principal):
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Delivery Manager access required")
+            batch = conn.execute(select(t.job_intake_batches).where(
+                t.job_intake_batches.c.tenant_id == principal["tenant_id"],
+                t.job_intake_batches.c.id == batch_id,
+            )).mappings().first()
+            if batch is None:
+                raise AccessError(404, "Job intake batch not found")
+            if batch["team_id"] is not None and not self._team_allowed(conn, principal, batch["team_id"]):
+                raise AccessError(403, "Job intake batch is outside your scope")
+
+            items = conn.execute(select(t.job_intake_items).where(
+                t.job_intake_items.c.tenant_id == principal["tenant_id"],
+                t.job_intake_items.c.batch_id == batch_id,
+            ).order_by(t.job_intake_items.c.row_number).with_for_update()).mappings().all()
+
+            prepared = 0
+            missing_standard = []
+            skipped = 0
+            timestamp = now()
+
+            for item in items:
+                if item["status"] in {"duplicate", "approved", "rejected", "synced", "failed"}:
+                    skipped += 1
+                    continue
+                job = dict(item["normalized_job"] or {})
+                profession = str(job.get("profession") or job.get("title") or "").strip()
+                specialty = str(job.get("specialty") or "").strip() or None
+                care_setting = str(job.get("care_setting") or "").strip() or None
+                if not profession:
+                    missing_standard.append({"item_id": item["id"], "row_number": item["row_number"], "reason": "Profession not identified"})
+                    continue
+
+                candidates = conn.execute(select(t.job_content_standards).where(
+                    t.job_content_standards.c.tenant_id == principal["tenant_id"],
+                    t.job_content_standards.c.division == batch["division"],
+                    t.job_content_standards.c.profession == profession,
+                    t.job_content_standards.c.status == "active",
+                ).order_by(t.job_content_standards.c.version.desc())).mappings().all()
+
+                def score(standard):
+                    points = 0
+                    if specialty and standard["specialty"] == specialty:
+                        points += 4
+                    elif standard["specialty"] is not None:
+                        return -1
+                    if care_setting and standard["care_setting"] == care_setting:
+                        points += 2
+                    elif standard["care_setting"] is not None:
+                        return -1
+                    return points
+
+                ranked = sorted(
+                    ((score(standard), standard) for standard in candidates),
+                    key=lambda pair: (pair[0], pair[1]["version"]),
+                    reverse=True,
+                )
+                standard = ranked[0][1] if ranked and ranked[0][0] >= 0 else None
+                if standard is None:
+                    missing_standard.append({
+                        "item_id": item["id"],
+                        "row_number": item["row_number"],
+                        "profession": profession,
+                        "specialty": specialty,
+                        "care_setting": care_setting,
+                        "reason": "No active Medlivo Job Content Standard",
+                    })
+                    continue
+
+                content = dict(standard["content"] or {})
+                draft = {
+                    "type": "jd_draft",
+                    "status": "medlivo_standard",
+                    "provenance": "medlivo_standard",
+                    "generated_at": timestamp.isoformat(),
+                    "standard_id": standard["id"],
+                    "standard_version": standard["version"],
+                    "standard_display_title": standard["display_title"],
+                    "job_description": content.get("candidate_intro") or "",
+                    "responsibilities": content.get("responsibilities") or [],
+                    "required_qualifications": content.get("required_qualifications") or [],
+                    "preferred_qualifications": content.get("preferred_qualifications") or [],
+                    "licensure_certification": content.get("licensure_certification") or [],
+                    "assignment_overview": content.get("assignment_overview"),
+                    "candidate_cta": content.get("candidate_cta"),
+                    "schedule_summary": None,
+                    "warnings": [],
+                }
+                conn.execute(update(t.job_intake_items).where(
+                    t.job_intake_items.c.tenant_id == principal["tenant_id"],
+                    t.job_intake_items.c.id == item["id"],
+                ).values(ai_suggestions=[draft], updated_at=timestamp))
+                self._operational_audit(
+                    conn, principal, "job_intake.standard_applied", "job_intake_item", item["id"],
+                    {"ai_suggestions": item["ai_suggestions"]}, {"ai_suggestions": [draft]},
+                    reason=f"Applied Job Content Standard v{standard['version']}",
+                )
+                prepared += 1
+
+            return {
+                "batch_id": batch_id,
+                "total_rows": len(items),
+                "prepared": prepared,
+                "missing_standard": missing_standard,
+                "skipped": skipped,
+                "human_approval_required": True,
+            }
+
+        return self._global_mutate(
+            identity, key, "job_intake.standard_batch_prepared", payload, apply
+        )
+
+
     def decide_job_intake_item(self, identity, batch_id, item_id, key, value):
         payload = {
             "batch_id": batch_id,
