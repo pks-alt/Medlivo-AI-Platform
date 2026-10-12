@@ -1661,3 +1661,82 @@ def test_job_intake_ai_draft_requires_human_review_and_preserves_provenance(seed
     )
     assert detail.status_code == 200
     assert detail.json()["history"][0]["action"] == "draft.created"
+
+
+
+def test_job_intake_batch_ai_drafts_prepare_every_eligible_row_without_approval(seeded, verifier, headers):
+    calls = []
+
+    class FakeBatchJobIntakeAI:
+        def compose(self, context):
+            calls.append(context["source_job"]["title"])
+            return JobIntakeAIResult(
+                job_description=f"Standard recruiting description for {context['source_job']['title']}.",
+                responsibilities=["Provide services within the confirmed assignment and care setting."],
+                required_qualifications=["Appropriate professional background for the confirmed role."],
+                preferred_qualifications=[],
+                schedule_summary=None,
+                warnings=[],
+                provider="test_provider",
+                model="test_model",
+            )
+
+    test_client = TestClient(build_app(
+        WorkspaceStore(seeded, job_intake_ai=FakeBatchJobIntakeAI()),
+        verifier,
+    ))
+    created = test_client.post(
+        "/api/v1/team/job-intake/batches",
+        headers=headers("manager-a"),
+        json={
+            "customer_name": "Rockport",
+            "division": "Rehabilitation",
+            "source_filename": "multi-role.xlsx",
+            "mapping": {
+                "Title": "title", "Profession": "profession", "Specialty": "specialty",
+                "City": "city", "State": "state", "Start": "start_date"
+            },
+        },
+    )
+    assert created.status_code == 201
+    batch_id = created.json()["id"]
+    processed = test_client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/rows",
+        headers=headers("manager-a"),
+        json={"rows": [
+            {
+                "Title": "Contract PT", "Profession": "Physical Therapist",
+                "Specialty": "Physical Therapy", "City": "Seattle", "State": "WA",
+                "Start": "2026-11-01"
+            },
+            {
+                "Title": "Contract OT", "Profession": "Occupational Therapist",
+                "Specialty": "Occupational Therapy", "City": "Tacoma", "State": "WA",
+                "Start": "2026-11-08"
+            },
+        ]},
+    )
+    assert processed.status_code == 200
+
+    prepared = test_client.post(
+        f"/api/v1/team/job-intake/batches/{batch_id}/ai-drafts",
+        headers=headers("manager-a"),
+        json={},
+    )
+    assert prepared.status_code == 200
+    summary = prepared.json()
+    assert summary["generated"] == 2
+    assert summary["failed"] == []
+    assert summary["human_approval_required"] is True
+    assert sorted(calls) == ["Contract OT", "Contract PT"]
+
+    refreshed = test_client.get(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items",
+        headers=headers("manager-a"),
+    ).json()
+    assert len(refreshed["items"]) == 2
+    assert all(item["status"] != "approved" for item in refreshed["items"])
+    assert all(
+        item["ai_suggestions"] and item["ai_suggestions"][0]["status"] == "ai_suggested"
+        for item in refreshed["items"]
+    )
