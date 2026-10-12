@@ -3461,7 +3461,10 @@ class WorkspaceStore:
                     "plus clearly AI-suggested standard responsibilities and qualifications."
                 ),
             }
-            result = self.job_intake_ai.compose(context)
+            try:
+                result = self.job_intake_ai.compose(context)
+            except Exception:
+                raise AccessError(502, "Job Intake AI could not generate a draft. Try again or continue with source facts.") from None
             draft = {
                 "type": "jd_draft",
                 "status": "ai_suggested",
@@ -3563,6 +3566,17 @@ class WorkspaceStore:
                         )
 
                 standardized_internal_jd = final_review["standardized_internal_jd"]
+                ai_drafts = [
+                    x for x in (item["ai_suggestions"] or [])
+                    if isinstance(x, dict) and x.get("type") == "jd_draft"
+                ]
+                approved_description = str(final_values.get("description") or "").strip()
+                if ai_drafts and approved_description:
+                    latest_ai_description = str(ai_drafts[-1].get("job_description") or "").strip()
+                    source_description = str((item["normalized_job"] or {}).get("description") or "").strip()
+                    if approved_description != source_description:
+                        standardized_internal_jd["description_provenance"] = "human_approved_ai_draft"
+                        standardized_internal_jd["source_description"] = approved_description
                 conflicts = final_review["conflicts"]
                 missing_fields = final_review["missing_fields"]
             else:
