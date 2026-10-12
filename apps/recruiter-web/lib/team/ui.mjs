@@ -553,6 +553,45 @@ function renderIntakeItemReview(itemId){
  ((warnings.length||missing.length||conflicts.length)?'<div class="intake-warning-list">'+warnings.map(x=>'<span>AI warning: '+esc(x)+'</span>').join('')+missing.map(x=>'<span>Missing source fact: '+esc(x)+'</span>').join('')+conflicts.map(x=>'<span>Conflict: '+esc(x.message||x.code||x.field)+'</span>').join('')+'</div>':'')+'</div></section>';
 }
 
+async function drawJobContentStandards(){
+ if(!managed())throw new Error('Manager access required.');
+ $('#pageTitle').textContent='Job Content Standards';
+ document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+ const result=await call('/job-content-standards?limit=500'),items=result.items||[];
+ const rows=items.map(item=>'<tr><td><strong>'+esc(item.display_title)+'</strong><small>'+esc(item.profession)+(item.specialty?' · '+esc(item.specialty):'')+'</small></td><td>'+esc(item.division)+'</td><td>'+esc(item.care_setting||'All settings')+'</td><td>v'+esc(item.version)+'</td><td><span class="status-chip '+(item.status==='active'?'':'off')+'">'+esc(item.status)+'</span></td><td><button class="button compact" data-preview-standard="'+esc(item.id)+'">Preview</button></td></tr>').join('');
+ $('#main').innerHTML='<div id="message" class="status-message" role="status" aria-live="polite" hidden></div>'+
+ '<section class="hero"><div><p class="eyebrow">CANONICAL JOB CONTENT</p><h2>One Medlivo standard for every job source.</h2><p>Define approved role content once. Excel, JobDiva and future integrations use the same structured standard before channel-specific rendering.</p></div><div class="hero-number"><b>'+esc(items.filter(x=>x.status==='active').length)+'</b><small>ACTIVE STANDARDS</small></div></section>'+
+ '<div class="grid-two" style="margin-top:18px"><section class="panel"><h3>Create a standard version</h3><p class="admin-note">Customer facts always outrank this content. Standards supply Medlivo-approved role language only.</p><form id="jobContentStandardForm">'+
+ '<label for="standardDivision">Division</label><select id="standardDivision" required><option>Rehabilitation</option><option>Nursing & Allied</option><option>Locum Tenens</option></select>'+
+ '<label for="standardProfession">Profession</label><input id="standardProfession" required maxlength="200" placeholder="Physical Therapist">'+
+ '<label for="standardSpecialty">Specialty</label><input id="standardSpecialty" maxlength="200" placeholder="Optional specialty">'+
+ '<label for="standardSetting">Care setting</label><input id="standardSetting" maxlength="200" placeholder="Optional, e.g. Skilled Nursing">'+
+ '<label for="standardTitle">Candidate-facing title</label><input id="standardTitle" required maxlength="200" placeholder="Physical Therapist">'+
+ '<label for="standardIntro">Candidate introduction</label><textarea id="standardIntro" required maxlength="4000" placeholder="Medlivo is seeking..."></textarea>'+
+ '<label for="standardResponsibilities">Responsibilities</label><textarea id="standardResponsibilities" placeholder="One approved responsibility per line"></textarea>'+
+ '<label for="standardRequired">Required qualifications</label><textarea id="standardRequired" placeholder="One approved qualification per line"></textarea>'+
+ '<label for="standardPreferred">Preferred qualifications</label><textarea id="standardPreferred" placeholder="One optional qualification per line"></textarea>'+
+ '<label for="standardLicensure">Licensure / certification language</label><textarea id="standardLicensure" placeholder="One approved item per line"></textarea>'+
+ '<label for="standardOverview">Assignment overview language</label><textarea id="standardOverview" maxlength="4000"></textarea>'+
+ '<label for="standardCta">Candidate CTA</label><textarea id="standardCta" maxlength="2000"></textarea>'+
+ '<label for="standardStatus">Status</label><select id="standardStatus"><option value="draft">Draft</option><option value="active">Active</option></select>'+
+ '<div class="admin-form-actions"><button class="button primary" type="submit">Save New Version</button></div></form></section>'+
+ '<section class="panel" id="standardPreview"><h3>Website-style preview</h3><div class="empty">Choose Preview beside a standard to see the candidate-facing structure.</div></section></div>'+
+ '<div class="section-title"><h2>Standards library</h2><span class="admin-note">Versioned and reusable across all job sources</span></div>'+
+ '<div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Role</th><th>Division</th><th>Setting</th><th>Version</th><th>Status</th><th></th></tr></thead><tbody>'+(rows||'<tr><td colspan="6">No standards created yet.</td></tr>')+'</tbody></table></div>'+
+ '<footer class="footer"><span>Medlivo Recruit AI · Job Content Standards</span><span>Source facts remain authoritative</span></footer>';
+ window.__jobContentStandards=items;
+}
+function renderJobContentStandardPreview(id){
+ const item=(window.__jobContentStandards||[]).find(x=>x.id===id),host=$('#standardPreview');if(!item||!host)return;
+ const c=item.content||{},section=(title,rows)=>rows?.length?'<div class="panel"><small>'+esc(title)+'</small><ul>'+rows.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul></div>':'';
+ host.innerHTML='<h3>'+esc(item.display_title)+'</h3><p class="admin-note">'+esc(c.candidate_intro||'')+'</p>'+
+ section('RESPONSIBILITIES',c.responsibilities)+section('REQUIRED QUALIFICATIONS',c.required_qualifications)+
+ section('PREFERRED QUALIFICATIONS',c.preferred_qualifications)+section('LICENSURE / CERTIFICATION',c.licensure_certification)+
+ (c.assignment_overview?'<div class="panel"><small>ASSIGNMENT OVERVIEW</small><p>'+esc(c.assignment_overview)+'</p></div>':'')+
+ (c.candidate_cta?'<div class="notice">'+esc(c.candidate_cta)+'</div>':'')+
+ '<p class="admin-note">Preview only. Customer-specific location, schedule, dates, rate and requirements are merged later from the source job.</p>';
+}
 async function drawJobIntake(){
  if(!managed())throw new Error('Manager access required.');
  $('#pageTitle').textContent='Job intake';
@@ -584,6 +623,7 @@ root.addEventListener('click',event=>{
  if(b.dataset.matchJob)return act(b,async()=>drawMatchJob(b.dataset.matchJob));
  if(b.dataset.dailyMatchJob)return act(b,async()=>{await drawMatchQueue();drawMatchJob(b.dataset.dailyMatchJob);});
  if(b.hasAttribute('data-publications'))return act(b,()=>drawPublications());
+ if(b.dataset.previewStandard)return act(b,()=>renderJobContentStandardPreview(b.dataset.previewStandard));
  if(b.dataset.publication)return act(b,()=>loadPublication(b.dataset.publication));
  if(b.hasAttribute('data-weekly'))return act(b,()=>drawWeekly());
  if(b.hasAttribute('data-intake'))return act(b,()=>drawJobIntake());
@@ -672,6 +712,7 @@ async function boot(){
    session=await call('/session');shell();
    const section=params.get('section');
    if(section==='intake'&&managed()){await drawJobIntake();return;}
+   if(section==='standards'&&managed()){await drawJobContentStandards();return;}
    if(section==='approvals'&&managed()){await drawPublications();return;}
    await Promise.all([loadCases(),drawDailyPriorities()]);
    if(cases.length)await loadCase(cases[0].id);
