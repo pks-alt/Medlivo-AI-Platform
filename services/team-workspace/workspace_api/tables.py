@@ -699,3 +699,24 @@ job_publication_audit = Table(
 
 Index("idx_ws_job_publication_team_status", job_publications.c.tenant_id, job_publications.c.team_id, job_publications.c.recruiting_status, job_publications.c.website_status, job_publications.c.updated_at)
 Index("idx_ws_job_publication_audit_pub_created", job_publication_audit.c.tenant_id, job_publication_audit.c.publication_id, job_publication_audit.c.created_at)
+
+
+job_content_standards = Table(
+    "ws_job_content_standard", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False),
+    S("division", nullable=False), S("profession", nullable=False), S("specialty"), S("care_setting"),
+    S("display_title", nullable=False), Column("version", Integer, nullable=False),
+    S("status", nullable=False), Column("content", JSON, nullable=False, default=dict),
+    U("created_by", nullable=False), D("created_at", nullable=False), D("updated_at", nullable=False),
+    UniqueConstraint("tenant_id", "division", "profession", "specialty", "care_setting", "version"),
+    CheckConstraint("division IN ('Rehabilitation','Nursing & Allied','Locum Tenens')"),
+    CheckConstraint("status IN ('draft','active','retired')"),
+    CheckConstraint("version > 0"),
+    ForeignKeyConstraint(["tenant_id"], ["tenant.id"]),
+    ForeignKeyConstraint(["tenant_id", "created_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+Index("idx_ws_job_content_standard_lookup", job_content_standards.c.tenant_id,
+      job_content_standards.c.division, job_content_standards.c.profession,
+      job_content_standards.c.specialty, job_content_standards.c.care_setting,
+      job_content_standards.c.status, job_content_standards.c.version)
