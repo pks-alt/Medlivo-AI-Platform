@@ -605,7 +605,7 @@ async function drawJobIntake(){
  '<section class="panel" id="intakeDetail"><div class="empty">Upload a workbook or select a recent batch to review its jobs.</div></section></div>'+
  '<div class="section-title"><h2>Recent intake batches</h2><button class="button" id="refreshIntake">Refresh</button></div><div class="admin-table-wrap"><table class="admin-table"><thead><tr><th>Customer</th><th>Division</th><th>File</th><th>Ready</th><th>Review</th><th>Duplicates</th><th></th></tr></thead><tbody>'+
  (intakeBatches.length?intakeBatches.map(batch=>'<tr><td><strong>'+esc(batch.customer_name)+'</strong><small>'+esc(fmt(batch.created_at))+'</small></td><td>'+esc(batch.division)+'</td><td>'+esc(batch.source_filename)+'</td><td>'+esc(batch.ready_count)+'</td><td>'+esc(batch.review_count)+'</td><td>'+esc(batch.duplicate_count)+'</td><td><button class="button compact" data-intake-batch="'+esc(batch.id)+'">Review</button></td></tr>').join(''):'<tr><td colspan="7">No customer spreadsheets have been uploaded yet.</td></tr>')+
- '</tbody></table></div><footer class="footer"><span>Medlivo Recruit AI · Job intake</span><span>Human approval remains required before ATS write-back</span></footer>';
+ '</tbody></table></div><footer class="footer"><span>Medlivo Recruit AI · Job intake</span><span>Release '+esc(String(window.MEDLIVO_RELEASE_SHA||'unknown').slice(0,12))+' · Human approval remains required before ATS write-back</span></footer>';
  if(activeIntake&&intakeBatches.some(b=>b.id===activeIntake.id))await loadIntakeBatch(activeIntake.id);
 }
 function noteRows(rows){return rows.length?rows.map(r=>'<article class="entry"><p>'+esc(r.body)+'</p><div class="entry-meta"><span>'+esc(actor(r.actor_user_id,r.actor_display_name))+'</span><time>'+esc(fmt(r.created_at))+'</time></div></article>').join(''):'<p class="empty">No shared notes yet.</p>';}
@@ -724,8 +724,8 @@ async function boot(){
 }
 boot();
 })();`;
-export function renderTeam(enabled){
- const script='window.TEAM_ENABLED='+JSON.stringify(Boolean(enabled))+';\n'+SCRIPT;
+export function renderTeam(enabled,releaseSha='unknown'){
+ const script='window.TEAM_ENABLED='+JSON.stringify(Boolean(enabled))+';\nwindow.MEDLIVO_RELEASE_SHA='+JSON.stringify(String(releaseSha||'unknown'))+';\n'+SCRIPT;
  const digest=v=>"'sha256-"+createHash('sha256').update(v).digest('base64')+"'";
  const csp="default-src 'none'; script-src "+digest(script)+"; style-src "+digest(CSS)+"; connect-src 'self'; img-src 'self' data:; form-action 'self'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'";
  return new Response('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Medlivo Recruit AI | Team workspace</title><style>'+CSS+'</style></head><body><a class="skip" href="#main">Skip to workspace</a><div id="app"><p class="loading">Opening your team workspace…</p></div><noscript>This workspace needs JavaScript for secure team actions. Please enable JavaScript and reload.</noscript><script>'+script+'</script></body></html>',

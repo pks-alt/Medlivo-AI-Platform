@@ -47,5 +47,5 @@ export async function teamApi(request: Request): Promise<Response> {
 }
 export async function teamPage(): Promise<Response> {
   initialize();
-  return renderTeam(Boolean(gateway));
+  return renderTeam(Boolean(gateway),process.env.MEDLIVO_RELEASE_SHA||'unknown');
 }
