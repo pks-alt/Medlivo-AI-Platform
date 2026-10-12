@@ -3441,6 +3441,47 @@ class WorkspaceStore:
             return row
         return self._global_mutate(identity, key, "job.assignment.changed", payload, apply)
 
+    def _compose_job_intake_ai_draft(self, batch, item):
+        normalized = dict(item["normalized_job"] or {})
+        source_description = str(normalized.get("description") or "").strip()
+        context = {
+            "customer_name": batch["customer_name"],
+            "division": batch["division"],
+            "source_job": normalized,
+            "standardized_source_facts": item["standardized_internal_jd"] or {},
+            "missing_fields": item["missing_fields"] or [],
+            "conflicts": item["conflicts"] or [],
+            "source_description_present": bool(source_description),
+            "source_description": source_description or None,
+            "instruction": (
+                "Preserve confirmed customer facts exactly. Never invent customer-specific requirements, "
+                "experience thresholds, certifications, schedule details, rates, productivity expectations, "
+                "or facility rules. If a usable source description exists, improve structure without changing "
+                "facts. If it is missing or too thin, draft standard role content around the confirmed facts "
+                "and keep any non-source content clearly AI-suggested."
+            ),
+        }
+        try:
+            result = self.job_intake_ai.compose(context)
+        except Exception:
+            raise AccessError(
+                502,
+                "Job Intake AI could not generate a draft. Try again or continue with source facts.",
+            ) from None
+        return {
+            "type": "jd_draft",
+            "status": "ai_suggested",
+            "generated_at": now().isoformat(),
+            "provider": result.provider,
+            "model": result.model,
+            "job_description": result.job_description,
+            "responsibilities": result.responsibilities,
+            "required_qualifications": result.required_qualifications,
+            "preferred_qualifications": result.preferred_qualifications,
+            "schedule_summary": result.schedule_summary,
+            "warnings": result.warnings,
+        }
+
     def generate_job_intake_ai_draft(self, identity, batch_id, item_id, key):
         payload = {"batch_id": batch_id, "item_id": item_id}
 
@@ -3469,40 +3510,7 @@ class WorkspaceStore:
             if item["status"] in {"synced", "failed"}:
                 raise AccessError(409, "This intake item can no longer be drafted")
 
-            normalized = dict(item["normalized_job"] or {})
-            source_description = str(normalized.get("description") or "").strip()
-            context = {
-                "customer_name": batch["customer_name"],
-                "division": batch["division"],
-                "source_job": normalized,
-                "standardized_source_facts": item["standardized_internal_jd"] or {},
-                "missing_fields": item["missing_fields"] or [],
-                "conflicts": item["conflicts"] or [],
-                "source_description_present": bool(source_description),
-                "source_description": source_description or None,
-                "instruction": (
-                    "If a usable source description exists, improve structure without changing facts. "
-                    "If it is missing or too thin, draft a complete internal recruiting JD using the confirmed facts "
-                    "plus clearly AI-suggested standard responsibilities and qualifications."
-                ),
-            }
-            try:
-                result = self.job_intake_ai.compose(context)
-            except Exception:
-                raise AccessError(502, "Job Intake AI could not generate a draft. Try again or continue with source facts.") from None
-            draft = {
-                "type": "jd_draft",
-                "status": "ai_suggested",
-                "generated_at": now().isoformat(),
-                "provider": result.provider,
-                "model": result.model,
-                "job_description": result.job_description,
-                "responsibilities": result.responsibilities,
-                "required_qualifications": result.required_qualifications,
-                "preferred_qualifications": result.preferred_qualifications,
-                "schedule_summary": result.schedule_summary,
-                "warnings": result.warnings,
-            }
+            draft = self._compose_job_intake_ai_draft(batch, item)
             timestamp = now()
             conn.execute(update(t.job_intake_items).where(
                 t.job_intake_items.c.tenant_id == principal["tenant_id"],
@@ -3519,6 +3527,73 @@ class WorkspaceStore:
             return clean(after)
 
         return self._global_mutate(identity, key, "job_intake.ai_jd.generated", payload, apply)
+
+    def generate_job_intake_ai_drafts_for_batch(self, identity, batch_id, key):
+        payload = {"batch_id": batch_id}
+
+        def apply(conn, principal):
+            if principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Delivery Manager access required")
+            if self.job_intake_ai is None:
+                raise AccessError(503, "Job Intake AI drafting is not configured")
+
+            batch = conn.execute(select(t.job_intake_batches).where(
+                t.job_intake_batches.c.tenant_id == principal["tenant_id"],
+                t.job_intake_batches.c.id == batch_id,
+            )).mappings().first()
+            if batch is None:
+                raise AccessError(404, "Job intake batch not found")
+            if batch["team_id"] is not None and not self._team_allowed(conn, principal, batch["team_id"]):
+                raise AccessError(403, "Job intake batch is outside your scope")
+
+            items = conn.execute(select(t.job_intake_items).where(
+                t.job_intake_items.c.tenant_id == principal["tenant_id"],
+                t.job_intake_items.c.batch_id == batch_id,
+            ).order_by(t.job_intake_items.c.row_number).with_for_update()).mappings().all()
+
+            eligible = [
+                item for item in items
+                if item["status"] not in {"duplicate", "approved", "rejected", "synced", "failed"}
+            ]
+            generated = 0
+            skipped = len(items) - len(eligible)
+            failed = []
+            timestamp = now()
+
+            for item in eligible:
+                try:
+                    draft = self._compose_job_intake_ai_draft(batch, item)
+                except AccessError as exc:
+                    failed.append({
+                        "item_id": item["id"],
+                        "row_number": item["row_number"],
+                        "message": exc.detail if hasattr(exc, "detail") else str(exc),
+                    })
+                    continue
+                conn.execute(update(t.job_intake_items).where(
+                    t.job_intake_items.c.tenant_id == principal["tenant_id"],
+                    t.job_intake_items.c.id == item["id"],
+                ).values(ai_suggestions=[draft], updated_at=timestamp))
+                self._operational_audit(
+                    conn, principal, "job_intake.ai_jd.generated", "job_intake_item", item["id"],
+                    {"ai_suggestions": item["ai_suggestions"]}, {"ai_suggestions": [draft]},
+                    reason="Manager requested batch AI JD preparation",
+                )
+                generated += 1
+
+            return {
+                "batch_id": batch_id,
+                "total_rows": len(items),
+                "eligible_rows": len(eligible),
+                "generated": generated,
+                "skipped": skipped,
+                "failed": failed,
+                "human_approval_required": True,
+            }
+
+        return self._global_mutate(
+            identity, key, "job_intake.ai_jd.batch_generated", payload, apply
+        )
 
 
     def decide_job_intake_item(self, identity, batch_id, item_id, key, value):
