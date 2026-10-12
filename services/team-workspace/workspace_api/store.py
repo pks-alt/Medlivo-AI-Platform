@@ -288,7 +288,7 @@ class WorkspaceStore:
             return clean({
                 "source_system": "jobdiva",
                 "read_only": True,
-                "generated_at": now(),
+                "generated_at": now().isoformat(),
                 "checkpoints": checkpoints,
                 "latest_runs": latest_runs,
                 "source_counts": source_counts,
