@@ -1624,3 +1624,40 @@ def test_job_intake_ai_draft_requires_human_review_and_preserves_provenance(seed
     assert body["status"] == "approved"
     assert body["standardized_internal_jd"]["description_provenance"] == "human_approved_ai_draft"
     assert body["standardized_internal_jd"]["source_description"] == reviewed_text
+    assert body["job_publication_id"]
+
+    publications = test_client.get(
+        "/api/v1/team/job-publications?limit=100",
+        headers=headers("manager-a"),
+    )
+    assert publications.status_code == 200
+    matching = [
+        x for x in publications.json()["items"]
+        if x["intake_item_id"] == item["id"]
+    ]
+    assert len(matching) == 1
+    publication = matching[0]
+    assert publication["recruiting_status"] == "pending"
+    assert publication["website_status"] == "pending"
+    assert publication["source_snapshot"]["description"] == reviewed_text
+    reviewed_sections = [
+        x for x in publication["enhanced_snapshot"]["sections"]
+        if x["key"] == "reviewed_jd"
+    ]
+    assert reviewed_sections[0]["provenance"] == "human_approved_ai_draft"
+
+    refreshed = test_client.get(
+        f"/api/v1/team/job-intake/batches/{batch_id}/items",
+        headers=headers("manager-a"),
+    ).json()
+    refreshed_item = refreshed["items"][0]
+    assert refreshed_item["job_publication_id"] == publication["id"]
+    assert refreshed["batch"]["ready_count"] == 1
+    assert refreshed["batch"]["review_count"] == 0
+
+    detail = test_client.get(
+        f"/api/v1/team/job-publications/{publication['id']}",
+        headers=headers("manager-a"),
+    )
+    assert detail.status_code == 200
+    assert detail.json()["history"][0]["action"] == "draft.created"
