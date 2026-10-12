@@ -6991,11 +6991,24 @@ class WorkspaceStore:
                 "updated_at": timestamp,
             }
             if value.status == "active":
-                conn.execute(update(t.job_content_standards).where(
+                active_match = [
                     t.job_content_standards.c.tenant_id == principal["tenant_id"],
                     t.job_content_standards.c.division == value.division,
                     t.job_content_standards.c.profession == value.profession,
                     t.job_content_standards.c.status == "active",
+                    (
+                        t.job_content_standards.c.specialty.is_(None)
+                        if value.specialty is None
+                        else t.job_content_standards.c.specialty == value.specialty
+                    ),
+                    (
+                        t.job_content_standards.c.care_setting.is_(None)
+                        if value.care_setting is None
+                        else t.job_content_standards.c.care_setting == value.care_setting
+                    ),
+                ]
+                conn.execute(update(t.job_content_standards).where(
+                    *active_match
                 ).values(status="retired", updated_at=timestamp))
             conn.execute(insert(t.job_content_standards).values(**row))
             self._operational_audit(
