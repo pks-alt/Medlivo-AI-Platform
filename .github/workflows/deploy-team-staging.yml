@@ -1,3 +1,4 @@
+# Redeploy trigger: standards-driven job intake rollout
 name: Deploy private team staging
 
 on:
