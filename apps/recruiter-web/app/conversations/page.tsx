@@ -17,15 +17,15 @@ async function session(){
 function title(v:any){return String(v||"").replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase())}
 
 export default function ConversationsPage(){
- const[candidates,setCandidates]=useState<any[]>([]),[jobs,setJobs]=useState<any[]>([]),[priorities,setPriorities]=useState<any>({items:[]}),[drafts,setDrafts]=useState<any[]>([]);
+ const[candidates,setCandidates]=useState<any[]>([]),[jobs,setJobs]=useState<any[]>([]),[priorities,setPriorities]=useState<any>({items:[]}),[drafts,setDrafts]=useState<any[]>([]),[executions,setExecutions]=useState<any[]>([]);
  const[candidateId,setCandidateId]=useState(""),[jobId,setJobId]=useState(""),[channel,setChannel]=useState<"email"|"sms">("email"),[purpose,setPurpose]=useState("follow_up");
  const[instruction,setInstruction]=useState(""),[activeDraft,setActiveDraft]=useState<any>(null),[subject,setSubject]=useState(""),[body,setBody]=useState("");
  const[relationship,setRelationship]=useState<any>(null),[error,setError]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false);
 
  async function load(){
   setError("");
-  const[c,j,p,d]=await Promise.all([api("candidates?limit=100"),api("jobs?limit=100"),api("daily-priorities?limit=50"),api("outreach-drafts?limit=50")]);
-  setCandidates(c.items||[]);setJobs(j.items||[]);setPriorities(p);setDrafts(d.items||[]);
+  const[c,j,p,d,x]=await Promise.all([api("candidates?limit=100"),api("jobs?limit=100"),api("daily-priorities?limit=50"),api("outreach-drafts?limit=50"),api("outreach-executions?limit=50")]);
+  setCandidates(c.items||[]);setJobs(j.items||[]);setPriorities(p);setDrafts(d.items||[]);setExecutions(x.items||[]);
  }
  useEffect(()=>{load().catch(e=>setError(e.message))},[]);
  useEffect(()=>{if(!candidateId){setRelationship(null);return}api("candidates/"+candidateId+"/relationship").then(setRelationship).catch(()=>setRelationship(null))},[candidateId]);
@@ -58,6 +58,29 @@ export default function ConversationsPage(){
   }catch(e:any){setError(e.message||"Draft review failed")}finally{setBusy(false)}
  }
 
+ async function queueApproved(){
+  if(!activeDraft?.id||activeDraft.status!=="approved")return;
+  setBusy(true);setError("");setMessage("");
+  try{
+   const s=await session();
+   const queued=await api("outreach-drafts/"+activeDraft.id+"/queue",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":s.csrf,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({})});
+   setExecutions(prev=>[queued,...prev.filter(x=>x.id!==queued.id)]);
+   setMessage("Approved outreach is queued inside Medlivo. Provider activation is still required before any external send occurs.");
+  }catch(e:any){setError(e.message||"Approved outreach could not be queued")}finally{setBusy(false)}
+ }
+
+ async function cancelExecution(executionId:string){
+  setBusy(true);setError("");setMessage("");
+  try{
+   const s=await session();
+   const cancelled=await api("outreach-executions/"+executionId+"/cancel",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":s.csrf,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({reason:"Recruiter cancelled before provider delivery"})});
+   setExecutions(prev=>prev.map(x=>x.id===executionId?cancelled:x));
+   setMessage("Queued outreach cancelled before provider delivery.");
+  }catch(e:any){setError(e.message||"Queued outreach could not be cancelled")}finally{setBusy(false)}
+ }
+
+ const activeExecution=activeDraft?.id?executions.find(x=>x.draft_id===activeDraft.id):null;
+
  return <main className="page conversationsPage finalConversationsPage">
   <div className="pageHead"><div><small>Recruiter communication</small><h1>Conversations</h1><p>AI-assisted Email and Text/SMS drafting backed by trusted candidate/job data, recruiter review and an auditable draft record.</p></div><span className="sourcePill">HUMAN REVIEW REQUIRED</span></div>
   {error&&<div className="adminError"><b>Conversation action unavailable</b><span>{error}</span></div>}
@@ -66,6 +89,9 @@ export default function ConversationsPage(){
   <div className="conversationLayout">
    <section className="panelBox"><small>NEEDS RESPONSE / FOLLOW-UP</small>
     <div className="conversationQueue">{followups.map((x:any,i:number)=><article key={x.id||i}><b>{x.candidate_name||x.title||"Follow-up"}</b><span>{x.detail||x.urgency||"Review next action"}</span>{x.job_id&&<Link href={"/jobs/"+x.job_id}>Open job</Link>}</article>)}{!followups.length&&<div className="emptyState">No current follow-up actions are visible.</div>}</div>
+    <hr className="sectionRule"/>
+    <small>OUTREACH EXECUTION QUEUE</small>
+    <div className="conversationQueue">{executions.slice(0,8).map((x:any)=><article key={x.id}><b>{title(x.channel)} · {title(x.status)}</b><span>{title(x.provider)} · {x.scheduled_for?new Date(x.scheduled_for).toLocaleString():"Ready"}</span>{(x.status==="queued"||x.status==="failed")&&<button className="button subtle" disabled={busy} onClick={()=>cancelExecution(x.id)}>Cancel</button>}</article>)}{!executions.length&&<div className="emptyState">No approved outreach is queued yet.</div>}</div>
     <hr className="sectionRule"/>
     <small>RECENT AI DRAFTS</small>
     <div className="conversationQueue">{drafts.slice(0,8).map((x:any)=><button key={x.id} className="conversationDraftRow" onClick={()=>{setActiveDraft(x);setCandidateId(x.candidate_id);setJobId(x.job_id||"");setChannel(x.channel);setPurpose(x.purpose);setSubject(x.subject||"");setBody(x.body||"")}}><b>{title(x.channel)} · {title(x.purpose)}</b><span>{title(x.status)} · {x.created_at?new Date(x.created_at).toLocaleString():""}</span></button>)}{!drafts.length&&<div className="emptyState">No AI outreach drafts have been created yet.</div>}</div>
@@ -95,7 +121,8 @@ export default function ConversationsPage(){
       {(activeDraft.warnings||[]).length>0&&<div className="draftWarnings"><b>AI warnings</b>{activeDraft.warnings.map((w:any,i:number)=><span key={i}>{String(w)}</span>)}</div>}
       <div className="draftGuardrail"><b>Trusted context</b><span>{selectedCandidate?.canonical_name||"Candidate"}{selectedJob?" · "+selectedJob.title:""} · AI draft stored in Medlivo · recruiter approval required</span></div>
       {activeDraft.status==="draft"&&<div className="conversationActions"><button className="button primary" disabled={busy||!body.trim()} onClick={()=>decide("approved")}>Approve Draft</button><button className="button" disabled={busy} onClick={()=>decide("cancelled")}>Cancel Draft</button></div>}
-      {activeDraft.status==="approved"&&<div className="providerBoundary"><b>Approved — provider send not enabled</b><span>The approved Email/SMS integration will send this stored draft later. No external message is sent by this action.</span></div>}
+      {activeDraft.status==="approved"&&!activeExecution&&<div className="providerBoundary"><b>Approved — ready for guarded queue</b><span>This draft passed recruiter review. Queueing creates an auditable provider handoff, but no external message is sent until Gmail/Zoom Phone activation is enabled.</span><button className="button primary" disabled={busy} onClick={queueApproved}>Queue Approved Message</button></div>}
+      {activeExecution&&<div className="providerBoundary"><b>{title(activeExecution.status)} · {title(activeExecution.provider)}</b><span>Scheduled {activeExecution.scheduled_for?new Date(activeExecution.scheduled_for).toLocaleString():"now"} · provider delivery remains disabled until activation.</span>{(activeExecution.status==="queued"||activeExecution.status==="failed")&&<button className="button" disabled={busy} onClick={()=>cancelExecution(activeExecution.id)}>Cancel Queue</button>}</div>}
     </div>}
    </section>
   </div>
