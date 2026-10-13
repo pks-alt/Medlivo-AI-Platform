@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import RecruiterToday from "./components/RecruiterToday";
 import {useEffect,useState} from "react";
 
 function monday(){
@@ -98,88 +99,6 @@ export default function Home(){
    </main>;
  }
 
- const p=data.priorities||{},d=data.dash||{},q=data.queue||{},pa=data.protectedActions||{},f=data.funnel||{};
- const priority1=(p.items||[]).filter((x:any)=>x.type==="follow_up"||x.work_priority==="priority_1");
- const priority2=(p.items||[]).filter((x:any)=>x.type==="match_review"&&x.work_priority==="priority_2");
- const assignedJobs=(q.items||[]).filter((x:any)=>x.work_priority==="priority_1");
- const newMatches=(p.items||[]).filter((x:any)=>x.type==="match_review").slice(0,6);
- const protectedMine=(pa.items||[]).filter((x:any)=>x.is_mine&&["protected","working"].includes(x.effective_status));
- const supportAvailable=(pa.items||[]).filter((x:any)=>!x.is_mine&&x.effective_status==="available_for_support");
- const funnelItems=f.items||[];
- const interviewsToday=funnelItems.filter((x:any)=>x.interview?.scheduled_at&&todayLocal(x.interview.scheduled_at)&&!x.interview?.completed_at).slice(0,5);
- const upcomingStarts=funnelItems.filter((x:any)=>{const n=daysUntil(x.placement?.planned_start_date);return !x.placement?.actual_start_date&&n!==null&&n>=0&&n<=14}).sort((a:any,b:any)=>daysUntil(a.placement?.planned_start_date)!-daysUntil(b.placement?.planned_start_date)!).slice(0,5);
- const atRiskStarts=upcomingStarts.filter((x:any)=>["high","critical"].includes(String(x.start_readiness?.risk_level||""))||x.start_readiness?.status==="blocked");
- const attention=[...priority1.filter((x:any)=>x.type==="follow_up"),...atRiskStarts.map((x:any)=>({type:"start_risk",title:x.candidate_name,detail:x.job_title,job_id:x.job_id,candidate_id:x.candidate_id,urgency:"at_risk"}))].slice(0,6);
-
- async function markWorking(jobId:string){
-  try{
-   await post("jobs/"+jobId+"/protected-action",{action_type:"working",source_type:"medlivo"});
-   const refreshed=await get("recruiter/protected-actions?limit=50");
-   setData((current:any)=>({...current,protectedActions:refreshed}));
-  }catch(e:any){setErr(e.message)}
- }
-
- const actionHref=(x:any)=>{
-   if(x.type==="start_risk"&&x.job_id&&x.candidate_id)return "/funnel/"+x.job_id+"/"+x.candidate_id;
-   if(x.type==="follow_up")return "/conversations";
-   if(x.job_id&&x.candidate_id)return "/jobs/"+x.job_id;
-   if(x.job_id)return "/jobs/"+x.job_id;
-   return "/jobs";
- };
- const remaining=(row:any)=>{
-   if(row.effective_status==="working")return "Working";
-   if(row.effective_status==="available_for_support")return "Available for Support";
-   return String(row.remaining_business_minutes??0)+" min protected";
- };
-
- return <main className="page todayPage recruiterTodayFinal">
-   <div className="pageHead"><div><small>Recruiter command center</small><h1>Today</h1><p>Urgent work first, then assigned work, schedule, new matches and division opportunities.</p></div><span className="sourcePill">{me.division||"Rehabilitation"} · LIVE MEDLIVO</span></div>
-
-   <section className="todayWelcome finalTodayHero"><small>YOUR DAY</small><h2>What should you work on next?</h2><p>Medlivo ranks actionable work while Delivery Manager assignment remains the source of Priority 1 accountability.</p></section>
-   {actionErr&&<div className="adminError todayActionError"><b>Action could not be saved</b><span>{actionErr}</span></div>}
-
-   <div className="todayMetricGrid">
-    <article className={attention.length?"attention":""}><strong>{attention.length}</strong><b>Needs attention</b><span>Replies, follow-ups and start risks</span></article>
-    <article><strong>{assignedJobs.length}</strong><b>My jobs</b><span>Priority 1 assignments</span></article>
-    <article><strong>{newMatches.length}</strong><b>New strong matches</b><span>Unreviewed evidence-backed matches</span></article>
-    <article className={atRiskStarts.length?"attention":""}><strong>{upcomingStarts.length}</strong><b>Upcoming starts</b><span>{atRiskStarts.length} currently at risk</span></article>
-   </div>
-
-   <section className="panelBox todayFinalSection"><div className="todaySectionHead"><div><small>NEEDS YOUR ATTENTION</small><h2>Handle these before routine queue work.</h2></div><span>{attention.length} items</span></div>
-    {attention.length?<div className="todayActionGrid">{attention.map((x:any,i:number)=><article key={(x.task_id||x.candidate_id||i)+"attention"} className={"todayActionCard "+(x.urgency||"")}>
-      <div><small>{x.type==="start_risk"?"UPCOMING START RISK":"FOLLOW-UP"}</small><b>{x.title||"Review work item"}</b><span>{x.detail||x.recommended_next_action||"Needs action"}</span></div>
-      <Link href={actionHref(x)}>{x.type==="start_risk"?"Review start":"Continue"}</Link>
-    </article>)}</div>:<div className="goodState">You are caught up on urgent actions. Continue with your highest-priority assigned job.</div>}
-   </section>
-
-   <section className="panelBox todayFinalSection"><div className="todaySectionHead"><div><small>TIME-SENSITIVE ASSIGNED WORK</small><h2>Protected first-action window</h2></div><span>8 AM–5 PM Pacific · business time</span></div>
-    {protectedMine.length?<div className="protectedActionList">{protectedMine.map((x:any)=><article key={x.id} className={"protectedActionCard "+x.effective_status}>
-      <div><small>PRIORITY 1 · ASSIGNED TO YOU</small><b>{x.job_title}</b><span>{[x.city,x.state].filter(Boolean).join(", ")} · {remaining(x)}</span></div>
-      <div className="protectedActionButtons">{x.effective_status==="protected"&&<button onClick={()=>markWorking(x.job_id)}>Mark Working</button>}<Link href={"/jobs/"+x.job_id}>Open Job 360</Link></div>
-    </article>)}</div>:<div className="emptyState">No assigned jobs currently have an open protected first-action window.</div>}
-    {supportAvailable.length>0&&<><div className="todaySubhead">AVAILABLE FOR SUPPORT</div><div className="protectedActionList support">{supportAvailable.map((x:any)=><article key={x.id} className="protectedActionCard available_for_support"><div><small>PRIORITY 2 SUPPORT OPPORTUNITY</small><b>{x.job_title}</b><span>Assigned to {x.assigned_recruiter_name} · assignment stays unchanged</span></div><Link href={"/jobs/"+x.job_id}>Help on this job</Link></article>)}</div></>}
-   </section>
-
-   <section className="panelBox todayFinalSection"><div className="todaySectionHead"><div><small>MY PRIORITY 1 WORK</small><h2>Assigned jobs ranked by next action</h2></div><Link href="/jobs">View all My Jobs</Link></div>
-    {assignedJobs.length?<div className="todayJobGrid">{assignedJobs.slice(0,5).map((job:any)=><article key={job.job_id}><div><small>{job.operational?.job_priority==="hot"?"HIGH PRIORITY":"PRIORITY 1"}</small><b>{job.title}</b><span>{(job.matches||[]).length} candidate matches{job.operational?.next_action?" · "+job.operational.next_action:""}</span></div><Link href={"/jobs/"+job.job_id}>Continue work</Link></article>)}</div>:<div className="emptyState">No assigned active jobs are currently visible.</div>}
-   </section>
-
-   <div className="todayTwoColumn">
-    <section className="panelBox todayFinalSection"><div className="todaySectionHead"><div><small>TODAY'S SCHEDULE</small><h2>Interviews</h2></div><Link href="/interviews">View all</Link></div>
-      {interviewsToday.length?<div className="todayCompactList">{interviewsToday.map((x:any)=><Link key={x.id} href={"/funnel/"+x.job_id+"/"+x.candidate_id}><b>{x.candidate_name||"Candidate"}</b><span>{x.job_title||"Job"} · {new Date(x.interview.scheduled_at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}</span></Link>)}</div>:<div className="emptyState">No interviews are scheduled for today.</div>}
-    </section>
-    <section className="panelBox todayFinalSection"><div className="todaySectionHead"><div><small>UPCOMING STARTS</small><h2>Protect the start</h2></div><Link href="/funnel">View all</Link></div>
-      {upcomingStarts.length?<div className="todayCompactList">{upcomingStarts.map((x:any)=><Link key={x.id} className={["high","critical"].includes(String(x.start_readiness?.risk_level||""))?"risk":""} href={"/funnel/"+x.job_id+"/"+x.candidate_id}><b>{x.candidate_name||"Candidate"}</b><span>{x.job_title||"Job"} · starts in {daysUntil(x.placement?.planned_start_date)} days · {x.start_readiness?.status||"readiness pending"}</span></Link>)}</div>:<div className="emptyState">No starts are scheduled in the next 14 days.</div>}
-    </section>
-   </div>
-
-   <section className="panelBox todayFinalSection"><div className="todaySectionHead"><div><small>NEW STRONG MATCHES</small><h2>Opportunities Medlivo found</h2></div><Link href="/matching">Review Matching</Link></div>
-    {newMatches.length?<div className="todayMatchGrid">{newMatches.map((x:any)=><article key={x.match_id}><strong>{Number(x.score||0).toFixed(1)}</strong><div><b>{x.title||x.candidate_name||"Candidate"}</b><span>{x.detail||"Job"} · {x.work_priority==="priority_1"?"Priority 1":"Priority 2"}</span></div><Link href={x.job_id?"/jobs/"+x.job_id:"/matching"}>Review</Link></article>)}</div>:<div className="emptyState">No new strong matches are waiting for review.</div>}
-   </section>
-
-   <section className="panelBox todayFinalSection"><div className="todaySectionHead"><div><small>REHABILITATION OPPORTUNITIES YOU CAN HELP WITH</small><h2>Priority 2 · evidence-backed only</h2></div><Link href="/jobs">Division Opportunities</Link></div>
-    {priority2.length?<div className="priorityList">{priority2.map((x:any,i:number)=><article key={x.match_id||i} className="priorityItem"><div><small>PRIORITY 2 · NOT ASSIGNED TO YOU</small><b>{x.title||x.candidate_name||"Opportunity"}</b><span>{x.detail||"Division job"} · Score {Number(x.score||0).toFixed(1)} · shown because a real match exists</span></div>{x.job_id&&<Link href={"/jobs/"+x.job_id}>Review opportunity</Link>}</article>)}</div>:<div className="emptyState">No evidence-backed Priority 2 opportunities are waiting right now.</div>}
-   </section>
- </main>
+ return <RecruiterToday me={me} data={data}/>;
 
 }
