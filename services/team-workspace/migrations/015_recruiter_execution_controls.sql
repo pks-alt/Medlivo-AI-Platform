@@ -25,12 +25,15 @@ CREATE TABLE IF NOT EXISTS public.ws_protected_action_window (
   protected_until timestamptz NOT NULL,
   meaningful_action_at timestamptz,
   meaningful_action_type text,
+  meaningful_action_by uuid,
   created_at timestamptz NOT NULL,
   updated_at timestamptz NOT NULL,
   CONSTRAINT ws_protected_action_window_job_fk
     FOREIGN KEY (tenant_id, job_id) REFERENCES public.job(tenant_id, id),
   CONSTRAINT ws_protected_action_window_recruiter_fk
     FOREIGN KEY (tenant_id, recruiter_user_id) REFERENCES public.app_user(tenant_id, id),
+  CONSTRAINT ws_protected_action_window_actor_fk
+    FOREIGN KEY (tenant_id, meaningful_action_by) REFERENCES public.app_user(tenant_id, id),
   CONSTRAINT ws_protected_action_window_status_ck
     CHECK (status IN ('protected','working','available_for_support','completed')),
   CONSTRAINT ws_protected_action_window_action_ck
