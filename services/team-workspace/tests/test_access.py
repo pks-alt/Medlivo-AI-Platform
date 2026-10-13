@@ -194,7 +194,9 @@ def test_candidates_pagination_is_bounded_within_scope(client, headers):
 def test_jobs_follow_role_and_team_scope(client, headers):
     recruiter = client.get(ROOT + "/jobs", headers=headers("recruiter-a"))
     assert recruiter.status_code == 200
-    assert [row["id"] for row in recruiter.json()["items"]] == [idn(200)]
+    recruiter_items = recruiter.json()["items"]
+    assert [row["id"] for row in recruiter_items] == [idn(200), idn(201)]
+    assert [row["work_priority"] for row in recruiter_items] == ["priority_1", "priority_2"]
 
     manager = client.get(ROOT + "/jobs", headers=headers("manager-a"))
     assert manager.status_code == 200
@@ -213,11 +215,14 @@ def test_job_detail_enforces_scope_and_hides_foreign_or_other_team(client, heade
     assert own.status_code == 200
     assert own.json()["title"] == "Synthetic Physical Therapist"
 
+    same_division = client.get(ROOT + "/jobs/" + idn(201), headers=headers("recruiter-a"))
+    assert same_division.status_code == 200
+    assert same_division.json()["title"] == "Synthetic Occupational Therapist"
+
     managed = client.get(ROOT + "/jobs/" + idn(201), headers=headers("manager-a"))
     assert managed.status_code == 200
 
     for subject, job_id in (
-        ("recruiter-a", 201),
         ("recruiter-a", 202),
         ("manager-a", 202),
         ("recruiter-a", 203),
