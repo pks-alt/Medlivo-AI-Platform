@@ -17,7 +17,10 @@ async function optional(path:string){
  catch(e:any){return {ok:false,data:null,error:e?.message||"Unavailable"}}
 }
 async function post(path:string,body:any){
- const r=await fetch("/api/team/"+path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(body)});
+ const sessionResponse=await fetch("/api/team/session",{cache:"no-store",credentials:"same-origin"});
+ const session=await sessionResponse.json().catch(()=>({}));
+ if(!sessionResponse.ok||!session.csrf)throw new Error("Please reload the workspace before saving.");
+ const r=await fetch("/api/team/"+path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":session.csrf,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(body)});
  const b=await r.json().catch(()=>({}));
  if(!r.ok)throw new Error(b.detail||path+" HTTP "+r.status);
  return b;
