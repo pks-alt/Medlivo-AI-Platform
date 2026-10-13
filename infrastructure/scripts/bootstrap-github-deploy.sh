@@ -23,7 +23,7 @@ fi
 
 DEPLOYER_EMAIL="${DEPLOYER_SA}@${PROJECT_ID}.iam.gserviceaccount.com"
 
-for ROLE in roles/run.admin roles/artifactregistry.writer roles/iam.serviceAccountUser; do
+for ROLE in roles/run.admin roles/artifactregistry.writer roles/iam.serviceAccountUser roles/logging.viewer; do
   gcloud projects add-iam-policy-binding "$PROJECT_ID"     --member="serviceAccount:${DEPLOYER_EMAIL}"     --role="$ROLE"     --quiet
 done
 
