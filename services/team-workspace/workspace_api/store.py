@@ -3674,6 +3674,36 @@ class WorkspaceStore:
                     reason=value.reason,
                     created_at=timestamp,
                 ))
+                # Close any prior open first-action window. Assignment remains
+                # governed by the Delivery Manager; this does not mutate JobDiva.
+                conn.execute(
+                    update(t.protected_action_windows)
+                    .where(
+                        t.protected_action_windows.c.tenant_id == principal["tenant_id"],
+                        t.protected_action_windows.c.job_id == job_id,
+                        t.protected_action_windows.c.status.in_(["protected", "working"]),
+                    )
+                    .values(status="completed", updated_at=timestamp)
+                )
+                if recruiter_id is not None:
+                    protected_until = self._protected_deadline(
+                        conn, principal["tenant_id"], timestamp, minutes=60
+                    )
+                    conn.execute(insert(t.protected_action_windows).values(
+                        id=uid(),
+                        tenant_id=principal["tenant_id"],
+                        job_id=job_id,
+                        recruiter_user_id=recruiter_id,
+                        assignment_version=version,
+                        status="protected",
+                        assigned_at=timestamp,
+                        protected_until=protected_until,
+                        meaningful_action_at=None,
+                        meaningful_action_type=None,
+                        meaningful_action_by=None,
+                        created_at=timestamp,
+                        updated_at=timestamp,
+                    ))
 
             self._operational_audit(
                 conn, principal, "job.assignment.changed", "job", job_id,
@@ -3683,6 +3713,338 @@ class WorkspaceStore:
             )
             return row
         return self._global_mutate(identity, key, "job.assignment.changed", payload, apply)
+
+    def recruiter_protected_actions(self, identity, *, limit=50):
+        """Current recruiter first-action windows.
+
+        Expiry is computed against the stored business-time deadline. The GET
+        remains read-only: an expired protected row is returned as
+        available_for_support without silently changing assignment ownership.
+        """
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            scope = self._recruiter_scope(conn, principal)
+            rows = conn.execute(
+                select(
+                    t.protected_action_windows,
+                    t.jobs.c.title.label("job_title"),
+                    t.jobs.c.division,
+                    t.jobs.c.city,
+                    t.jobs.c.state,
+                    t.job_operational_overlays.c.recruiter_user_id.label("current_recruiter_user_id"),
+                    t.users.c.display_name.label("assigned_recruiter_name"),
+                )
+                .join(t.jobs, and_(
+                    t.jobs.c.id == t.protected_action_windows.c.job_id,
+                    t.jobs.c.tenant_id == t.protected_action_windows.c.tenant_id,
+                ))
+                .outerjoin(t.job_operational_overlays, and_(
+                    t.job_operational_overlays.c.job_id == t.jobs.c.id,
+                    t.job_operational_overlays.c.tenant_id == t.jobs.c.tenant_id,
+                ))
+                .join(t.users, and_(
+                    t.users.c.id == t.protected_action_windows.c.recruiter_user_id,
+                    t.users.c.tenant_id == t.protected_action_windows.c.tenant_id,
+                ))
+                .where(
+                    t.protected_action_windows.c.tenant_id == principal["tenant_id"],
+                    t.jobs.c.division == scope["division"],
+                    t.jobs.c.status.not_in(["closed", "cancelled", "canceled"]),
+                )
+                .order_by(
+                    t.protected_action_windows.c.assigned_at.desc(),
+                    t.protected_action_windows.c.id.desc(),
+                )
+                .limit(limit)
+            ).mappings().all()
+            timestamp = now()
+            items = []
+            seen_jobs = set()
+            for row in rows:
+                if row["job_id"] in seen_jobs:
+                    continue
+                seen_jobs.add(row["job_id"])
+                effective = self._effective_protected_status(row, timestamp)
+                mine = row["recruiter_user_id"] == principal["id"]
+                if not mine and effective != "available_for_support":
+                    continue
+                item = dict(row)
+                item["effective_status"] = effective
+                item["is_mine"] = mine
+                item["support_allowed"] = effective == "available_for_support"
+                item["assignment_unchanged"] = True
+                items.append(item)
+            return clean({
+                "items": items,
+                "business_hours": {
+                    "timezone": "America/Los_Angeles",
+                    "start": "08:00",
+                    "end": "17:00",
+                    "weekdays": [0, 1, 2, 3, 4],
+                },
+                "read_only": True,
+            })
+
+    def record_protected_action(self, identity, job_id, key, value):
+        payload = {
+            "job_id": job_id,
+            "action_type": value.action_type,
+            "candidate_id": str(value.candidate_id) if value.candidate_id else None,
+            "source_type": value.source_type,
+            "source_reference": value.source_reference,
+        }
+        def apply(conn, principal):
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            scope = self._recruiter_scope(conn, principal)
+            job = conn.execute(select(t.jobs).where(
+                t.jobs.c.tenant_id == principal["tenant_id"],
+                t.jobs.c.id == job_id,
+                t.jobs.c.division == scope["division"],
+            )).mappings().first()
+            if job is None:
+                raise AccessError(404, "Job not found")
+
+            row = conn.execute(
+                select(t.protected_action_windows)
+                .where(
+                    t.protected_action_windows.c.tenant_id == principal["tenant_id"],
+                    t.protected_action_windows.c.job_id == job_id,
+                )
+                .order_by(
+                    t.protected_action_windows.c.assigned_at.desc(),
+                    t.protected_action_windows.c.id.desc(),
+                )
+                .limit(1)
+                .with_for_update()
+            ).mappings().first()
+            if row is None:
+                raise AccessError(409, "This job does not have an active first-action window")
+
+            effective = self._effective_protected_status(row)
+            mine = row["recruiter_user_id"] == principal["id"]
+            if not mine and effective != "available_for_support":
+                raise AccessError(409, "The assigned recruiter still has the protected first-action window")
+            if value.action_type not in PROTECTED_ACTION_TYPES:
+                raise AccessError(422, "Unsupported protected action")
+
+            timestamp = now()
+            new_status = "working" if value.action_type == "working" else "completed"
+            conn.execute(
+                update(t.protected_action_windows)
+                .where(
+                    t.protected_action_windows.c.tenant_id == principal["tenant_id"],
+                    t.protected_action_windows.c.id == row["id"],
+                )
+                .values(
+                    status=new_status,
+                    meaningful_action_at=timestamp,
+                    meaningful_action_type=value.action_type,
+                    meaningful_action_by=principal["id"],
+                    updated_at=timestamp,
+                )
+            )
+
+            if value.candidate_id is not None:
+                event_map = {
+                    "candidate_reply": "candidate_reply",
+                    "call_completed": "completed_call",
+                    "email_sent": "email_sent",
+                    "sms_sent": "sms_sent",
+                    "working": "working",
+                    "follow_up_completed": "follow_up_completed",
+                    "submission_advanced": "submission_advanced",
+                    "interview_advanced": "interview_advanced",
+                }
+                event_type = event_map.get(value.action_type)
+                if event_type:
+                    event_meaningful = event_type in RELATIONSHIP_MEANINGFUL_EVENTS
+                    conn.execute(insert(t.candidate_engagement_events).values(
+                        id=uid(),
+                        tenant_id=principal["tenant_id"],
+                        candidate_id=str(value.candidate_id),
+                        recruiter_user_id=principal["id"],
+                        job_id=job_id,
+                        event_type=event_type,
+                        meaningful=event_meaningful,
+                        source_type=value.source_type,
+                        source_reference=value.source_reference,
+                        occurred_at=timestamp,
+                        created_at=timestamp,
+                    ))
+
+            self._operational_audit(
+                conn, principal, "job.protected_action.recorded", "job", job_id,
+                {"status": effective, "assigned_recruiter_user_id": row["recruiter_user_id"]},
+                {
+                    "status": new_status,
+                    "action_type": value.action_type,
+                    "action_by": principal["id"],
+                    "assignment_unchanged": True,
+                },
+            )
+            return clean({
+                **dict(row),
+                "status": new_status,
+                "effective_status": new_status,
+                "meaningful_action_at": timestamp,
+                "meaningful_action_type": value.action_type,
+                "meaningful_action_by": principal["id"],
+                "assignment_unchanged": True,
+            })
+        return self._global_mutate(identity, key, "job.protected_action.recorded", payload, apply)
+
+    def candidate_relationship(self, identity, candidate_id):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] == "recruiter":
+                if not self._candidate_in_recruiter_division(conn, principal, candidate_id):
+                    raise AccessError(404, "Candidate not found")
+            elif principal["role"] not in {"manager", "admin"}:
+                raise AccessError(403, "Workspace access required")
+
+            relationship = conn.execute(
+                select(
+                    t.candidate_relationships,
+                    t.users.c.display_name.label("recruiter_name"),
+                )
+                .join(t.users, and_(
+                    t.users.c.id == t.candidate_relationships.c.recruiter_user_id,
+                    t.users.c.tenant_id == t.candidate_relationships.c.tenant_id,
+                ))
+                .where(
+                    t.candidate_relationships.c.tenant_id == principal["tenant_id"],
+                    t.candidate_relationships.c.candidate_id == candidate_id,
+                    t.candidate_relationships.c.status == "active",
+                )
+                .order_by(t.candidate_relationships.c.last_meaningful_at.desc())
+                .limit(1)
+            ).mappings().first()
+            events = conn.execute(
+                select(
+                    t.candidate_engagement_events,
+                    t.users.c.display_name.label("recruiter_name"),
+                )
+                .join(t.users, and_(
+                    t.users.c.id == t.candidate_engagement_events.c.recruiter_user_id,
+                    t.users.c.tenant_id == t.candidate_engagement_events.c.tenant_id,
+                ))
+                .where(
+                    t.candidate_engagement_events.c.tenant_id == principal["tenant_id"],
+                    t.candidate_engagement_events.c.candidate_id == candidate_id,
+                )
+                .order_by(t.candidate_engagement_events.c.occurred_at.desc())
+                .limit(25)
+            ).mappings().all()
+            item = clean(relationship) if relationship else None
+            if item:
+                item["is_mine"] = item["recruiter_user_id"] == principal["id"]
+                last = relationship["last_meaningful_at"]
+                if last and last.tzinfo is None:
+                    last = last.replace(tzinfo=timezone.utc)
+                item["relationship_age_hours"] = round(max(0, (now() - last).total_seconds()) / 3600, 1) if last else None
+            return clean({
+                "candidate_id": candidate_id,
+                "relationship": item,
+                "events": events,
+                "company_owned_candidate": True,
+                "relationship_is_operational_not_permanent_ownership": True,
+            })
+
+    def record_candidate_engagement(self, identity, candidate_id, key, value):
+        payload = {
+            "candidate_id": candidate_id,
+            "event_type": value.event_type,
+            "job_id": str(value.job_id) if value.job_id else None,
+            "source_type": value.source_type,
+            "source_reference": value.source_reference,
+            "occurred_at": value.occurred_at,
+        }
+        def apply(conn, principal):
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            if not self._candidate_in_recruiter_division(conn, principal, candidate_id):
+                raise AccessError(404, "Candidate not found")
+
+            meaningful = value.event_type in RELATIONSHIP_MEANINGFUL_EVENTS
+            timestamp = value.occurred_at or now()
+            active = conn.execute(
+                select(t.candidate_relationships)
+                .where(
+                    t.candidate_relationships.c.tenant_id == principal["tenant_id"],
+                    t.candidate_relationships.c.candidate_id == candidate_id,
+                    t.candidate_relationships.c.status == "active",
+                )
+                .order_by(t.candidate_relationships.c.last_meaningful_at.desc())
+                .limit(1)
+                .with_for_update()
+            ).mappings().first()
+
+            if meaningful and active is not None and active["recruiter_user_id"] != principal["id"]:
+                raise AccessError(409, "Candidate has an active relationship with another recruiter")
+
+            conn.execute(insert(t.candidate_engagement_events).values(
+                id=uid(),
+                tenant_id=principal["tenant_id"],
+                candidate_id=candidate_id,
+                recruiter_user_id=principal["id"],
+                job_id=str(value.job_id) if value.job_id else None,
+                event_type=value.event_type,
+                meaningful=meaningful,
+                source_type=value.source_type,
+                source_reference=value.source_reference,
+                occurred_at=timestamp,
+                created_at=now(),
+            ))
+
+            if meaningful:
+                if active is None:
+                    relationship = dict(
+                        id=uid(),
+                        tenant_id=principal["tenant_id"],
+                        candidate_id=candidate_id,
+                        recruiter_user_id=principal["id"],
+                        status="active",
+                        started_at=timestamp,
+                        last_meaningful_at=timestamp,
+                        last_meaningful_type=value.event_type,
+                        ended_at=None,
+                        created_at=now(),
+                        updated_at=now(),
+                    )
+                    conn.execute(insert(t.candidate_relationships).values(**relationship))
+                else:
+                    relationship = dict(
+                        active,
+                        last_meaningful_at=timestamp,
+                        last_meaningful_type=value.event_type,
+                        updated_at=now(),
+                    )
+                    conn.execute(
+                        update(t.candidate_relationships)
+                        .where(
+                            t.candidate_relationships.c.tenant_id == principal["tenant_id"],
+                            t.candidate_relationships.c.id == active["id"],
+                        )
+                        .values(
+                            last_meaningful_at=timestamp,
+                            last_meaningful_type=value.event_type,
+                            updated_at=now(),
+                        )
+                    )
+            else:
+                relationship = dict(active) if active else None
+
+            return clean({
+                "candidate_id": candidate_id,
+                "event_type": value.event_type,
+                "meaningful": meaningful,
+                "relationship": relationship,
+                "unanswered_outreach_does_not_establish_relationship": not meaningful,
+            })
+        return self._global_mutate(identity, key, "candidate.engagement.recorded", payload, apply)
 
     def generate_job_intake_ai_draft(self, identity, batch_id, item_id, key):
         payload = {"batch_id": batch_id, "item_id": item_id}
