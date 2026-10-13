@@ -185,6 +185,9 @@ test("Conversations uses persisted outreach APIs with guarded Gmail pilot delive
   assert.match(page, /Send Approved Email/i);
   assert.match(page, /gmail\/messages/);
   assert.match(page, /RECENT GMAIL REPLIES/);
+  assert.match(page, /FOLLOW-UP PLANS/);
+  assert.match(page, /Start 3 \/ 7 \/ 14 Day Follow-up Plan/);
+  assert.match(page, /Stop Email \/ Opt Out/);
   assert.match(page, /X-CSRF-Token/);
   assert.match(page, /policy_version/);
   assert.doesNotMatch(page, /send-email|send-sms|\/send"/);
