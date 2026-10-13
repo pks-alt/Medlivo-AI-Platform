@@ -4261,6 +4261,141 @@ class WorkspaceStore:
             ).mappings().all()
             return clean({"items": [dict(row) for row in rows]})
 
+    def prepare_due_followups(self, identity, key, value):
+        payload = {"limit": value.limit}
+        def apply(conn, principal):
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            if self.outreach_ai is None:
+                raise AccessError(503, "Recruiter outreach AI is not configured")
+            timestamp = now()
+            rows = conn.execute(
+                select(
+                    t.followup_sequence_steps,
+                    t.followup_sequences.c.recruiter_user_id,
+                    t.followup_sequences.c.candidate_id,
+                    t.followup_sequences.c.job_id,
+                    t.followup_sequences.c.status.label("sequence_status"),
+                    t.followup_sequences.c.stop_on_reply,
+                )
+                .join(t.followup_sequences, t.followup_sequences.c.id == t.followup_sequence_steps.c.sequence_id)
+                .where(
+                    t.followup_sequence_steps.c.tenant_id == principal["tenant_id"],
+                    t.followup_sequences.c.recruiter_user_id == principal["id"],
+                    t.followup_sequences.c.status == "active",
+                    t.followup_sequence_steps.c.status == "scheduled",
+                    t.followup_sequence_steps.c.due_at <= timestamp,
+                )
+                .order_by(t.followup_sequence_steps.c.due_at, t.followup_sequence_steps.c.step_number)
+                .limit(value.limit)
+                .with_for_update()
+            ).mappings().all()
+            prepared = []
+            for step in rows:
+                suppressed = conn.execute(
+                    select(t.contact_suppressions.c.candidate_id).where(
+                        t.contact_suppressions.c.tenant_id == principal["tenant_id"],
+                        t.contact_suppressions.c.candidate_id == step["candidate_id"],
+                        t.contact_suppressions.c.channel == "email",
+                    )
+                ).first()
+                if suppressed is not None:
+                    conn.execute(
+                        update(t.followup_sequence_steps)
+                        .where(t.followup_sequence_steps.c.id == step["id"])
+                        .values(status="cancelled", updated_at=timestamp)
+                    )
+                    continue
+
+                candidate = conn.execute(
+                    select(t.candidates).where(
+                        t.candidates.c.tenant_id == principal["tenant_id"],
+                        t.candidates.c.id == step["candidate_id"],
+                    )
+                ).mappings().first()
+                if candidate is None:
+                    continue
+                job = None
+                if step["job_id"]:
+                    job = conn.execute(
+                        select(t.jobs).where(
+                            t.jobs.c.tenant_id == principal["tenant_id"],
+                            t.jobs.c.id == step["job_id"],
+                        )
+                    ).mappings().first()
+
+                source_context = clean({
+                    "candidate": {
+                        "id": candidate["id"],
+                        "canonical_name": candidate["canonical_name"],
+                        "profession": candidate["profession"],
+                        "specialty": candidate["specialty"],
+                        "city": candidate["city"],
+                        "state": candidate["state"],
+                    },
+                    "job": dict(job) if job else None,
+                    "followup_sequence": {
+                        "sequence_id": step["sequence_id"],
+                        "step_id": step["id"],
+                        "step_number": step["step_number"],
+                        "due_at": step["due_at"],
+                    },
+                })
+                try:
+                    result = self.outreach_ai.compose({
+                        "channel": "email",
+                        "purpose": "follow_up",
+                        "instruction": (
+                            f"Prepare follow-up step {step['step_number']} for recruiter review. "
+                            "Use only trusted context and do not invent new facts."
+                        ),
+                        "source_context": source_context,
+                    })
+                except Exception:
+                    continue
+
+                draft = dict(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    candidate_id=step["candidate_id"],
+                    job_id=step["job_id"],
+                    recruiter_user_id=principal["id"],
+                    followup_sequence_id=step["sequence_id"],
+                    followup_sequence_step_id=step["id"],
+                    channel="email",
+                    purpose="follow_up",
+                    status="draft",
+                    subject=result.subject,
+                    body=result.body,
+                    warnings=result.warnings,
+                    source_context=source_context,
+                    model_provider=result.provider,
+                    model_version=result.model,
+                    policy_version="outreach-human-review-v1",
+                    approved_by=None,
+                    approved_at=None,
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                )
+                conn.execute(insert(t.outreach_drafts).values(**draft))
+                conn.execute(
+                    update(t.followup_sequence_steps)
+                    .where(t.followup_sequence_steps.c.id == step["id"])
+                    .values(
+                        status="ready_for_review",
+                        outreach_draft_id=draft["id"],
+                        updated_at=timestamp,
+                    )
+                )
+                prepared.append(clean(draft))
+            return {
+                "prepared": prepared,
+                "count": len(prepared),
+                "human_review_required": True,
+                "automatic_send_enabled": False,
+            }
+        return self._global_mutate(identity, key, "followup.due.prepared", payload, apply)
+
     def create_followup_sequence(self, identity, key, value):
         payload = {
             "candidate_id": str(value.candidate_id),
