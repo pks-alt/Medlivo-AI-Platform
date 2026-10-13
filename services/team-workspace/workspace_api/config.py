@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     submission_ai_project: str = ""
     submission_ai_location: str = "global"
     submission_ai_model: str = ""
+    outreach_ai_enabled: bool = False
+    outreach_ai_project: str = ""
+    outreach_ai_location: str = "global"
+    outreach_ai_model: str = ""
     submission_packet_download_enabled: bool = False
     submission_document_buckets: str = ""
 
@@ -31,6 +35,13 @@ class Settings(BaseSettings):
                     raise ValueError("Configure the Vertex AI location for Submission Studio")
                 if not self.submission_ai_model or "/" in self.submission_ai_model:
                     raise ValueError("Configure the approved Submission Studio model")
+            if self.outreach_ai_enabled:
+                if not self.outreach_ai_project or "/" in self.outreach_ai_project:
+                    raise ValueError("Configure the Vertex AI project for recruiter outreach")
+                if not self.outreach_ai_location or "/" in self.outreach_ai_location:
+                    raise ValueError("Configure the Vertex AI location for recruiter outreach")
+                if not self.outreach_ai_model or "/" in self.outreach_ai_model:
+                    raise ValueError("Configure the approved recruiter outreach model")
             if self.submission_packet_download_enabled:
                 buckets = [x.strip() for x in self.submission_document_buckets.split(",") if x.strip()]
                 if not buckets or any("/" in x or ":" in x for x in buckets):
