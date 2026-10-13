@@ -14,19 +14,27 @@ const fmtTime=(v:any)=>{if(!v)return "—";const d=new Date(v);return Number.isN
 const label=(v:any)=>String(v||"").replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase());
 
 export default function RecruiterToday({me,data}:{me:any,data:any}){
- const[protectedData,setProtectedData]=useState<any>({items:[]});
- const[funnel,setFunnel]=useState<any>({items:[]});
+ const[protectedData,setProtectedData]=useState<any>(data.protectedActions||{items:[]});
+ const[funnel,setFunnel]=useState<any>(data.funnel||{items:[]});
  const[notice,setNotice]=useState("");
  const[busy,setBusy]=useState("");
- useEffect(()=>{Promise.all([api("recruiter/protected-actions?limit=50"),api("funnel?limit=200")]).then(([p,f])=>{setProtectedData(p);setFunnel(f)}).catch(()=>{})},[]);
+ useEffect(()=>{if(data.protectedActions&&data.funnel)return;Promise.all([api("recruiter/protected-actions?limit=50"),api("funnel?limit=200")]).then(([p,f])=>{setProtectedData(p);setFunnel(f)}).catch(()=>{})},[data.protectedActions,data.funnel]);
 
  const p=data.priorities||{},d=data.dash||{},q=data.queue||{};
  const attention=useMemo(()=>[...(p.items||[])].filter((x:any)=>x.type==="follow_up"||["overdue","critical","high"].includes(String(x.urgency||"").toLowerCase())).slice(0,5),[p]);
  const p1=useMemo(()=>[...(q.items||[])].filter((x:any)=>x.work_priority==="priority_1").slice(0,5),[q]);
  const p2=useMemo(()=>[...(q.items||[])].filter((x:any)=>x.work_priority==="priority_2").slice(0,4),[q]);
  const protectedMine=useMemo(()=>[...(protectedData.items||[])].filter((x:any)=>x.is_mine&&["protected","working"].includes(x.effective_status)).slice(0,3),[protectedData]);
- const schedule=useMemo(()=>[...(funnel.items||[])].filter((x:any)=>x.interview?.scheduled_at&&!x.interview?.completed_at).sort((a:any,b:any)=>new Date(a.interview.scheduled_at).getTime()-new Date(b.interview.scheduled_at).getTime()).slice(0,4),[funnel]);
- const starts=useMemo(()=>[...(funnel.items||[])].filter((x:any)=>x.placement?.planned_start_date&&!x.placement?.actual_start_date).sort((a:any,b:any)=>(daysUntil(a.placement.planned_start_date)??999)-(daysUntil(b.placement.planned_start_date)??999)).slice(0,4),[funnel]);
+ const supportAvailable=useMemo(()=>[...(protectedData.items||[])].filter((x:any)=>!x.is_mine&&x.effective_status==="available_for_support").slice(0,4),[protectedData]);
+ const schedule=useMemo(()=>[...(funnel.items||[])].filter((x:any)=>{
+   if(!x.interview?.scheduled_at||x.interview?.completed_at)return false;
+   const d=new Date(x.interview.scheduled_at),n=new Date();
+   return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate();
+ }).sort((a:any,b:any)=>new Date(a.interview.scheduled_at).getTime()-new Date(b.interview.scheduled_at).getTime()).slice(0,4),[funnel]);
+ const starts=useMemo(()=>[...(funnel.items||[])].filter((x:any)=>{
+   const n=daysUntil(x.placement?.planned_start_date);
+   return x.placement?.planned_start_date&&!x.placement?.actual_start_date&&n!==null&&n>=0&&n<=14;
+ }).sort((a:any,b:any)=>(daysUntil(a.placement.planned_start_date)??999)-(daysUntil(b.placement.planned_start_date)??999)).slice(0,4),[funnel]);
  const continueItem=attention[0]||p1[0]||null;
 
  async function markWorking(jobId:string){
@@ -59,7 +67,8 @@ export default function RecruiterToday({me,data}:{me:any,data:any}){
   {continueItem&&<section className="panelBox recruiterContinue"><small>CONTINUE WHERE YOU LEFT OFF</small><div><h2>{continueItem.candidate_name||continueItem.title||"Priority work"}</h2><p>{continueItem.detail||"Resume the highest-ranked current work item."}</p></div>{continueItem.job_id?<Link className="linkButton" href={"/jobs/"+continueItem.job_id}>Continue work</Link>:<Link className="linkButton" href="/conversations">Continue</Link>}</section>}
 
   <section className="panelBox recruiterTodaySection"><div className="todaySectionHead"><div><small>TIME-SENSITIVE ASSIGNED WORK</small><h2>Protected first-action window</h2></div><span>8 AM–5 PM Pacific · weekdays</span></div>
-   {protectedMine.length?<div className="protectedActionGrid">{protectedMine.map((x:any)=><article key={x.id} className={"protectedActionCard "+x.effective_status}><div><span className="workPriorityPill">PRIORITY 1</span><h3>{x.job_title}</h3><p>{[x.city,x.state].filter(Boolean).join(", ")} · Assigned to {x.assigned_recruiter_name||"you"}</p><small>Protected until {x.protected_until?new Date(x.protected_until).toLocaleString():"—"} · Status {label(x.effective_status)}</small></div><div className="protectedActionButtons">{x.effective_status==="protected"&&<button disabled={busy===x.job_id} onClick={()=>markWorking(x.job_id)}>{busy===x.job_id?"Saving…":"Mark Working"}</button>}<Link href={"/jobs/"+x.job_id}>Open Job 360</Link></div></article>)}</div>:<div className="emptyState">No active protected first-action window is currently visible.</div>}
+   {protectedMine.length?<div className="protectedActionGrid">{protectedMine.map((x:any)=><article key={x.id} className={"protectedActionCard "+x.effective_status}><div><span className="workPriorityPill">PRIORITY 1</span><h3>{x.job_title}</h3><p>{[x.city,x.state].filter(Boolean).join(", ")} · Assigned to {x.assigned_recruiter_name||"you"}</p><small>{x.effective_status==="working"?"Working":String(x.remaining_business_minutes??0)+" working minutes remaining"} · assignment protected</small></div><div className="protectedActionButtons">{x.effective_status==="protected"&&<button disabled={busy===x.job_id} onClick={()=>markWorking(x.job_id)}>{busy===x.job_id?"Saving…":"Mark Working"}</button>}<Link href={"/jobs/"+x.job_id}>Open Job 360</Link></div></article>)}</div>:<div className="emptyState">No active protected first-action window is currently visible.</div>}
+   {supportAvailable.length>0&&<><div className="todaySupportLabel">AVAILABLE FOR SUPPORT</div><div className="protectedActionGrid support">{supportAvailable.map((x:any)=><article key={x.id} className="protectedActionCard available_for_support"><div><span className="workPriorityPill">PRIORITY 2 SUPPORT</span><h3>{x.job_title}</h3><p>Assigned to {x.assigned_recruiter_name||"another recruiter"} · assignment stays unchanged</p><small>Protected first-action window expired. Same-division support is now allowed.</small></div><div className="protectedActionButtons"><Link href={"/jobs/"+x.job_id}>Help on this job</Link></div></article>)}</div></>}
   </section>
 
   <section className="panelBox recruiterTodaySection"><div className="todaySectionHead"><div><small>MY PRIORITY 1 WORK</small><h2>Assigned jobs ranked by next action</h2></div><Link href="/jobs">View all My Jobs</Link></div>
