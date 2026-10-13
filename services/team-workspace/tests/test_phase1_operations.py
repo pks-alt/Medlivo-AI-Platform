@@ -1845,3 +1845,179 @@ def test_batch_jd_preparation_uses_active_medlivo_standard_and_flags_unmatched_r
     assert draft["standard_version"] == 1
     assert draft["job_description"].startswith("Medlivo is seeking")
     assert pt["status"] != "approved"
+
+
+def test_assignment_creates_protected_first_action_window(client, headers):
+    assigned = client.put(
+        f"/api/v1/team/jobs/{idn(200)}/assignment",
+        headers=headers("manager-a"),
+        json={
+            "recruiter_user_id": idn(11),
+            "team_id": idn(30),
+            "reason": "Balance Rehabilitation recruiter workload",
+            "expected_version": 0,
+        },
+    )
+    assert assigned.status_code == 200
+
+    windows = client.get(
+        "/api/v1/team/recruiter/protected-actions",
+        headers=headers("recruiter-b"),
+    )
+    assert windows.status_code == 200
+    item = next(x for x in windows.json()["items"] if x["job_id"] == idn(200))
+    assert item["is_mine"] is True
+    assert item["effective_status"] == "protected"
+    assert item["assignment_unchanged"] is True
+    assert item["protected_until"] > item["assigned_at"]
+
+
+def test_assigned_recruiter_can_mark_protected_job_working(client, headers):
+    assigned = client.put(
+        f"/api/v1/team/jobs/{idn(200)}/assignment",
+        headers=headers("manager-a"),
+        json={
+            "recruiter_user_id": idn(11),
+            "team_id": idn(30),
+            "reason": "Assign for protected action test",
+            "expected_version": 0,
+        },
+    )
+    assert assigned.status_code == 200
+
+    action = client.post(
+        f"/api/v1/team/jobs/{idn(200)}/protected-action",
+        headers=headers("recruiter-b"),
+        json={"action_type": "working", "source_type": "medlivo"},
+    )
+    assert action.status_code == 200
+    assert action.json()["effective_status"] == "working"
+    assert action.json()["meaningful_action_type"] == "working"
+    assert action.json()["assignment_unchanged"] is True
+
+
+def test_unanswered_outreach_does_not_establish_candidate_relationship(client, headers):
+    response = client.post(
+        f"/api/v1/team/candidates/{idn(300)}/engagement",
+        headers=headers("recruiter-a"),
+        json={
+            "event_type": "sms_sent",
+            "job_id": idn(200),
+            "source_type": "medlivo",
+            "source_reference": "synthetic-message",
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["meaningful"] is False
+    assert response.json()["relationship"] is None
+
+    relationship = client.get(
+        f"/api/v1/team/candidates/{idn(300)}/relationship",
+        headers=headers("recruiter-a"),
+    )
+    assert relationship.status_code == 200
+    assert relationship.json()["relationship"] is None
+    assert relationship.json()["events"][0]["meaningful"] is False
+
+
+def test_meaningful_engagement_establishes_and_refreshes_relationship(client, headers):
+    created = client.post(
+        f"/api/v1/team/candidates/{idn(300)}/engagement",
+        headers=headers("recruiter-a"),
+        json={
+            "event_type": "candidate_reply",
+            "job_id": idn(200),
+            "source_type": "manual",
+            "source_reference": "synthetic-reply",
+        },
+    )
+    assert created.status_code == 200
+    assert created.json()["meaningful"] is True
+    assert created.json()["relationship"]["recruiter_user_id"] == idn(10)
+
+    refreshed = client.post(
+        f"/api/v1/team/candidates/{idn(300)}/engagement",
+        headers=headers("recruiter-a"),
+        json={
+            "event_type": "availability_confirmed",
+            "job_id": idn(200),
+            "source_type": "manual",
+            "source_reference": "synthetic-call",
+        },
+    )
+    assert refreshed.status_code == 200
+    assert refreshed.json()["relationship"]["last_meaningful_type"] == "availability_confirmed"
+
+    relationship = client.get(
+        f"/api/v1/team/candidates/{idn(300)}/relationship",
+        headers=headers("recruiter-a"),
+    )
+    assert relationship.status_code == 200
+    assert relationship.json()["relationship"]["is_mine"] is True
+    assert relationship.json()["company_owned_candidate"] is True
+
+
+def test_other_recruiter_cannot_bypass_active_candidate_relationship(client, headers):
+    established = client.post(
+        f"/api/v1/team/candidates/{idn(301)}/engagement",
+        headers=headers("recruiter-b"),
+        json={
+            "event_type": "completed_call",
+            "job_id": idn(201),
+            "source_type": "manual",
+            "source_reference": "synthetic-completed-call",
+        },
+    )
+    assert established.status_code == 200
+
+    blocked = client.post(
+        f"/api/v1/team/candidates/{idn(301)}/engagement",
+        headers=headers("recruiter-a"),
+        json={
+            "event_type": "interest_confirmed",
+            "job_id": idn(201),
+            "source_type": "manual",
+            "source_reference": "attempted-bypass",
+        },
+    )
+    assert blocked.status_code == 409
+    assert "another recruiter" in blocked.json()["detail"].lower()
+
+    visible = client.get(
+        f"/api/v1/team/candidates/{idn(301)}/relationship",
+        headers=headers("recruiter-a"),
+    )
+    assert visible.status_code == 200
+    assert visible.json()["relationship"]["is_mine"] is False
+    assert visible.json()["relationship"]["recruiter_user_id"] == idn(11)
+
+
+def test_expired_window_becomes_same_division_support_without_reassignment(client, headers, seeded):
+    assigned = client.put(
+        f"/api/v1/team/jobs/{idn(200)}/assignment",
+        headers=headers("manager-a"),
+        json={
+            "recruiter_user_id": idn(11),
+            "team_id": idn(30),
+            "reason": "Assign for support expiry test",
+            "expected_version": 0,
+        },
+    )
+    assert assigned.status_code == 200
+    with seeded.begin() as conn:
+        conn.execute(
+            update(t.protected_action_windows)
+            .where(t.protected_action_windows.c.job_id == idn(200))
+            .values(protected_until=now()-timedelta(minutes=1))
+        )
+
+    support = client.get(
+        "/api/v1/team/recruiter/protected-actions",
+        headers=headers("recruiter-a"),
+    )
+    assert support.status_code == 200
+    item = next(x for x in support.json()["items"] if x["job_id"] == idn(200))
+    assert item["effective_status"] == "available_for_support"
+    assert item["is_mine"] is False
+    assert item["support_allowed"] is True
+    assert item["current_recruiter_user_id"] == idn(11)
