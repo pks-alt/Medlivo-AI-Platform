@@ -3884,22 +3884,6 @@ class WorkspaceStore:
                 raise AccessError(502, "Recruiter outreach AI could not generate a draft") from None
 
             timestamp = now()
-            prior_thread_id = None
-            if provider == "gmail":
-                prior_thread_id = conn.execute(
-                    select(t.outreach_executions.c.provider_thread_id)
-                    .where(
-                        t.outreach_executions.c.tenant_id == principal["tenant_id"],
-                        t.outreach_executions.c.recruiter_user_id == principal["id"],
-                        t.outreach_executions.c.candidate_id == draft["candidate_id"],
-                        t.outreach_executions.c.provider == "gmail",
-                        t.outreach_executions.c.status == "sent",
-                        t.outreach_executions.c.provider_thread_id.is_not(None),
-                    )
-                    .order_by(t.outreach_executions.c.sent_at.desc())
-                    .limit(1)
-                ).scalar_one_or_none()
-
             row = dict(
                 id=uid(),
                 tenant_id=principal["tenant_id"],
