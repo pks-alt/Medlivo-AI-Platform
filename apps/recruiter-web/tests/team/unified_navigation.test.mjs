@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-test("Weekly is exposed through the unified app shell", async () => {
+test("My Week is exposed through the finalized recruiter workspace shell", async () => {
   const shell = await readFile(new URL("../../app/components/WorkspaceShell.tsx", import.meta.url), "utf8");
-  assert.match(shell, /href:"\/weekly",label:"Weekly",show:true/);
-  assert.match(shell, /pathname\.startsWith\("\/weekly"\)/);
+  assert.match(shell, /href:"\/weekly",label:"My Week"/);
+  assert.match(shell, /return base!=="\/"&&pathname\.startsWith\(base\)/);
 });
 
 test("Weekly has a first-class application route", async () => {
@@ -174,10 +174,31 @@ test("New recruiter destinations are first-class routes", async () => {
   }
 });
 
-test("Conversations covers AI email and text drafts without enabling provider sends", async () => {
+test("Conversations uses real AI email and text draft APIs without enabling provider sends", async () => {
   const page = await readFile(new URL("../../app/conversations/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /AI EMAIL \/ TEXT DRAFT/);
+  assert.match(page, /AI Email \/ Text Draft/);
   assert.match(page, /Text \/ SMS/);
-  assert.match(page, /No provider send is triggered from this page/);
-  assert.match(page, /Sending will be wired only after approved email\/SMS provider integration/);
+  assert.match(page, /post\("outreach-drafts"/);
+  assert.match(page, /Generate with Medlivo AI/);
+  assert.match(page, /external send disabled/i);
+  assert.match(page, /X-CSRF-Token/);
+  assert.doesNotMatch(page, /send-email|send-sms|\/send"/);
+});
+
+test("Today consumes protected action windows and preserves assignment", async () => {
+  const page = await readFile(new URL("../../app/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /recruiter\/protected-actions/);
+  assert.match(page, /protected-action/);
+  assert.match(page, /Available for Support/);
+  assert.match(page, /assignment stays unchanged/);
+  assert.match(page, /8 AM–5 PM Pacific/);
+});
+
+test("Candidate 360 surfaces active relationship continuity", async () => {
+  const page = await readFile(new URL("../../app/candidates/[candidateId]/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /\/relationship/);
+  assert.match(page, /Active with you/);
+  assert.match(page, /Active with /);
+  assert.match(page, /No active relationship/);
+  assert.match(page, /Unanswered outreach, profile views and internal notes do not establish a relationship/);
 });
