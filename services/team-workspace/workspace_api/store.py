@@ -69,12 +69,13 @@ def clean(row):
 
 
 class WorkspaceStore:
-    def __init__(self, engine, submission_ai=None, submission_packet_generator=None, job_intake_ai=None, outreach_ai=None):
+    def __init__(self, engine, submission_ai=None, submission_packet_generator=None, job_intake_ai=None, outreach_ai=None, gmail_provider=None):
         self.engine = engine
         self.submission_ai = submission_ai
         self.submission_packet_generator = submission_packet_generator
         self.job_intake_ai = job_intake_ai
         self.outreach_ai = outreach_ai
+        self.gmail_provider = gmail_provider
 
     def _principal(self, conn, identity: Identity):
         def lookup():
@@ -3978,6 +3979,305 @@ class WorkspaceStore:
                 ),
             })
         return self._global_mutate(identity, key, "outreach.draft.reviewed", payload, apply)
+
+    def gmail_status(self, identity):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            row = conn.execute(
+                select(t.gmail_connections).where(
+                    t.gmail_connections.c.tenant_id == principal["tenant_id"],
+                    t.gmail_connections.c.recruiter_user_id == principal["id"],
+                )
+            ).mappings().first()
+            if row is None:
+                return {
+                    "connected": False,
+                    "status": "not_connected",
+                    "gmail_address": None,
+                    "watch_expiration": None,
+                    "last_sync_at": None,
+                }
+            return clean({
+                "connected": row["status"] == "connected",
+                "status": row["status"],
+                "gmail_address": row["gmail_address"],
+                "granted_scopes": row["granted_scopes"],
+                "history_id": row["history_id"],
+                "watch_expiration": row["watch_expiration"],
+                "last_sync_at": row["last_sync_at"],
+                "connected_at": row["connected_at"],
+            })
+
+    def start_gmail_oauth(self, identity, key):
+        payload = {"action": "gmail.oauth.start"}
+        def apply(conn, principal):
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            if self.gmail_provider is None:
+                raise AccessError(503, "Gmail pilot is not configured")
+            from .gmail_provider import new_oauth_state
+            raw_state = new_oauth_state()
+            state_hash = hashlib.sha256(raw_state.encode("utf-8")).hexdigest()
+            timestamp = now()
+            conn.execute(
+                insert(t.gmail_oauth_states).values(
+                    state_hash=state_hash,
+                    tenant_id=principal["tenant_id"],
+                    recruiter_user_id=principal["id"],
+                    expires_at=timestamp + timedelta(minutes=10),
+                    consumed_at=None,
+                    created_at=timestamp,
+                )
+            )
+            return {
+                "authorization_url": self.gmail_provider.authorization_url(raw_state),
+                "expires_at": (timestamp + timedelta(minutes=10)).isoformat(),
+                "individual_recruiter_authorization": True,
+            }
+        return self._global_mutate(identity, key, "gmail.oauth.started", payload, apply)
+
+    def complete_gmail_oauth(self, identity, key, value):
+        payload = {"action": "gmail.oauth.complete"}
+        def apply(conn, principal):
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            if self.gmail_provider is None:
+                raise AccessError(503, "Gmail pilot is not configured")
+            state_hash = hashlib.sha256(value.state.encode("utf-8")).hexdigest()
+            state_row = conn.execute(
+                select(t.gmail_oauth_states).where(
+                    t.gmail_oauth_states.c.state_hash == state_hash,
+                    t.gmail_oauth_states.c.tenant_id == principal["tenant_id"],
+                    t.gmail_oauth_states.c.recruiter_user_id == principal["id"],
+                ).with_for_update()
+            ).mappings().first()
+            if state_row is None or state_row["consumed_at"] is not None:
+                raise AccessError(409, "Gmail authorization state is invalid or already used")
+            expires_at = state_row["expires_at"]
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            if expires_at <= now():
+                raise AccessError(409, "Gmail authorization state has expired")
+
+            try:
+                token = self.gmail_provider.exchange_code(value.code)
+                profile = self.gmail_provider.profile(token.access_token)
+            except Exception:
+                raise AccessError(502, "Gmail authorization could not be completed") from None
+
+            principal_email = str(principal.get("email") or "").lower()
+            if profile.email_address != principal_email:
+                raise AccessError(409, "Connect the same Medlivo Gmail account you used to sign in")
+
+            try:
+                secret_resource = self.gmail_provider.token_store.put_refresh_token(
+                    principal["id"], token.refresh_token
+                )
+                watch = self.gmail_provider.start_watch(token.access_token)
+            except Exception:
+                raise AccessError(502, "Gmail connection setup could not be completed") from None
+
+            timestamp = now()
+            existing = conn.execute(
+                select(t.gmail_connections).where(
+                    t.gmail_connections.c.tenant_id == principal["tenant_id"],
+                    t.gmail_connections.c.recruiter_user_id == principal["id"],
+                ).with_for_update()
+            ).mappings().first()
+            values = dict(
+                gmail_address=profile.email_address,
+                status="connected",
+                refresh_token_secret_resource=secret_resource,
+                granted_scopes=token.scope,
+                history_id=watch.history_id or profile.history_id,
+                watch_expiration=watch.expiration,
+                connected_at=timestamp,
+                last_sync_at=None,
+                disconnected_at=None,
+                updated_at=timestamp,
+            )
+            if existing is None:
+                conn.execute(insert(t.gmail_connections).values(
+                    tenant_id=principal["tenant_id"],
+                    recruiter_user_id=principal["id"],
+                    created_at=timestamp,
+                    **values,
+                ))
+            else:
+                conn.execute(
+                    update(t.gmail_connections)
+                    .where(
+                        t.gmail_connections.c.tenant_id == principal["tenant_id"],
+                        t.gmail_connections.c.recruiter_user_id == principal["id"],
+                    )
+                    .values(**values)
+                )
+            conn.execute(
+                update(t.gmail_oauth_states)
+                .where(t.gmail_oauth_states.c.state_hash == state_hash)
+                .values(consumed_at=timestamp)
+            )
+            return clean({
+                "connected": True,
+                "status": "connected",
+                "gmail_address": profile.email_address,
+                "granted_scopes": token.scope,
+                "history_id": watch.history_id or profile.history_id,
+                "watch_expiration": watch.expiration,
+                "reply_sync_architecture": "gmail_watch_pubsub_history",
+            })
+        return self._global_mutate(identity, key, "gmail.oauth.completed", payload, apply)
+
+    def disconnect_gmail(self, identity, key, value):
+        payload = {"reason": value.reason}
+        def apply(conn, principal):
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            row = conn.execute(
+                select(t.gmail_connections).where(
+                    t.gmail_connections.c.tenant_id == principal["tenant_id"],
+                    t.gmail_connections.c.recruiter_user_id == principal["id"],
+                ).with_for_update()
+            ).mappings().first()
+            if row is None:
+                return {"connected": False, "status": "not_connected"}
+            if self.gmail_provider is not None:
+                self.gmail_provider.token_store.destroy_refresh_token(
+                    row["refresh_token_secret_resource"]
+                )
+            timestamp = now()
+            conn.execute(
+                update(t.gmail_connections)
+                .where(
+                    t.gmail_connections.c.tenant_id == principal["tenant_id"],
+                    t.gmail_connections.c.recruiter_user_id == principal["id"],
+                )
+                .values(status="disconnected", disconnected_at=timestamp, updated_at=timestamp)
+            )
+            self._operational_audit(
+                conn, principal, "gmail.connection.disconnected", "gmail_connection", principal["id"],
+                {"status": row["status"]}, {"status": "disconnected"}, reason=value.reason,
+            )
+            return {"connected": False, "status": "disconnected"}
+        return self._global_mutate(identity, key, "gmail.connection.disconnected", payload, apply)
+
+    def deliver_gmail_execution(self, identity, execution_id, key, value):
+        payload = {"execution_id": execution_id}
+        def apply(conn, principal):
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            if self.gmail_provider is None:
+                raise AccessError(503, "Gmail pilot is not configured")
+            execution = conn.execute(
+                select(t.outreach_executions).where(
+                    t.outreach_executions.c.tenant_id == principal["tenant_id"],
+                    t.outreach_executions.c.id == execution_id,
+                    t.outreach_executions.c.recruiter_user_id == principal["id"],
+                ).with_for_update()
+            ).mappings().first()
+            if execution is None:
+                raise AccessError(404, "Outreach execution not found")
+            if execution["provider"] != "gmail" or execution["channel"] != "email":
+                raise AccessError(409, "This pilot delivery action is Gmail email only")
+            if execution["status"] != value.expected_status:
+                raise AccessError(409, "Outreach execution is no longer queued")
+            scheduled_for = execution["scheduled_for"]
+            if scheduled_for.tzinfo is None:
+                scheduled_for = scheduled_for.replace(tzinfo=timezone.utc)
+            if scheduled_for > now():
+                raise AccessError(409, "This outreach is scheduled for a future time")
+
+            connection = conn.execute(
+                select(t.gmail_connections).where(
+                    t.gmail_connections.c.tenant_id == principal["tenant_id"],
+                    t.gmail_connections.c.recruiter_user_id == principal["id"],
+                    t.gmail_connections.c.status == "connected",
+                )
+            ).mappings().first()
+            if connection is None:
+                raise AccessError(409, "Connect Gmail before sending approved outreach")
+
+            snapshot = dict(execution["payload_snapshot"] or {})
+            recipient = str(snapshot.get("recipient") or "").strip()
+            body = str(snapshot.get("body") or "")
+            if not recipient or not body:
+                raise AccessError(409, "Queued outreach is missing its approved delivery snapshot")
+
+            try:
+                access_token = self.gmail_provider.refresh_access_token(
+                    connection["refresh_token_secret_resource"]
+                )
+                receipt = self.gmail_provider.send_message(
+                    access_token,
+                    to_address=recipient,
+                    subject=snapshot.get("subject"),
+                    body_text=body,
+                )
+            except Exception:
+                timestamp = now()
+                conn.execute(
+                    update(t.outreach_executions)
+                    .where(t.outreach_executions.c.id == execution_id)
+                    .values(
+                        status="failed",
+                        failed_at=timestamp,
+                        attempt_count=execution["attempt_count"] + 1,
+                        last_error="gmail_provider_failure",
+                        updated_at=timestamp,
+                    )
+                )
+                raise AccessError(502, "Gmail could not send the approved outreach") from None
+
+            timestamp = now()
+            conn.execute(
+                update(t.outreach_executions)
+                .where(t.outreach_executions.c.id == execution_id)
+                .values(
+                    status="sent",
+                    sent_at=timestamp,
+                    attempt_count=execution["attempt_count"] + 1,
+                    provider_message_id=receipt.message_id,
+                    provider_thread_id=receipt.thread_id,
+                    last_error=None,
+                    updated_at=timestamp,
+                )
+            )
+            conn.execute(insert(t.candidate_engagement_events).values(
+                id=uid(),
+                tenant_id=principal["tenant_id"],
+                candidate_id=execution["candidate_id"],
+                recruiter_user_id=principal["id"],
+                job_id=execution["job_id"],
+                event_type="email_sent",
+                meaningful=False,
+                source_type="gmail",
+                source_reference=receipt.message_id,
+                occurred_at=timestamp,
+                created_at=timestamp,
+            ))
+            self._operational_audit(
+                conn, principal, "outreach.execution.sent", "outreach_execution", execution_id,
+                {"status": "queued"},
+                {
+                    "status": "sent",
+                    "provider": "gmail",
+                    "provider_message_id": receipt.message_id,
+                    "provider_thread_id": receipt.thread_id,
+                },
+            )
+            return clean({
+                **dict(execution),
+                "status": "sent",
+                "sent_at": timestamp,
+                "provider_message_id": receipt.message_id,
+                "provider_thread_id": receipt.thread_id,
+                "attempt_count": execution["attempt_count"] + 1,
+                "provider_send_enabled": True,
+                "jobdiva_writeback_enabled": False,
+            })
+        return self._global_mutate(identity, key, "outreach.execution.sent", payload, apply)
 
     def queue_outreach_draft(self, identity, draft_id, key, value):
         payload = {
