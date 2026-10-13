@@ -283,6 +283,7 @@ submission_projections = Table(
     ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
     ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
     ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "meaningful_action_by"], ["app_user.tenant_id", "app_user.id"]),
 )
 
 interview_projections = Table(
@@ -540,7 +541,7 @@ protected_action_windows = Table(
     U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
     U("recruiter_user_id", nullable=False), Column("assignment_version", Integer),
     S("status", nullable=False), D("assigned_at", nullable=False), D("protected_until", nullable=False),
-    D("meaningful_action_at"), S("meaningful_action_type"),
+    D("meaningful_action_at"), S("meaningful_action_type"), U("meaningful_action_by"),
     D("created_at", nullable=False), D("updated_at", nullable=False),
     CheckConstraint("status IN ('protected','working','available_for_support','completed')"),
     ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
