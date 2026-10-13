@@ -1596,6 +1596,27 @@ class WorkspaceStore:
             current = (current + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
         return current.astimezone(timezone.utc)
 
+    def _business_minutes_until(self, conn, tenant_id, start_at, end_at):
+        if end_at is None:
+            return 0
+        current = start_at.astimezone(PACIFIC)
+        end_local = end_at.astimezone(PACIFIC)
+        if current >= end_local:
+            return 0
+        total = 0.0
+        while current.date() <= end_local.date():
+            if self._is_business_day(conn, tenant_id, current.date()):
+                day_start = current.replace(hour=8, minute=0, second=0, microsecond=0)
+                day_end = current.replace(hour=17, minute=0, second=0, microsecond=0)
+                segment_start = max(current, day_start)
+                segment_end = min(end_local, day_end)
+                if segment_end > segment_start:
+                    total += (segment_end - segment_start).total_seconds() / 60.0
+            current = (current + timedelta(days=1)).replace(
+                hour=8, minute=0, second=0, microsecond=0
+            )
+        return max(0, int(round(total)))
+
     def _effective_protected_status(self, row, timestamp=None):
         if row is None:
             return None
@@ -4018,6 +4039,11 @@ class WorkspaceStore:
                 item["effective_status"] = effective
                 item["is_mine"] = mine
                 item["support_allowed"] = effective == "available_for_support"
+                item["remaining_business_minutes"] = (
+                    self._business_minutes_until(
+                        conn, principal["tenant_id"], timestamp, row["protected_until"]
+                    ) if effective == "protected" else 0
+                )
                 item["assignment_unchanged"] = True
                 items.append(item)
             return clean({
