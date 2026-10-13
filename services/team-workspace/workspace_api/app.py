@@ -17,6 +17,7 @@ from .schemas import (
     JobIntakeBatchInput, CustomerJobMappingInput, WeeklyGoalInput, JobIntakeRowsInput,
     JobPublicationDraftInput, JobPublicationDecision, MatchFeedbackInput,
     JobOperationalUpdate, JobAssignmentInput, JobIntakeItemDecision,
+    ProtectedActionInput, CandidateEngagementInput,
     MarginCalculationInput, MarginDiscussionInput, MarginFinalizeInput,
     CostAssumptionSetInput, CustomerEconomicRuleInput,
     W2PayPackageSnapshotInput, LocumsPayPackageSnapshotInput,
@@ -342,6 +343,28 @@ def build_app(store, verifier):
                    who=Depends(identity)):
         return store.match_work_queue(
             who, limit=limit, matches_per_job=matches_per_job
+        )
+
+    @app.get(prefix + "/recruiter/protected-actions")
+    def recruiter_protected_actions(limit: int = Query(default=50, ge=1, le=100), who=Depends(identity)):
+        return store.recruiter_protected_actions(who, limit=limit)
+
+    @app.post(prefix + "/jobs/{job_id}/protected-action")
+    def protected_action(job_id: UUID, value: ProtectedActionInput,
+                         idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.record_protected_action(
+            who, str(job_id), str(idempotency_key), value
+        )
+
+    @app.get(prefix + "/candidates/{candidate_id}/relationship")
+    def candidate_relationship(candidate_id: UUID, who=Depends(identity)):
+        return store.candidate_relationship(who, str(candidate_id))
+
+    @app.post(prefix + "/candidates/{candidate_id}/engagement")
+    def candidate_engagement(candidate_id: UUID, value: CandidateEngagementInput,
+                             idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.record_candidate_engagement(
+            who, str(candidate_id), str(idempotency_key), value
         )
 
     @app.get(prefix + "/manager/match-quality")
