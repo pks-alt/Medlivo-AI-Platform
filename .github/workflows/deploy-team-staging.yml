@@ -97,11 +97,21 @@ jobs:
               --max-retries=0 \
               --task-timeout=300s \
               --quiet
-            gcloud run jobs execute "${MIGRATION_JOB}" \
+            if ! gcloud run jobs execute "${MIGRATION_JOB}" \
               --project="${PROJECT_ID}" \
               --region="${REGION}" \
               --wait \
-              --quiet
+              --quiet; then
+              echo "::error::Migration execution failed for ${MIGRATION}. Safe database diagnostic follows if available."
+              gcloud logging read \
+                "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"${MIGRATION_JOB}\" AND textPayload:\"MIGRATION_FAILED name=${MIGRATION}\"" \
+                --project="${PROJECT_ID}" \
+                --freshness=15m \
+                --limit=5 \
+                --format='value(textPayload)' \
+                --quiet || true
+              exit 1
+            fi
           done
 
       - name: Deploy private API candidate with schema readiness gate
