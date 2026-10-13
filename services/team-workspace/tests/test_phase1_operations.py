@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 from io import BytesIO
+from types import SimpleNamespace
 from openpyxl import Workbook
 from fastapi.testclient import TestClient
 
@@ -2250,3 +2251,180 @@ def test_outreach_queue_requires_approval_and_can_be_cancelled(seeded, verifier,
     assert cancelled.status_code == 200
     assert cancelled.json()["status"] == "cancelled"
     assert cancelled.json()["provider_send_enabled"] is False
+
+
+class FakeGmailTokenStore:
+    def __init__(self):
+        self.values = {}
+        self.destroyed = []
+
+    def put_refresh_token(self, recruiter_user_id, refresh_token):
+        resource = "projects/synthetic/secrets/gmail/versions/" + recruiter_user_id
+        self.values[resource] = refresh_token
+        return resource
+
+    def get_refresh_token(self, secret_resource):
+        return self.values[secret_resource]
+
+    def destroy_refresh_token(self, secret_resource):
+        self.destroyed.append(secret_resource)
+        self.values.pop(secret_resource, None)
+
+
+class FakeGmailProvider:
+    def __init__(self, email="recruiter-a@example.test"):
+        self.email = email
+        self.token_store = FakeGmailTokenStore()
+        self.sent = []
+
+    def authorization_url(self, state):
+        return "https://accounts.google.test/oauth?state=" + state
+
+    def exchange_code(self, code):
+        return SimpleNamespace(
+            access_token="synthetic-access",
+            refresh_token="synthetic-refresh",
+            scope=[
+                "https://www.googleapis.com/auth/gmail.send",
+                "https://www.googleapis.com/auth/gmail.readonly",
+            ],
+        )
+
+    def profile(self, access_token):
+        return SimpleNamespace(email_address=self.email, history_id="100")
+
+    def start_watch(self, access_token):
+        return SimpleNamespace(
+            history_id="101",
+            expiration=datetime(2026, 10, 20, 12, 0, tzinfo=timezone.utc),
+        )
+
+    def refresh_access_token(self, secret_resource):
+        assert self.token_store.get_refresh_token(secret_resource) == "synthetic-refresh"
+        return "synthetic-access-refreshed"
+
+    def send_message(self, access_token, *, to_address, subject, body_text, thread_id=None):
+        self.sent.append((to_address, subject, body_text))
+        return SimpleNamespace(message_id="gmail-message-1", thread_id="gmail-thread-1")
+
+
+def _connect_fake_gmail(client, headers):
+    started = client.post(
+        "/api/v1/team/gmail/oauth/start",
+        headers=headers("recruiter-a"),
+        json={},
+    )
+    assert started.status_code == 201
+    state = started.json()["authorization_url"].split("state=", 1)[1]
+    completed = client.post(
+        "/api/v1/team/gmail/oauth/complete",
+        headers=headers("recruiter-a"),
+        json={"code": "synthetic-code", "state": state},
+    )
+    assert completed.status_code == 200
+    assert completed.json()["connected"] is True
+    return completed.json()
+
+
+def test_gmail_pilot_binds_oauth_to_same_recruiter_identity(seeded, verifier, headers):
+    wrong_provider = FakeGmailProvider(email="someone-else@example.test")
+    gmail_client = TestClient(build_app(
+        WorkspaceStore(seeded, gmail_provider=wrong_provider), verifier
+    ))
+    started = gmail_client.post(
+        "/api/v1/team/gmail/oauth/start",
+        headers=headers("recruiter-a"),
+        json={},
+    )
+    assert started.status_code == 201
+    state = started.json()["authorization_url"].split("state=", 1)[1]
+    blocked = gmail_client.post(
+        "/api/v1/team/gmail/oauth/complete",
+        headers=headers("recruiter-a"),
+        json={"code": "synthetic-code", "state": state},
+    )
+    assert blocked.status_code == 409
+    assert "same medlivo gmail account" in blocked.json()["detail"].lower()
+
+
+def test_connected_gmail_sends_only_approved_queued_email(seeded, verifier, headers):
+    provider = FakeGmailProvider()
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open", profession="Physical Therapist"
+        ))
+        conn.execute(update(t.candidates).where(t.candidates.c.id == idn(300)).values(
+            profession="Physical Therapist",
+            primary_email="candidate@example.test",
+        ))
+
+    gmail_client = TestClient(build_app(
+        WorkspaceStore(
+            seeded,
+            outreach_ai=FakeOutreachAI(),
+            gmail_provider=provider,
+        ),
+        verifier,
+    ))
+    connected = _connect_fake_gmail(gmail_client, headers)
+    assert connected["reply_sync_architecture"] == "gmail_watch_pubsub_history"
+
+    created = gmail_client.post(
+        "/api/v1/team/outreach-drafts",
+        headers=headers("recruiter-a"),
+        json={
+            "candidate_id": idn(300),
+            "job_id": idn(200),
+            "channel": "email",
+            "purpose": "follow_up",
+        },
+    )
+    assert created.status_code == 201
+    draft_id = created.json()["id"]
+
+    not_approved = gmail_client.post(
+        f"/api/v1/team/outreach-drafts/{draft_id}/queue",
+        headers=headers("recruiter-a"),
+        json={},
+    )
+    assert not_approved.status_code == 409
+
+    approved = gmail_client.post(
+        f"/api/v1/team/outreach-drafts/{draft_id}/decision",
+        headers=headers("recruiter-a"),
+        json={
+            "decision": "approved",
+            "subject": "Synthetic approved subject",
+            "body": "Synthetic recruiter-approved body.",
+        },
+    )
+    assert approved.status_code == 200
+
+    queued = gmail_client.post(
+        f"/api/v1/team/outreach-drafts/{draft_id}/queue",
+        headers=headers("recruiter-a"),
+        json={},
+    )
+    assert queued.status_code == 201
+    execution_id = queued.json()["id"]
+
+    sent = gmail_client.post(
+        f"/api/v1/team/outreach-executions/{execution_id}/deliver-gmail",
+        headers=headers("recruiter-a"),
+        json={"expected_status": "queued"},
+    )
+    assert sent.status_code == 200
+    assert sent.json()["status"] == "sent"
+    assert sent.json()["provider_message_id"] == "gmail-message-1"
+    assert sent.json()["provider_thread_id"] == "gmail-thread-1"
+    assert sent.json()["jobdiva_writeback_enabled"] is False
+    assert provider.sent == [
+        ("candidate@example.test", "Synthetic approved subject", "Synthetic recruiter-approved body.")
+    ]
+
+    second_send = gmail_client.post(
+        f"/api/v1/team/outreach-executions/{execution_id}/deliver-gmail",
+        headers=headers("recruiter-a"),
+        json={"expected_status": "queued"},
+    )
+    assert second_send.status_code == 409

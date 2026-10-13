@@ -609,7 +609,7 @@ outreach_executions = Table(
     D("scheduled_for", nullable=False), D("claimed_at"), D("sent_at"), D("failed_at"),
     Column("attempt_count", Integer, nullable=False, default=0),
     Column("max_attempts", Integer, nullable=False, default=3),
-    S("provider_message_id"), S("last_error"),
+    S("provider_message_id"), S("provider_thread_id"), S("last_error"),
     Column("payload_snapshot", JSON, nullable=False, default=dict),
     D("created_at", nullable=False), D("updated_at", nullable=False),
     UniqueConstraint("tenant_id", "draft_id"),
@@ -626,6 +626,25 @@ Index("idx_ws_outreach_execution_queue", outreach_executions.c.tenant_id,
       outreach_executions.c.created_at)
 Index("idx_ws_outreach_execution_recruiter", outreach_executions.c.tenant_id,
       outreach_executions.c.recruiter_user_id, outreach_executions.c.created_at)
+
+gmail_connections = Table(
+    "ws_gmail_connection", metadata,
+    U("tenant_id", primary_key=True), U("recruiter_user_id", primary_key=True),
+    S("gmail_address", nullable=False), S("status", nullable=False),
+    S("refresh_token_secret_resource", nullable=False),
+    Column("granted_scopes", JSON, nullable=False, default=list),
+    S("history_id"), D("watch_expiration"), D("connected_at", nullable=False),
+    D("last_sync_at"), D("disconnected_at"), D("created_at", nullable=False), D("updated_at", nullable=False),
+    CheckConstraint("status IN ('connected','reauthorization_required','disconnected')"),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+gmail_oauth_states = Table(
+    "ws_gmail_oauth_state", metadata,
+    S("state_hash", primary_key=True), U("tenant_id", nullable=False), U("recruiter_user_id", nullable=False),
+    D("expires_at", nullable=False), D("consumed_at"), D("created_at", nullable=False),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+)
 
 approval_requests = Table(
     "ws_approval_request", metadata,

@@ -188,6 +188,19 @@ class OutreachDraftDecisionInput(StrictInput):
         return self
 
 
+class GmailOAuthCallbackInput(StrictInput):
+    code: str = Field(min_length=5, max_length=4096)
+    state: str = Field(min_length=20, max_length=512)
+
+
+class GmailDisconnectInput(StrictInput):
+    reason: str = Field(min_length=3, max_length=1000)
+
+
+class GmailDeliverInput(StrictInput):
+    expected_status: Literal["queued"] = "queued"
+
+
 class OutreachExecutionInput(StrictInput):
     scheduled_for: datetime | None = None
 

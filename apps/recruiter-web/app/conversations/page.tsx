@@ -20,12 +20,12 @@ export default function ConversationsPage(){
  const[candidates,setCandidates]=useState<any[]>([]),[jobs,setJobs]=useState<any[]>([]),[priorities,setPriorities]=useState<any>({items:[]}),[drafts,setDrafts]=useState<any[]>([]),[executions,setExecutions]=useState<any[]>([]);
  const[candidateId,setCandidateId]=useState(""),[jobId,setJobId]=useState(""),[channel,setChannel]=useState<"email"|"sms">("email"),[purpose,setPurpose]=useState("follow_up");
  const[instruction,setInstruction]=useState(""),[activeDraft,setActiveDraft]=useState<any>(null),[subject,setSubject]=useState(""),[body,setBody]=useState("");
- const[relationship,setRelationship]=useState<any>(null),[error,setError]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false);
+ const[relationship,setRelationship]=useState<any>(null),[gmail,setGmail]=useState<any>({connected:false,status:"not_connected"}),[error,setError]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false);
 
  async function load(){
   setError("");
-  const[c,j,p,d,x]=await Promise.all([api("candidates?limit=100"),api("jobs?limit=100"),api("daily-priorities?limit=50"),api("outreach-drafts?limit=50"),api("outreach-executions?limit=50")]);
-  setCandidates(c.items||[]);setJobs(j.items||[]);setPriorities(p);setDrafts(d.items||[]);setExecutions(x.items||[]);
+  const[c,j,p,d,x,g]=await Promise.all([api("candidates?limit=100"),api("jobs?limit=100"),api("daily-priorities?limit=50"),api("outreach-drafts?limit=50"),api("outreach-executions?limit=50"),api("gmail/status")]);
+  setCandidates(c.items||[]);setJobs(j.items||[]);setPriorities(p);setDrafts(d.items||[]);setExecutions(x.items||[]);setGmail(g);
  }
  useEffect(()=>{load().catch(e=>setError(e.message))},[]);
  useEffect(()=>{if(!candidateId){setRelationship(null);return}api("candidates/"+candidateId+"/relationship").then(setRelationship).catch(()=>setRelationship(null))},[candidateId]);
@@ -80,18 +80,47 @@ export default function ConversationsPage(){
  }
 
  const activeExecution=activeDraft?.id?executions.find(x=>x.draft_id===activeDraft.id):null;
+ async function connectGmail(){
+  setBusy(true);setError("");setMessage("");
+  try{
+   const s=await session();
+   const started=await api("gmail/oauth/start",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":s.csrf,"Idempotency-Key":crypto.randomUUID()},body:"{}"});
+   window.location.assign(started.authorization_url);
+  }catch(e:any){setError(e.message||"Gmail connection could not start");setBusy(false)}
+ }
+
+ async function disconnectGmail(){
+  setBusy(true);setError("");setMessage("");
+  try{
+   const s=await session();
+   const result=await api("gmail/disconnect",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":s.csrf,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({reason:"Recruiter disconnected Gmail from Conversations"})});
+   setGmail(result);setMessage("Gmail disconnected from Medlivo.");
+  }catch(e:any){setError(e.message||"Gmail could not be disconnected")}finally{setBusy(false)}
+ }
+
+ async function sendQueuedGmail(executionId:string){
+  setBusy(true);setError("");setMessage("");
+  try{
+   const s=await session();
+   const sent=await api("outreach-executions/"+executionId+"/deliver-gmail",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":s.csrf,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({expected_status:"queued"})});
+   setExecutions(prev=>prev.map(x=>x.id===executionId?sent:x));
+   setMessage("Approved email sent through your connected Medlivo Gmail account.");
+  }catch(e:any){setError(e.message||"Gmail could not send this approved outreach")}finally{setBusy(false)}
+ }
+
 
  return <main className="page conversationsPage finalConversationsPage">
   <div className="pageHead"><div><small>Recruiter communication</small><h1>Conversations</h1><p>AI-assisted Email and Text/SMS drafting backed by trusted candidate/job data, recruiter review and an auditable draft record.</p></div><span className="sourcePill">HUMAN REVIEW REQUIRED</span></div>
   {error&&<div className="adminError"><b>Conversation action unavailable</b><span>{error}</span></div>}
   {message&&<div className="goodState conversationMessage">{message}</div>}
+  <section className="panelBox gmailPilotBar"><div><small>GMAIL PILOT</small><b>{gmail.connected?"Connected as "+gmail.gmail_address:"Gmail not connected"}</b><span>{gmail.connected?"Approved queued emails can be sent from your own Medlivo mailbox. Replies are tracked with Gmail Watch + Pub/Sub history.":"Connect your own Medlivo Gmail account before live email delivery."}</span></div>{gmail.connected?<button className="button" disabled={busy} onClick={disconnectGmail}>Disconnect Gmail</button>:<button className="button primary" disabled={busy} onClick={connectGmail}>Connect Gmail</button>}</section>
 
   <div className="conversationLayout">
    <section className="panelBox"><small>NEEDS RESPONSE / FOLLOW-UP</small>
     <div className="conversationQueue">{followups.map((x:any,i:number)=><article key={x.id||i}><b>{x.candidate_name||x.title||"Follow-up"}</b><span>{x.detail||x.urgency||"Review next action"}</span>{x.job_id&&<Link href={"/jobs/"+x.job_id}>Open job</Link>}</article>)}{!followups.length&&<div className="emptyState">No current follow-up actions are visible.</div>}</div>
     <hr className="sectionRule"/>
     <small>OUTREACH EXECUTION QUEUE</small>
-    <div className="conversationQueue">{executions.slice(0,8).map((x:any)=><article key={x.id}><b>{title(x.channel)} · {title(x.status)}</b><span>{title(x.provider)} · {x.scheduled_for?new Date(x.scheduled_for).toLocaleString():"Ready"}</span>{(x.status==="queued"||x.status==="failed")&&<button className="button subtle" disabled={busy} onClick={()=>cancelExecution(x.id)}>Cancel</button>}</article>)}{!executions.length&&<div className="emptyState">No approved outreach is queued yet.</div>}</div>
+    <div className="conversationQueue">{executions.slice(0,8).map((x:any)=><article key={x.id}><b>{title(x.channel)} · {title(x.status)}</b><span>{title(x.provider)} · {x.scheduled_for?new Date(x.scheduled_for).toLocaleString():"Ready"}</span>{x.status==="queued"&&x.provider==="gmail"&&gmail.connected&&<button className="button primary" disabled={busy} onClick={()=>sendQueuedGmail(x.id)}>Send Email</button>}{(x.status==="queued"||x.status==="failed")&&<button className="button subtle" disabled={busy} onClick={()=>cancelExecution(x.id)}>Cancel</button>}</article>)}{!executions.length&&<div className="emptyState">No approved outreach is queued yet.</div>}</div>
     <hr className="sectionRule"/>
     <small>RECENT AI DRAFTS</small>
     <div className="conversationQueue">{drafts.slice(0,8).map((x:any)=><button key={x.id} className="conversationDraftRow" onClick={()=>{setActiveDraft(x);setCandidateId(x.candidate_id);setJobId(x.job_id||"");setChannel(x.channel);setPurpose(x.purpose);setSubject(x.subject||"");setBody(x.body||"")}}><b>{title(x.channel)} · {title(x.purpose)}</b><span>{title(x.status)} · {x.created_at?new Date(x.created_at).toLocaleString():""}</span></button>)}{!drafts.length&&<div className="emptyState">No AI outreach drafts have been created yet.</div>}</div>
@@ -122,7 +151,7 @@ export default function ConversationsPage(){
       <div className="draftGuardrail"><b>Trusted context</b><span>{selectedCandidate?.canonical_name||"Candidate"}{selectedJob?" · "+selectedJob.title:""} · AI draft stored in Medlivo · recruiter approval required</span></div>
       {activeDraft.status==="draft"&&<div className="conversationActions"><button className="button primary" disabled={busy||!body.trim()} onClick={()=>decide("approved")}>Approve Draft</button><button className="button" disabled={busy} onClick={()=>decide("cancelled")}>Cancel Draft</button></div>}
       {activeDraft.status==="approved"&&!activeExecution&&<div className="providerBoundary"><b>Approved — ready for guarded queue</b><span>This draft passed recruiter review. Queueing creates an auditable provider handoff, but no external message is sent until Gmail/Zoom Phone activation is enabled.</span><button className="button primary" disabled={busy} onClick={queueApproved}>Queue Approved Message</button></div>}
-      {activeExecution&&<div className="providerBoundary"><b>{title(activeExecution.status)} · {title(activeExecution.provider)}</b><span>Scheduled {activeExecution.scheduled_for?new Date(activeExecution.scheduled_for).toLocaleString():"now"} · provider delivery remains disabled until activation.</span>{(activeExecution.status==="queued"||activeExecution.status==="failed")&&<button className="button" disabled={busy} onClick={()=>cancelExecution(activeExecution.id)}>Cancel Queue</button>}</div>}
+      {activeExecution&&<div className="providerBoundary"><b>{title(activeExecution.status)} · {title(activeExecution.provider)}</b><span>Scheduled {activeExecution.scheduled_for?new Date(activeExecution.scheduled_for).toLocaleString():"now"} · {activeExecution.provider==="gmail"?(gmail.connected?"Gmail pilot is connected.":"Connect Gmail before sending."):"SMS provider remains disabled."}</span>{activeExecution.status==="queued"&&activeExecution.provider==="gmail"&&gmail.connected&&<button className="button primary" disabled={busy} onClick={()=>sendQueuedGmail(activeExecution.id)}>Send Approved Email</button>}{(activeExecution.status==="queued"||activeExecution.status==="failed")&&<button className="button" disabled={busy} onClick={()=>cancelExecution(activeExecution.id)}>Cancel Queue</button>}</div>}
     </div>}
    </section>
   </div>

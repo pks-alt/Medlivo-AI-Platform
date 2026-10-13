@@ -20,6 +20,7 @@ from .schemas import (
     ProtectedActionInput, CandidateEngagementInput,
     OutreachDraftInput, OutreachDraftDecisionInput,
     OutreachExecutionInput, OutreachExecutionCancelInput,
+    GmailOAuthCallbackInput, GmailDisconnectInput, GmailDeliverInput,
     MarginCalculationInput, MarginDiscussionInput, MarginFinalizeInput,
     CostAssumptionSetInput, CustomerEconomicRuleInput,
     W2PayPackageSnapshotInput, LocumsPayPackageSnapshotInput,
@@ -32,6 +33,7 @@ from .store import WorkspaceStore, AccessError
 from .submission_ai import VertexGeminiSubmissionAIComposer
 from .job_intake_ai import VertexGeminiJobIntakeAIComposer
 from .outreach_ai import VertexGeminiOutreachAIComposer
+from .gmail_provider import GmailProvider, GmailSecretStore
 from .submission_artifacts import GCSDocumentResolver, SubmissionPacketGenerator
 
 
@@ -139,6 +141,8 @@ def build_app(store, verifier):
             "public.ws_candidate_engagement_event",
             "public.ws_outreach_draft",
             "public.ws_outreach_execution",
+            "public.ws_gmail_connection",
+            "public.ws_gmail_oauth_state",
         )
         try:
             with store.engine.connect() as conn:
@@ -379,6 +383,39 @@ def build_app(store, verifier):
                               who=Depends(identity)):
         return store.decide_outreach_draft(
             who, str(draft_id), str(idempotency_key), value
+        )
+
+    @app.get(prefix + "/gmail/status")
+    def gmail_status(who=Depends(identity)):
+        return store.gmail_status(who)
+
+    @app.post(prefix + "/gmail/oauth/start", status_code=201)
+    def gmail_oauth_start(idempotency_key: UUID = Header(), who=Depends(identity)):
+        return store.start_gmail_oauth(who, str(idempotency_key))
+
+    @app.post(prefix + "/gmail/oauth/complete")
+    def gmail_oauth_complete(value: GmailOAuthCallbackInput,
+                             idempotency_key: UUID = Header(),
+                             who=Depends(identity)):
+        return store.complete_gmail_oauth(
+            who, str(idempotency_key), value
+        )
+
+    @app.post(prefix + "/gmail/disconnect")
+    def gmail_disconnect(value: GmailDisconnectInput,
+                         idempotency_key: UUID = Header(),
+                         who=Depends(identity)):
+        return store.disconnect_gmail(
+            who, str(idempotency_key), value
+        )
+
+    @app.post(prefix + "/outreach-executions/{execution_id}/deliver-gmail")
+    def deliver_gmail_execution(execution_id: UUID,
+                                value: GmailDeliverInput,
+                                idempotency_key: UUID = Header(),
+                                who=Depends(identity)):
+        return store.deliver_gmail_execution(
+            who, str(execution_id), str(idempotency_key), value
         )
 
     @app.post(prefix + "/outreach-drafts/{draft_id}/queue", status_code=201)
@@ -813,6 +850,16 @@ def create_app():
             model=settings.outreach_ai_model,
         )
 
+    gmail_provider = None
+    if settings.gmail_pilot_enabled:
+        gmail_provider = GmailProvider(
+            client_id=settings.google_client_id,
+            client_secret=settings.gmail_oauth_client_secret.get_secret_value(),
+            redirect_uri=settings.gmail_oauth_redirect_uri,
+            pubsub_topic=settings.gmail_pubsub_topic,
+            token_store=GmailSecretStore(settings.gmail_secret_project),
+        )
+
     submission_packet_generator = None
     if settings.submission_packet_download_enabled:
         allowed_buckets = {
@@ -830,6 +877,7 @@ def create_app():
             submission_packet_generator=submission_packet_generator,
             job_intake_ai=job_intake_ai,
             outreach_ai=outreach_ai,
+            gmail_provider=gmail_provider,
         ),
         GoogleIdentityVerifier(settings.google_client_id, settings.google_hosted_domain),
     )

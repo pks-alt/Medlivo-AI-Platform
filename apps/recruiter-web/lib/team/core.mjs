@@ -125,7 +125,7 @@ function endpoint(path, method, query) {
     '/candidates', `/candidates/${id}`, `/candidates/${id}/best-jobs`,
     '/manager/overview', '/manager/weekly-review', '/manager/match-quality', '/manager/operational-audit',
     '/recruiter/dashboard', '/recruiter/follow-ups', '/recruiter/protected-actions', '/daily-priorities', '/work-queue',
-    '/outreach-drafts', '/outreach-executions', `/candidates/${id}/relationship`,
+    '/outreach-drafts', '/outreach-executions', '/gmail/status', `/candidates/${id}/relationship`,
     '/admin/users', '/admin/teams', '/admin/audit', '/admin/operations',
     '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings',
     `/recruiters/${id}/weekly-goals`, '/job-publications', `/job-publications/${id}`,
@@ -141,6 +141,8 @@ function endpoint(path, method, query) {
   const post = [
     '/admin/users', `/matches/${id}/feedback`, '/outreach-drafts', `/outreach-drafts/${id}/decision`,
     `/outreach-drafts/${id}/queue`, `/outreach-executions/${id}/cancel`,
+    '/gmail/oauth/start', '/gmail/oauth/complete', '/gmail/disconnect',
+    `/outreach-executions/${id}/deliver-gmail`,
     `/jobs/${id}/protected-action`, `/candidates/${id}/engagement`,
     '/job-intake/upload', '/job-intake/batches',
     `/job-intake/batches/${id}/rows`, '/job-publications', `/job-publications/${id}/decision`,
