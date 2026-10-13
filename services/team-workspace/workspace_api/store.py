@@ -3979,6 +3979,193 @@ class WorkspaceStore:
             })
         return self._global_mutate(identity, key, "outreach.draft.reviewed", payload, apply)
 
+    def queue_outreach_draft(self, identity, draft_id, key, value):
+        payload = {
+            "draft_id": draft_id,
+            "scheduled_for": value.scheduled_for,
+        }
+        def apply(conn, principal):
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            draft = conn.execute(
+                select(t.outreach_drafts).where(
+                    t.outreach_drafts.c.tenant_id == principal["tenant_id"],
+                    t.outreach_drafts.c.id == draft_id,
+                    t.outreach_drafts.c.recruiter_user_id == principal["id"],
+                ).with_for_update()
+            ).mappings().first()
+            if draft is None:
+                raise AccessError(404, "Outreach draft not found")
+            if draft["status"] != "approved":
+                raise AccessError(409, "Only recruiter-approved outreach can be queued")
+
+            existing = conn.execute(
+                select(t.outreach_executions).where(
+                    t.outreach_executions.c.tenant_id == principal["tenant_id"],
+                    t.outreach_executions.c.draft_id == draft_id,
+                )
+            ).mappings().first()
+            if existing is not None:
+                return clean({
+                    **dict(existing),
+                    "provider_send_enabled": False,
+                    "provider_activation_required": True,
+                    "idempotent_existing_execution": True,
+                })
+
+            relationship = conn.execute(
+                select(t.candidate_relationships).where(
+                    t.candidate_relationships.c.tenant_id == principal["tenant_id"],
+                    t.candidate_relationships.c.candidate_id == draft["candidate_id"],
+                    t.candidate_relationships.c.status == "active",
+                ).order_by(t.candidate_relationships.c.last_meaningful_at.desc()).limit(1)
+            ).mappings().first()
+            if relationship is not None and relationship["recruiter_user_id"] != principal["id"]:
+                raise AccessError(409, "Candidate has an active relationship with another recruiter")
+
+            candidate = conn.execute(
+                select(t.candidates).where(
+                    t.candidates.c.tenant_id == principal["tenant_id"],
+                    t.candidates.c.id == draft["candidate_id"],
+                )
+            ).mappings().first()
+            if candidate is None:
+                raise AccessError(404, "Candidate not found")
+
+            provider = "gmail" if draft["channel"] == "email" else "zoom_phone"
+            destination = candidate["primary_email"] if draft["channel"] == "email" else candidate["primary_phone"]
+            if not destination:
+                raise AccessError(
+                    409,
+                    "Candidate does not have a verified contact endpoint for this outreach channel"
+                )
+
+            timestamp = now()
+            scheduled_for = value.scheduled_for or timestamp
+            if scheduled_for.tzinfo is None:
+                scheduled_for = scheduled_for.replace(tzinfo=timezone.utc)
+            if scheduled_for < timestamp:
+                scheduled_for = timestamp
+            if scheduled_for > timestamp + timedelta(days=14):
+                raise AccessError(422, "Outreach can be scheduled at most 14 days ahead")
+
+            row = dict(
+                id=uid(),
+                tenant_id=principal["tenant_id"],
+                draft_id=draft_id,
+                candidate_id=draft["candidate_id"],
+                job_id=draft["job_id"],
+                recruiter_user_id=principal["id"],
+                channel=draft["channel"],
+                provider=provider,
+                status="queued",
+                scheduled_for=scheduled_for,
+                claimed_at=None,
+                sent_at=None,
+                failed_at=None,
+                attempt_count=0,
+                max_attempts=3,
+                provider_message_id=None,
+                last_error=None,
+                payload_snapshot={
+                    "recipient": destination,
+                    "subject": draft["subject"],
+                    "body": draft["body"],
+                    "purpose": draft["purpose"],
+                    "policy_version": draft["policy_version"],
+                    "approved_at": draft["approved_at"],
+                },
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+            conn.execute(insert(t.outreach_executions).values(**row))
+            self._operational_audit(
+                conn, principal, "outreach.execution.queued", "outreach_execution", row["id"],
+                None,
+                {
+                    "draft_id": draft_id,
+                    "candidate_id": draft["candidate_id"],
+                    "job_id": draft["job_id"],
+                    "channel": draft["channel"],
+                    "provider": provider,
+                    "scheduled_for": scheduled_for,
+                    "provider_send_enabled": False,
+                },
+            )
+            return clean({
+                **row,
+                "provider_send_enabled": False,
+                "provider_activation_required": True,
+                "human_approval_verified": True,
+            })
+        return self._global_mutate(identity, key, "outreach.execution.queued", payload, apply)
+
+    def list_outreach_executions(self, identity, *, status=None, limit=50):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            statement = select(t.outreach_executions).where(
+                t.outreach_executions.c.tenant_id == principal["tenant_id"],
+                t.outreach_executions.c.recruiter_user_id == principal["id"],
+            )
+            if status:
+                if status not in {"queued", "processing", "sent", "failed", "cancelled"}:
+                    raise AccessError(422, "Unsupported outreach execution status")
+                statement = statement.where(t.outreach_executions.c.status == status)
+            rows = conn.execute(
+                statement.order_by(
+                    t.outreach_executions.c.created_at.desc(),
+                    t.outreach_executions.c.id.desc(),
+                ).limit(limit)
+            ).mappings().all()
+            return clean({
+                "items": rows,
+                "provider_send_enabled": False,
+                "provider_activation_required": True,
+                "jobdiva_writeback_enabled": False,
+            })
+
+    def cancel_outreach_execution(self, identity, execution_id, key, value):
+        payload = {"execution_id": execution_id, "reason": value.reason}
+        def apply(conn, principal):
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            row = conn.execute(
+                select(t.outreach_executions).where(
+                    t.outreach_executions.c.tenant_id == principal["tenant_id"],
+                    t.outreach_executions.c.id == execution_id,
+                    t.outreach_executions.c.recruiter_user_id == principal["id"],
+                ).with_for_update()
+            ).mappings().first()
+            if row is None:
+                raise AccessError(404, "Outreach execution not found")
+            if row["status"] not in {"queued", "failed"}:
+                raise AccessError(409, "Only queued or failed outreach can be cancelled")
+            timestamp = now()
+            conn.execute(
+                update(t.outreach_executions)
+                .where(
+                    t.outreach_executions.c.tenant_id == principal["tenant_id"],
+                    t.outreach_executions.c.id == execution_id,
+                )
+                .values(status="cancelled", last_error=value.reason, updated_at=timestamp)
+            )
+            self._operational_audit(
+                conn, principal, "outreach.execution.cancelled", "outreach_execution", execution_id,
+                {"status": row["status"]},
+                {"status": "cancelled"},
+                reason=value.reason,
+            )
+            return clean({
+                **dict(row),
+                "status": "cancelled",
+                "last_error": value.reason,
+                "updated_at": timestamp,
+                "provider_send_enabled": False,
+            })
+        return self._global_mutate(identity, key, "outreach.execution.cancelled", payload, apply)
+
     def recruiter_protected_actions(self, identity, *, limit=50):
         """Current recruiter first-action windows.
 
