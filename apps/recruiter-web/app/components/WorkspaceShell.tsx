@@ -34,13 +34,13 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
         {href:"/funnel",label:"Submission to Start",show:true},
       ]},
       {label:"OPERATING RHYTHM",items:[
-        {href:"/weekly",label:"Weekly Review",show:true},
+        {href:"/weekly",label:"Weekly",show:true},
         {href:"/manager",label:"Team Overview",show:!recruiter},
-        {href:"/executive",label:"Executive GM",show:me?.business_role==="executive"},
+        {href:"/executive",label:"Executive",show:me?.business_role==="executive"},
       ]},
       {label:"CONTROL",items:[
         {href:"/team?section=intake",label:"Job Intake",show:!recruiter},
-        {href:"/team?section=standards",label:"Job Standards",show:!recruiter},
+        {href:"/team?section=standards",label:"Job Content Standards",show:!recruiter},
         {href:"/team?section=approvals",label:"Job Approval",show:!recruiter},
         {href:"/admin",label:"Admin & Access",show:Boolean(me?.system_admin||me?.role==="admin")},
       ]},
