@@ -233,3 +233,14 @@ test("Candidate 360 exposes operational relationship state and meaningful activi
   assert.match(page, /RELATIONSHIP ACTIVITY/);
   assert.match(page, /Meaningful/);
 });
+
+
+test("Recruiter Jobs separates Priority 1 accountability from Priority 2 opportunity", async () => {
+  const page = await readFile(new URL("../../app/jobs/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /My Jobs · Priority 1/);
+  assert.match(page, /Division Opportunities · Priority 2/);
+  assert.match(page, /priority_1/);
+  assert.match(page, /priority_2/);
+  assert.match(page, /Primary assignment remains with/);
+  assert.match(page, /No Priority 2 opportunities currently meet the evidence-backed visibility rule/);
+});
