@@ -172,3 +172,39 @@ test('recruiter follow-ups is an allowlisted bounded read endpoint',async()=>{
  r=await h.request('/api/team/recruiter/follow-ups?status=bad',{headers:{Cookie:sessionCookie}});
  assert.equal(r.status,400);
 });
+
+
+test('recruiter execution and AI outreach routes are allowlisted without any send endpoint',async()=>{
+ const h=harness(),{sessionCookie,data}=await h.login();
+ const reads=[
+  '/api/team/recruiter/protected-actions?limit=50',
+  '/api/team/candidates/'+CASE+'/relationship',
+  '/api/team/outreach-drafts?candidate_id='+CASE+'&limit=25'
+ ];
+ for(const path of reads)assert.equal((await h.request(path,{headers:{Cookie:sessionCookie}})).status,200,path);
+
+ const posts=[
+  '/api/team/jobs/'+CASE+'/protected-action',
+  '/api/team/candidates/'+CASE+'/engagement',
+  '/api/team/outreach-drafts',
+  '/api/team/outreach-drafts/'+CASE+'/decision'
+ ];
+ for(const path of posts)assert.equal((await h.request(path,mutation(sessionCookie,data.csrf,{}))).status,200,path);
+
+ for(const path of [
+  '/api/team/outreach-drafts/'+CASE+'/send',
+  '/api/team/candidates/'+CASE+'/send-email',
+  '/api/team/candidates/'+CASE+'/send-sms'
+ ])assert.equal((await h.request(path,mutation(sessionCookie,data.csrf,{}))).status,404,path);
+});
+
+test('new recruiter mutations still require CSRF and idempotency',async()=>{
+ const h=harness(),{sessionCookie,data}=await h.login();
+ const path='/api/team/outreach-drafts';
+ const missingCsrf=mutation(sessionCookie,data.csrf,{});
+ missingCsrf.headers['X-CSRF-Token']='bad';
+ assert.equal((await h.request(path,missingCsrf)).status,403);
+ const missingKey=mutation(sessionCookie,data.csrf,{});
+ delete missingKey.headers['Idempotency-Key'];
+ assert.equal((await h.request(path,missingKey)).status,400);
+});
