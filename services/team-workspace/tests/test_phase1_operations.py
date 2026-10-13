@@ -2140,3 +2140,113 @@ def test_protected_deadline_counts_only_pacific_business_minutes(seeded):
     assert local_deadline.weekday() == 0
     assert (local_deadline.hour, local_deadline.minute) == (8, 30)
     assert remaining == 60
+
+
+def test_approved_outreach_can_be_queued_without_external_send(seeded, verifier, headers):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open", profession="Physical Therapist"
+        ))
+        conn.execute(update(t.candidates).where(t.candidates.c.id == idn(300)).values(
+            profession="Physical Therapist",
+            primary_email="synthetic.candidate@example.test",
+        ))
+
+    ai_client = TestClient(build_app(WorkspaceStore(seeded, outreach_ai=FakeOutreachAI()), verifier))
+    created = ai_client.post(
+        "/api/v1/team/outreach-drafts",
+        headers=headers("recruiter-a"),
+        json={
+            "candidate_id": idn(300),
+            "job_id": idn(200),
+            "channel": "email",
+            "purpose": "follow_up",
+        },
+    )
+    assert created.status_code == 201
+
+    approved = ai_client.post(
+        f"/api/v1/team/outreach-drafts/{created.json()['id']}/decision",
+        headers=headers("recruiter-a"),
+        json={"decision": "approved", "body": "Recruiter-approved synthetic outreach."},
+    )
+    assert approved.status_code == 200
+
+    queued = ai_client.post(
+        f"/api/v1/team/outreach-drafts/{created.json()['id']}/queue",
+        headers=headers("recruiter-a"),
+        json={},
+    )
+    assert queued.status_code == 201
+    execution = queued.json()
+    assert execution["status"] == "queued"
+    assert execution["provider"] == "gmail"
+    assert execution["provider_send_enabled"] is False
+    assert execution["provider_activation_required"] is True
+    assert execution["human_approval_verified"] is True
+    assert execution["payload_snapshot"]["recipient"] == "synthetic.candidate@example.test"
+
+    listed = ai_client.get(
+        "/api/v1/team/outreach-executions",
+        headers=headers("recruiter-a"),
+    )
+    assert listed.status_code == 200
+    assert listed.json()["provider_send_enabled"] is False
+    assert listed.json()["jobdiva_writeback_enabled"] is False
+    assert listed.json()["items"][0]["draft_id"] == created.json()["id"]
+
+
+def test_outreach_queue_requires_approval_and_can_be_cancelled(seeded, verifier, headers):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open"
+        ))
+        conn.execute(update(t.candidates).where(t.candidates.c.id == idn(300)).values(
+            primary_phone="+14255550100"
+        ))
+
+    ai_client = TestClient(build_app(WorkspaceStore(seeded, outreach_ai=FakeOutreachAI()), verifier))
+    created = ai_client.post(
+        "/api/v1/team/outreach-drafts",
+        headers=headers("recruiter-a"),
+        json={
+            "candidate_id": idn(300),
+            "job_id": idn(200),
+            "channel": "sms",
+            "purpose": "next_step",
+        },
+    )
+    assert created.status_code == 201
+    draft_id = created.json()["id"]
+
+    blocked = ai_client.post(
+        f"/api/v1/team/outreach-drafts/{draft_id}/queue",
+        headers=headers("recruiter-a"),
+        json={},
+    )
+    assert blocked.status_code == 409
+    assert "approved" in blocked.json()["detail"].lower()
+
+    approved = ai_client.post(
+        f"/api/v1/team/outreach-drafts/{draft_id}/decision",
+        headers=headers("recruiter-a"),
+        json={"decision": "approved", "body": "Synthetic approved SMS."},
+    )
+    assert approved.status_code == 200
+
+    queued = ai_client.post(
+        f"/api/v1/team/outreach-drafts/{draft_id}/queue",
+        headers=headers("recruiter-a"),
+        json={},
+    )
+    assert queued.status_code == 201
+    assert queued.json()["provider"] == "zoom_phone"
+
+    cancelled = ai_client.post(
+        f"/api/v1/team/outreach-executions/{queued.json()['id']}/cancel",
+        headers=headers("recruiter-a"),
+        json={"reason": "Candidate asked recruiter to pause outreach"},
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "cancelled"
+    assert cancelled.json()["provider_send_enabled"] is False
