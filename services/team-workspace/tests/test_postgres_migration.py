@@ -139,7 +139,25 @@ def test_reviewed_migration_runner_has_replay_safe_ledger_and_legacy_sentinels()
         "019_gmail_reply_sync.sql",
         "020_followup_sequences.sql",
         "021_scheduled_followup_execution.sql",
+        "022_repair_recruiter_execution_controls.sql",
     ):
         assert name in runner
     assert "Baselined existing reviewed migration" in runner
     assert "Migration already recorded" in runner
+    assert "MIGRATION_FAILED" in runner
+    assert "sqlstate=" in runner
+    assert "error_class=" in runner
+
+
+def test_recruiter_execution_repair_migration_is_guarded_and_non_destructive():
+    sql = (
+        Path(__file__).parents[1] / "migrations" /
+        "022_repair_recruiter_execution_controls.sql"
+    ).read_text()
+    assert "DROP TABLE" not in sql
+    assert "TRUNCATE" not in sql
+    assert "DELETE FROM" not in sql
+    assert "ADD COLUMN IF NOT EXISTS assignment_version" in sql
+    assert "ADD COLUMN IF NOT EXISTS meaningful_action_by" in sql
+    assert "GRANT SELECT, INSERT, UPDATE ON public.ws_protected_action_window" in sql
+    assert "administrator-reviewed data repair" in sql
