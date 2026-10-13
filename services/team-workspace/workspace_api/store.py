@@ -4073,7 +4073,7 @@ class WorkspaceStore:
                     "body": draft["body"],
                     "purpose": draft["purpose"],
                     "policy_version": draft["policy_version"],
-                    "approved_at": draft["approved_at"],
+                    "approved_at": json_value(draft["approved_at"]) if draft["approved_at"] else None,
                 },
                 created_at=timestamp,
                 updated_at=timestamp,
