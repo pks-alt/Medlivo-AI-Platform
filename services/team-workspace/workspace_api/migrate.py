@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import sys
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import DBAPIError
 
 
 ALLOWED_PREFIX = Path("/app/migrations")
@@ -19,7 +20,13 @@ ALLOWED_PREFIX = Path("/app/migrations")
 # A sentinel means that migration's principal schema object already exists.
 SENTINELS = {
     "014_job_content_standards.sql": ("table", "ws_job_content_standard"),
-    "015_recruiter_execution_controls.sql": ("table", "ws_candidate_engagement_event"),
+    "015_recruiter_execution_controls.sql": (
+        "any_table",
+        "ws_business_calendar_exception",
+        "ws_protected_action_window",
+        "ws_candidate_relationship",
+        "ws_candidate_engagement_event",
+    ),
     "016_outreach_drafts.sql": ("table", "ws_outreach_draft"),
     "017_outreach_execution.sql": ("table", "ws_outreach_execution"),
     "018_gmail_provider_pilot.sql": ("table", "ws_gmail_connection"),
@@ -51,6 +58,14 @@ def _sentinel_exists(conn, migration_name: str) -> bool:
             text("SELECT to_regclass(:name) IS NOT NULL"),
             {"name": "public." + sentinel[1]},
         ).scalar_one()
+    if sentinel[0] == "any_table":
+        return any(
+            conn.execute(
+                text("SELECT to_regclass(:name) IS NOT NULL"),
+                {"name": "public." + table_name},
+            ).scalar_one()
+            for table_name in sentinel[1:]
+        )
     if sentinel[0] == "column":
         return conn.execute(text("""
             SELECT EXISTS (
@@ -103,12 +118,25 @@ def main(argv=None):
                 print(f"Baselined existing reviewed migration: {path.name}")
                 return
 
-            conn.exec_driver_sql(sql)
-            conn.execute(text("""
-                INSERT INTO public.ws_schema_migration
-                  (migration_name, checksum_sha256, disposition)
-                VALUES (:migration_name, :checksum, 'applied')
-            """), {"migration_name": path.name, "checksum": checksum})
+            try:
+                conn.exec_driver_sql(sql)
+                conn.execute(text("""
+                    INSERT INTO public.ws_schema_migration
+                      (migration_name, checksum_sha256, disposition)
+                    VALUES (:migration_name, :checksum, 'applied')
+                """), {"migration_name": path.name, "checksum": checksum})
+            except DBAPIError as exc:
+                original = getattr(exc, "orig", None)
+                sqlstate = getattr(original, "sqlstate", None) or "unknown"
+                error_class = type(original).__name__ if original is not None else type(exc).__name__
+                # Safe diagnostics only: never log SQL text, parameters, connection details,
+                # raw database messages, candidate data, or secret values.
+                print(
+                    f"MIGRATION_FAILED name={path.name} "
+                    f"sqlstate={sqlstate} error_class={error_class}",
+                    file=sys.stderr,
+                )
+                raise SystemExit(1) from None
     finally:
         engine.dispose()
     print(f"Applied reviewed migration: {path.name}")
