@@ -1,7 +1,6 @@
 "use client";
 import {useEffect,useState} from "react";
 import Link from "next/link";
-import {useSearchParams} from "next/navigation";
 
 async function session(){
   const r=await fetch("/api/team/session",{cache:"no-store",credentials:"same-origin"});
@@ -11,11 +10,11 @@ async function session(){
 }
 
 export default function GmailCallbackPage(){
-  const params=useSearchParams();
   const[status,setStatus]=useState("Completing Gmail connection…");
   const[error,setError]=useState("");
 
   useEffect(()=>{
+    const params=new URLSearchParams(window.location.search);
     const code=params.get("code")||"";
     const state=params.get("state")||"";
     const oauthError=params.get("error")||"";
@@ -42,7 +41,7 @@ export default function GmailCallbackPage(){
         setStatus("");
       }
     })();
-  },[params]);
+  },[]);
 
   return <main className="page">
     <section className="panelBox" style={{maxWidth:720,margin:"40px auto"}}>
