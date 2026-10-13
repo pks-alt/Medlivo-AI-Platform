@@ -9,6 +9,7 @@ from sqlalchemy import insert, update, select
 from workspace_api.store import now, WorkspaceStore
 from workspace_api.app import build_app
 from workspace_api.job_intake_ai import JobIntakeAIResult
+from workspace_api.outreach_ai import OutreachAIResult
 
 
 def idn(n):
@@ -1847,7 +1848,9 @@ def test_batch_jd_preparation_uses_active_medlivo_standard_and_flags_unmatched_r
     assert pt["status"] != "approved"
 
 
-def test_assignment_creates_protected_first_action_window(client, headers):
+def test_assignment_creates_protected_first_action_window(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(division="Rehabilitation", status="open"))
     assigned = client.put(
         f"/api/v1/team/jobs/{idn(200)}/assignment",
         headers=headers("manager-a"),
@@ -1872,7 +1875,9 @@ def test_assignment_creates_protected_first_action_window(client, headers):
     assert item["protected_until"] > item["assigned_at"]
 
 
-def test_assigned_recruiter_can_mark_protected_job_working(client, headers):
+def test_assigned_recruiter_can_mark_protected_job_working(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(division="Rehabilitation", status="open"))
     assigned = client.put(
         f"/api/v1/team/jobs/{idn(200)}/assignment",
         headers=headers("manager-a"),
@@ -1993,6 +1998,8 @@ def test_other_recruiter_cannot_bypass_active_candidate_relationship(client, hea
 
 
 def test_expired_window_becomes_same_division_support_without_reassignment(client, headers, seeded):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(division="Rehabilitation", status="open"))
     assigned = client.put(
         f"/api/v1/team/jobs/{idn(200)}/assignment",
         headers=headers("manager-a"),
@@ -2021,3 +2028,103 @@ def test_expired_window_becomes_same_division_support_without_reassignment(clien
     assert item["is_mine"] is False
     assert item["support_allowed"] is True
     assert item["current_recruiter_user_id"] == idn(11)
+
+
+class FakeOutreachAI:
+    def compose(self, context):
+        channel = context["channel"]
+        return OutreachAIResult(
+            subject=None if channel == "sms" else "Synthetic Medlivo follow-up",
+            body="Synthetic source-grounded recruiter draft.",
+            warnings=[],
+            provider="fake_vertex",
+            model="fake-gemini",
+        )
+
+
+def test_ai_outreach_draft_is_persisted_and_approval_does_not_send(seeded, verifier, headers):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open", profession="Physical Therapist",
+            city="Fresno", state="CA"
+        ))
+        conn.execute(update(t.candidates).where(t.candidates.c.id == idn(300)).values(
+            profession="Physical Therapist", city="Fresno", state="CA"
+        ))
+
+    ai_client = TestClient(build_app(WorkspaceStore(seeded, outreach_ai=FakeOutreachAI()), verifier))
+    created = ai_client.post(
+        "/api/v1/team/outreach-drafts",
+        headers=headers("recruiter-a"),
+        json={
+            "candidate_id": idn(300),
+            "job_id": idn(200),
+            "channel": "email",
+            "purpose": "follow_up",
+            "instruction": "Follow up using only trusted context",
+        },
+    )
+    assert created.status_code == 201
+    draft = created.json()
+    assert draft["model_provider"] == "fake_vertex"
+    assert draft["model_version"] == "fake-gemini"
+    assert draft["policy_version"] == "outreach-human-review-v1"
+    assert draft["human_review_required"] is True
+    assert draft["external_send_enabled"] is False
+    assert draft["status"] == "draft"
+
+    approved = ai_client.post(
+        f"/api/v1/team/outreach-drafts/{draft['id']}/decision",
+        headers=headers("recruiter-a"),
+        json={
+            "decision": "approved",
+            "subject": "Recruiter reviewed subject",
+            "body": "Recruiter edited and approved body.",
+        },
+    )
+    assert approved.status_code == 200
+    body = approved.json()
+    assert body["status"] == "approved"
+    assert body["subject"] == "Recruiter reviewed subject"
+    assert body["body"] == "Recruiter edited and approved body."
+    assert body["external_send_enabled"] is False
+    assert "disabled" in body["next_step"].lower()
+
+    with seeded.begin() as conn:
+        stored = conn.execute(select(t.outreach_drafts).where(
+            t.outreach_drafts.c.id == draft["id"]
+        )).mappings().one()
+    assert stored["status"] == "approved"
+    assert stored["body"] == "Recruiter edited and approved body."
+
+
+def test_ai_outreach_draft_respects_active_relationship(seeded, verifier, headers):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(201)).values(
+            division="Rehabilitation", status="open"
+        ))
+
+    ai_client = TestClient(build_app(WorkspaceStore(seeded, outreach_ai=FakeOutreachAI()), verifier))
+    established = ai_client.post(
+        f"/api/v1/team/candidates/{idn(301)}/engagement",
+        headers=headers("recruiter-b"),
+        json={
+            "event_type": "completed_call",
+            "job_id": idn(201),
+            "source_type": "manual",
+        },
+    )
+    assert established.status_code == 200
+
+    blocked = ai_client.post(
+        "/api/v1/team/outreach-drafts",
+        headers=headers("recruiter-a"),
+        json={
+            "candidate_id": idn(301),
+            "job_id": idn(201),
+            "channel": "sms",
+            "purpose": "follow_up",
+        },
+    )
+    assert blocked.status_code == 409
+    assert "another recruiter" in blocked.json()["detail"].lower()
