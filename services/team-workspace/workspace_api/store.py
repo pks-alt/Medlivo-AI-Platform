@@ -4295,6 +4295,19 @@ class WorkspaceStore:
                 updated_at=timestamp,
             )
             conn.execute(insert(t.followup_sequences).values(**row))
+            for index, day in enumerate(row["cadence_days"], start=1):
+                conn.execute(insert(t.followup_sequence_steps).values(
+                    id=uid(),
+                    tenant_id=principal["tenant_id"],
+                    sequence_id=row["id"],
+                    step_number=index,
+                    due_at=timestamp + timedelta(days=int(day)),
+                    status="scheduled",
+                    outreach_draft_id=None,
+                    outreach_execution_id=None,
+                    created_at=timestamp,
+                    updated_at=timestamp,
+                ))
             self._operational_audit(
                 conn, principal, "followup.sequence.started", "followup_sequence", row["id"],
                 None,
@@ -4319,7 +4332,18 @@ class WorkspaceStore:
             rows = conn.execute(
                 statement.order_by(t.followup_sequences.c.updated_at.desc()).limit(limit)
             ).mappings().all()
-            return clean({"items":[dict(row) for row in rows]})
+            items = []
+            for row in rows:
+                steps = conn.execute(
+                    select(t.followup_sequence_steps).where(
+                        t.followup_sequence_steps.c.tenant_id == principal["tenant_id"],
+                        t.followup_sequence_steps.c.sequence_id == row["id"],
+                    ).order_by(t.followup_sequence_steps.c.step_number)
+                ).mappings().all()
+                item = dict(row)
+                item["steps"] = [dict(step) for step in steps]
+                items.append(item)
+            return clean({"items":items})
 
     def control_followup_sequence(self, identity, sequence_id, key, value):
         payload = {"sequence_id": sequence_id, "action": value.action, "reason": value.reason}
