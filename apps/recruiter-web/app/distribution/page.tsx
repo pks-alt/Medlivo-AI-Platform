@@ -65,9 +65,10 @@ export default function DistributionPage(){
   const assigned=rows.filter((j:any)=>j.operational_owner_user_id).length;
   const unassigned=rows.length-assigned;
   const high=rows.filter((j:any)=>isHigh(j.operational?.job_priority)).length;
+  const incomplete=rows.filter((j:any)=>!j.division||!j.jobdiva_job_id).length;
 
   return <main className="page jobsHubPage">
-    <div className="pageHead"><div><small>Block 1 · Delivery management</small><h1>Job Distribution</h1><p>Route live jobs to the correct division and recruiter without changing JobDiva ownership.</p></div><span className="sourcePill">LIVE MEDLIVO WORKSPACE</span></div>
+    <div className="pageHead"><div><small>Block 1 · Delivery management</small><h1>Job Distribution</h1><p>Route synchronized and approved jobs to the correct division and recruiter without changing JobDiva ownership.</p></div><span className="sourcePill">MEDLIVO STAGING</span></div>
 
     <section className="todayWelcome">
       <small>THREE DIVISIONS · ONE PLATFORM</small>
@@ -77,6 +78,7 @@ export default function DistributionPage(){
 
     {error&&<div className="adminError"><b>Latest action could not be completed</b><span>{error}</span></div>}
     {message&&<div className="goodState">{message}</div>}
+    {incomplete>0&&<div className="todayDataNotice"><b>Staging data is not yet representative of the Block 1 real-data flow</b><span>{incomplete} job record{incomplete===1?"":"s"} currently lack a JobDiva source link, division classification, or both.</span><p>They remain visible for workflow validation, but they should not be treated as real synchronized JobDiva demand.</p></div>}
 
     <div className="adminMetricGrid">
       <article><strong>{rows.length}</strong><b>Jobs in view</b><span>Live canonical jobs</span></article>
@@ -96,7 +98,7 @@ export default function DistributionPage(){
         const current=j.operational_owner_user_id||"";
         return <article key={j.id} className="jobsHubCard">
           <div className="jobsHubPrimary">
-            <small>{j.division||"Unclassified"}{j.customer_name?" · "+j.customer_name:""} · {j.jobdiva_job_id?"JOBDIVA":"DIRECT / CANONICAL"}</small>
+            <small>{j.division||"DIVISION PENDING"}{j.customer_name?" · "+j.customer_name:""} · {j.jobdiva_job_id?"JOBDIVA SYNC":"STAGING CANONICAL RECORD"}</small>
             <h2>{j.title}</h2>
             <p>{[j.profession,j.specialty,[j.city,j.state].filter(Boolean).join(", ")].filter(Boolean).join(" · ")||"Job context incomplete"}</p>
             <span>Assigned recruiter: {j.operational_owner_name||"Unassigned"} · Start {j.start_date||"pending"}</span>

@@ -23,22 +23,28 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
   const[me,setMe]=useState<Me|null>(null);
   useEffect(()=>{loadMe().then(setMe).catch(()=>setMe(null));setSection(new URLSearchParams(window.location.search).get("section")||"")},[pathname]);
 
-  const items=useMemo(()=>{
-    const base=[
-      {href:"/",label:"Today",show:true},
-      {href:"/jobs",label:"Jobs",show:true},
-      {href:"/candidates",label:"Candidates",show:true},
-      {href:"/distribution",label:"Job Distribution",show:me?.business_role!=="recruiter"},
-      {href:"/team?section=intake",label:"Job Intake",show:me?.business_role!=="recruiter"},
-      {href:"/team?section=standards",label:"Job Content Standards",show:me?.business_role!=="recruiter"},
-      {href:"/team?section=approvals",label:"Job Approval",show:me?.business_role!=="recruiter"},
-      {href:"/weekly",label:"Weekly",show:true},
-      {href:"/funnel",label:"Submission to Start",show:true},
-      {href:"/manager",label:"Manager",show:me?.business_role!=="recruiter"},
-      {href:"/executive",label:"Executive",show:me?.business_role==="executive"},
-      {href:"/admin",label:"Admin",show:Boolean(me?.system_admin||me?.role==="admin")},
-    ];
-    return base.filter(x=>x.show);
+  const groups=useMemo(()=>{
+    const recruiter=me?.business_role==="recruiter";
+    return [
+      {label:"DAILY WORK",items:[
+        {href:"/",label:"Today",show:true},
+        {href:"/distribution",label:"Job Distribution",show:!recruiter},
+        {href:"/jobs",label:"Jobs",show:true},
+        {href:"/candidates",label:"Candidates",show:true},
+        {href:"/funnel",label:"Submission to Start",show:true},
+      ]},
+      {label:"OPERATING RHYTHM",items:[
+        {href:"/weekly",label:"Weekly",show:true},
+        {href:"/manager",label:"Team Overview",show:!recruiter},
+        {href:"/executive",label:"Executive",show:me?.business_role==="executive"},
+      ]},
+      {label:"CONTROL",items:[
+        {href:"/team?section=intake",label:"Job Intake",show:!recruiter},
+        {href:"/team?section=standards",label:"Job Content Standards",show:!recruiter},
+        {href:"/team?section=approvals",label:"Job Approval",show:!recruiter},
+        {href:"/admin",label:"Admin & Access",show:Boolean(me?.system_admin||me?.role==="admin")},
+      ]},
+    ].map(group=>({...group,items:group.items.filter(x=>x.show)})).filter(group=>group.items.length);
   },[me]);
 
   const active=(href:string)=>{
@@ -59,14 +65,20 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
 
   return <div className="appShell">
     <aside className="appSidebar">
-      <div className="appBrand"><b>medlivo</b><span>RECRUIT AI</span></div>
+      <div className="appBrand">
+        <b>medlivo</b><span>RECRUIT AI</span>
+        <small>Healthcare Staffing Intelligence</small>
+      </div>
       <nav aria-label="Recruit AI navigation">
-        <small>WORKSPACE</small>
-        {items.map(item=><Link key={item.href} href={item.href} className={active(item.href)?"active":""}>{item.label}</Link>)}
+        {groups.map(group=><div className="appNavGroup" key={group.label}>
+          <small>{group.label}</small>
+          {group.items.map(item=><Link key={item.href} href={item.href} className={active(item.href)?"active":""}>{item.label}</Link>)}
+        </div>)}
       </nav>
       <div className="appSidebarFoot">
-        <span className="appStatusDot"/> <b>Private workspace</b>
-        <small>{me?.display_name||"Medlivo team"}</small>
+        <div><span className="appStatusDot"/><b>Medlivo secure staging</b></div>
+        <small>{me?.display_name||"Medlivo team"} · {String(me?.business_role||me?.role||"user").replaceAll("_"," ")}</small>
+        <em>Block 1 · Intake → Distribution → Recruiter Work</em>
       </div>
     </aside>
     <div className="appCanvas">{children}</div>
