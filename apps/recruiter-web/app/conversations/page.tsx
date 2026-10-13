@@ -17,15 +17,15 @@ async function session(){
 function title(v:any){return String(v||"").replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase())}
 
 export default function ConversationsPage(){
- const[candidates,setCandidates]=useState<any[]>([]),[jobs,setJobs]=useState<any[]>([]),[priorities,setPriorities]=useState<any>({items:[]}),[drafts,setDrafts]=useState<any[]>([]),[executions,setExecutions]=useState<any[]>([]),[gmailMessages,setGmailMessages]=useState<any[]>([]);
+ const[candidates,setCandidates]=useState<any[]>([]),[jobs,setJobs]=useState<any[]>([]),[priorities,setPriorities]=useState<any>({items:[]}),[drafts,setDrafts]=useState<any[]>([]),[executions,setExecutions]=useState<any[]>([]),[gmailMessages,setGmailMessages]=useState<any[]>([]),[sequences,setSequences]=useState<any[]>([]);
  const[candidateId,setCandidateId]=useState(""),[jobId,setJobId]=useState(""),[channel,setChannel]=useState<"email"|"sms">("email"),[purpose,setPurpose]=useState("follow_up");
  const[instruction,setInstruction]=useState(""),[activeDraft,setActiveDraft]=useState<any>(null),[subject,setSubject]=useState(""),[body,setBody]=useState("");
  const[relationship,setRelationship]=useState<any>(null),[gmail,setGmail]=useState<any>({connected:false,status:"not_connected"}),[error,setError]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false);
 
  async function load(){
   setError("");
-  const[c,j,p,d,x,g,m]=await Promise.all([api("candidates?limit=100"),api("jobs?limit=100"),api("daily-priorities?limit=50"),api("outreach-drafts?limit=50"),api("outreach-executions?limit=50"),api("gmail/status"),api("gmail/messages?limit=25")]);
-  setCandidates(c.items||[]);setJobs(j.items||[]);setPriorities(p);setDrafts(d.items||[]);setExecutions(x.items||[]);setGmail(g);setGmailMessages(m.items||[]);
+  const[c,j,p,d,x,g,m,sq]=await Promise.all([api("candidates?limit=100"),api("jobs?limit=100"),api("daily-priorities?limit=50"),api("outreach-drafts?limit=50"),api("outreach-executions?limit=50"),api("gmail/status"),api("gmail/messages?limit=25"),api("followup-sequences?limit=50")]);
+  setCandidates(c.items||[]);setJobs(j.items||[]);setPriorities(p);setDrafts(d.items||[]);setExecutions(x.items||[]);setGmail(g);setGmailMessages(m.items||[]);setSequences(sq.items||[]);
  }
  useEffect(()=>{load().catch(e=>setError(e.message))},[]);
  useEffect(()=>{if(!candidateId){setRelationship(null);return}api("candidates/"+candidateId+"/relationship").then(setRelationship).catch(()=>setRelationship(null))},[candidateId]);
@@ -33,6 +33,37 @@ export default function ConversationsPage(){
  const selectedCandidate=useMemo(()=>candidates.find(c=>c.id===candidateId),[candidates,candidateId]);
  const selectedJob=useMemo(()=>jobs.find(j=>j.id===jobId),[jobs,jobId]);
  const followups=useMemo(()=>(priorities.items||[]).filter((x:any)=>x.type==="follow_up"),[priorities]);
+
+ async function startSequence(){
+  if(!candidateId){setError("Select a candidate before starting follow-ups.");return}
+  setBusy(true);setError("");setMessage("");
+  try{
+    const s=await session();
+    const created=await api("followup-sequences",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":s.csrf,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({candidate_id:candidateId,job_id:jobId||null,cadence_days:[3,7,14],stop_on_reply:true})});
+    setSequences(prev=>[created,...prev]);
+    setMessage("Follow-up plan started for days 3, 7 and 14. Candidate reply will stop the sequence automatically.");
+  }catch(e:any){setError(e.message||"Follow-up plan could not be started")}finally{setBusy(false)}
+ }
+
+ async function controlSequence(sequenceId:string,action:"pause"|"resume"|"stop"){
+  setBusy(true);setError("");setMessage("");
+  try{
+    const s=await session();
+    const updated=await api("followup-sequences/"+sequenceId+"/action",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":s.csrf,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({action,reason:action==="stop"?"Recruiter stopped follow-up plan":null})});
+    setSequences(prev=>prev.map(x=>x.id===sequenceId?{...x,...updated}:x));
+    setMessage("Follow-up plan "+action+"d.");
+  }catch(e:any){setError(e.message||"Follow-up plan could not be updated")}finally{setBusy(false)}
+ }
+
+ async function suppressEmail(candidate:string){
+  setBusy(true);setError("");setMessage("");
+  try{
+    const s=await session();
+    await api("contact-suppressions",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":s.csrf,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({candidate_id:candidate,channel:"email",reason:"Recruiter recorded do-not-contact / opt-out"})});
+    setSequences(prev=>prev.map(x=>x.candidate_id===candidate&&["active","paused"].includes(x.status)?{...x,status:"stopped",stopped_reason:"contact_suppressed"}:x));
+    setMessage("Email outreach suppressed. Pending follow-ups were cancelled.");
+  }catch(e:any){setError(e.message||"Contact suppression could not be saved")}finally{setBusy(false)}
+ }
 
  async function createDraft(){
   if(!candidateId){setError("Select a candidate before generating a draft.");return}
@@ -119,6 +150,9 @@ export default function ConversationsPage(){
    <section className="panelBox"><small>NEEDS RESPONSE / FOLLOW-UP</small>
     <div className="conversationQueue">{followups.map((x:any,i:number)=><article key={x.id||i}><b>{x.candidate_name||x.title||"Follow-up"}</b><span>{x.detail||x.urgency||"Review next action"}</span>{x.job_id&&<Link href={"/jobs/"+x.job_id}>Open job</Link>}</article>)}{!followups.length&&<div className="emptyState">No current follow-up actions are visible.</div>}</div>
     <hr className="sectionRule"/>
+    <small>FOLLOW-UP PLANS</small>
+    <div className="conversationQueue">{sequences.slice(0,8).map((x:any)=><article key={x.id}><b>{title(x.status)} · Days {(x.cadence_days||[]).join(", ")}</b><span>{x.steps?.filter((s:any)=>s.status==="scheduled").length||0} scheduled steps · Stops on reply {x.stop_on_reply?"Yes":"No"}</span><div>{x.status==="active"&&<button className="button subtle" disabled={busy} onClick={()=>controlSequence(x.id,"pause")}>Pause</button>}{x.status==="paused"&&<button className="button subtle" disabled={busy} onClick={()=>controlSequence(x.id,"resume")}>Resume</button>}{["active","paused"].includes(x.status)&&<button className="button subtle" disabled={busy} onClick={()=>controlSequence(x.id,"stop")}>Stop</button>}</div></article>)}{!sequences.length&&<div className="emptyState">No follow-up plans yet.</div>}</div>
+    <hr className="sectionRule"/>
     <small>RECENT GMAIL REPLIES</small>
     <div className="conversationQueue">{gmailMessages.slice(0,8).map((x:any)=><article key={x.id}><b>{x.subject||"Candidate reply"}</b><span>{x.from_address||"Candidate"} · {x.received_at?new Date(x.received_at).toLocaleString():""}</span><span>{String(x.body_text||"").slice(0,220)||"Reply received"}</span>{x.candidate_id&&<Link href={"/candidates/"+x.candidate_id}>Open candidate</Link>}</article>)}{!gmailMessages.length&&<div className="emptyState">No synchronized Gmail replies yet.</div>}</div>
     <hr className="sectionRule"/>
@@ -144,6 +178,7 @@ export default function ConversationsPage(){
     </div>
 
     <button className="button primary" disabled={busy||!candidateId||Boolean(relationship?.relationship&&!relationship.relationship.is_mine)} onClick={createDraft}>{busy?"Generating…":"Generate AI Draft"}</button>
+    {candidateId&&<div className="conversationActions"><button className="button" disabled={busy} onClick={startSequence}>Start 3 / 7 / 14 Day Follow-up Plan</button><button className="button subtle" disabled={busy} onClick={()=>suppressEmail(candidateId)}>Stop Email / Opt Out</button></div>}
     {relationship?.relationship&&!relationship.relationship.is_mine&&<p className="sectionHelp">AI draft creation is intentionally blocked here until recruiter coordination is resolved.</p>}
 
     {activeDraft&&<div className="aiDraftWorkspace">
