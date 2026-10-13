@@ -20,7 +20,7 @@ class DeploymentMigrationTests(unittest.TestCase):
             "WORKSPACE_DATABASE_URL=medlivo-team-staging-api-database-url:latest",
             workflow,
         )
-        self.assertIn("Apply reviewed workspace migrations 014-020", workflow)
+        self.assertIn("Apply reviewed workspace migrations 014-021", workflow)
         self.assertIn("014_job_content_standards.sql", workflow)
         self.assertIn("015_recruiter_execution_controls.sql", workflow)
         self.assertIn("016_outreach_drafts.sql", workflow)
@@ -28,9 +28,10 @@ class DeploymentMigrationTests(unittest.TestCase):
         self.assertIn("018_gmail_provider_pilot.sql", workflow)
         self.assertIn("019_gmail_reply_sync.sql", workflow)
         self.assertIn("020_followup_sequences.sql", workflow)
+        self.assertIn("021_scheduled_followup_execution.sql", workflow)
         self.assertIn(migration, workflow)
         self.assertLess(
-            workflow.index("Apply reviewed workspace migrations 014-020"),
+            workflow.index("Apply reviewed workspace migrations 014-021"),
             workflow.index("Deploy private API candidate with schema readiness gate"),
         )
         self.assertIn("--set-cloudsql-instances", workflow)
