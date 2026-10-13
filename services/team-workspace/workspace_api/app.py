@@ -19,6 +19,7 @@ from .schemas import (
     JobOperationalUpdate, JobAssignmentInput, JobIntakeItemDecision,
     ProtectedActionInput, CandidateEngagementInput,
     OutreachDraftInput, OutreachDraftDecisionInput,
+    OutreachExecutionInput, OutreachExecutionCancelInput,
     MarginCalculationInput, MarginDiscussionInput, MarginFinalizeInput,
     CostAssumptionSetInput, CustomerEconomicRuleInput,
     W2PayPackageSnapshotInput, LocumsPayPackageSnapshotInput,
@@ -137,6 +138,7 @@ def build_app(store, verifier):
             "public.ws_candidate_relationship",
             "public.ws_candidate_engagement_event",
             "public.ws_outreach_draft",
+            "public.ws_outreach_execution",
         )
         try:
             with store.engine.connect() as conn:
@@ -377,6 +379,32 @@ def build_app(store, verifier):
                               who=Depends(identity)):
         return store.decide_outreach_draft(
             who, str(draft_id), str(idempotency_key), value
+        )
+
+    @app.post(prefix + "/outreach-drafts/{draft_id}/queue", status_code=201)
+    def queue_outreach_draft(draft_id: UUID,
+                             value: OutreachExecutionInput,
+                             idempotency_key: UUID = Header(),
+                             who=Depends(identity)):
+        return store.queue_outreach_draft(
+            who, str(draft_id), str(idempotency_key), value
+        )
+
+    @app.get(prefix + "/outreach-executions")
+    def outreach_executions(status: str | None = None,
+                            limit: int = Query(default=50, ge=1, le=100),
+                            who=Depends(identity)):
+        return store.list_outreach_executions(
+            who, status=status, limit=limit
+        )
+
+    @app.post(prefix + "/outreach-executions/{execution_id}/cancel")
+    def cancel_outreach_execution(execution_id: UUID,
+                                  value: OutreachExecutionCancelInput,
+                                  idempotency_key: UUID = Header(),
+                                  who=Depends(identity)):
+        return store.cancel_outreach_execution(
+            who, str(execution_id), str(idempotency_key), value
         )
 
     @app.get(prefix + "/recruiter/protected-actions")

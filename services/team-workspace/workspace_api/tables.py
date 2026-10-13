@@ -601,6 +601,32 @@ Index("idx_ws_outreach_draft_recruiter", outreach_drafts.c.tenant_id,
 Index("idx_ws_outreach_draft_candidate", outreach_drafts.c.tenant_id,
       outreach_drafts.c.candidate_id, outreach_drafts.c.created_at)
 
+outreach_executions = Table(
+    "ws_outreach_execution", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("draft_id", nullable=False),
+    U("candidate_id", nullable=False), U("job_id"), U("recruiter_user_id", nullable=False),
+    S("channel", nullable=False), S("provider", nullable=False), S("status", nullable=False),
+    D("scheduled_for", nullable=False), D("claimed_at"), D("sent_at"), D("failed_at"),
+    Column("attempt_count", Integer, nullable=False, default=0),
+    Column("max_attempts", Integer, nullable=False, default=3),
+    S("provider_message_id"), S("last_error"),
+    Column("payload_snapshot", JSON, nullable=False, default=dict),
+    D("created_at", nullable=False), D("updated_at", nullable=False),
+    UniqueConstraint("tenant_id", "draft_id"),
+    CheckConstraint("channel IN ('email','sms')"),
+    CheckConstraint("provider IN ('gmail','zoom_phone')"),
+    CheckConstraint("status IN ('queued','processing','sent','failed','cancelled')"),
+    ForeignKeyConstraint(["draft_id"], ["ws_outreach_draft.id"]),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+)
+Index("idx_ws_outreach_execution_queue", outreach_executions.c.tenant_id,
+      outreach_executions.c.status, outreach_executions.c.scheduled_for,
+      outreach_executions.c.created_at)
+Index("idx_ws_outreach_execution_recruiter", outreach_executions.c.tenant_id,
+      outreach_executions.c.recruiter_user_id, outreach_executions.c.created_at)
+
 approval_requests = Table(
     "ws_approval_request", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), S("approval_type", nullable=False),

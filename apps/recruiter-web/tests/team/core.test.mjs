@@ -174,12 +174,13 @@ test('recruiter follow-ups is an allowlisted bounded read endpoint',async()=>{
 });
 
 
-test('recruiter execution and AI outreach routes are allowlisted without any send endpoint',async()=>{
+test('recruiter execution and AI outreach routes are allowlisted without a direct provider send endpoint',async()=>{
  const h=harness(),{sessionCookie,data}=await h.login();
  const reads=[
   '/api/team/recruiter/protected-actions?limit=50',
   '/api/team/candidates/'+CASE+'/relationship',
-  '/api/team/outreach-drafts?candidate_id='+CASE+'&limit=25'
+  '/api/team/outreach-drafts?candidate_id='+CASE+'&limit=25',
+  '/api/team/outreach-executions?status=queued&limit=25'
  ];
  for(const path of reads)assert.equal((await h.request(path,{headers:{Cookie:sessionCookie}})).status,200,path);
 
@@ -187,7 +188,9 @@ test('recruiter execution and AI outreach routes are allowlisted without any sen
   '/api/team/jobs/'+CASE+'/protected-action',
   '/api/team/candidates/'+CASE+'/engagement',
   '/api/team/outreach-drafts',
-  '/api/team/outreach-drafts/'+CASE+'/decision'
+  '/api/team/outreach-drafts/'+CASE+'/decision',
+  '/api/team/outreach-drafts/'+CASE+'/queue',
+  '/api/team/outreach-executions/'+CASE+'/cancel'
  ];
  for(const path of posts)assert.equal((await h.request(path,mutation(sessionCookie,data.csrf,{}))).status,200,path);
 

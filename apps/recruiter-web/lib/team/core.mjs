@@ -125,7 +125,7 @@ function endpoint(path, method, query) {
     '/candidates', `/candidates/${id}`, `/candidates/${id}/best-jobs`,
     '/manager/overview', '/manager/weekly-review', '/manager/match-quality', '/manager/operational-audit',
     '/recruiter/dashboard', '/recruiter/follow-ups', '/recruiter/protected-actions', '/daily-priorities', '/work-queue',
-    '/outreach-drafts', `/candidates/${id}/relationship`,
+    '/outreach-drafts', '/outreach-executions', `/candidates/${id}/relationship`,
     '/admin/users', '/admin/teams', '/admin/audit', '/admin/operations',
     '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings',
     `/recruiters/${id}/weekly-goals`, '/job-publications', `/job-publications/${id}`,
@@ -140,6 +140,7 @@ function endpoint(path, method, query) {
   ];
   const post = [
     '/admin/users', `/matches/${id}/feedback`, '/outreach-drafts', `/outreach-drafts/${id}/decision`,
+    `/outreach-drafts/${id}/queue`, `/outreach-executions/${id}/cancel`,
     `/jobs/${id}/protected-action`, `/candidates/${id}/engagement`,
     '/job-intake/upload', '/job-intake/batches',
     `/job-intake/batches/${id}/rows`, '/job-publications', `/job-publications/${id}/decision`,
@@ -176,7 +177,7 @@ function endpoint(path, method, query) {
     else if (key === 'matches_per_job' && /^(?:[1-9]|10)$/.test(value)) params.set(key, value);
     else if (key === 'team_id' && UUID.test(value)) params.set(key, value);
     else if (key === 'week_start' && /^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/.test(value)) params.set(key, value);
-    else if (key === 'status' && ['open','done','all','pending','approved','rejected'].includes(value)) params.set(key, value);
+    else if (key === 'status' && ['open','done','all','pending','approved','rejected','queued','processing','sent','failed','cancelled'].includes(value)) params.set(key, value);
     else if (key === 'division' && ['Rehabilitation','Nursing & Allied','Locum Tenens'].includes(value)) params.set(key, value);
     else if (['job_id','candidate_id','object_id'].includes(key) && UUID.test(value)) params.set(key, value);
     else if (key === 'profile' && /^[a-z0-9_]{1,80}$/.test(value)) params.set(key, value);
