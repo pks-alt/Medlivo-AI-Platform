@@ -665,6 +665,47 @@ Index("idx_ws_gmail_message_candidate", gmail_messages.c.tenant_id,
 Index("idx_ws_gmail_message_recruiter", gmail_messages.c.tenant_id,
       gmail_messages.c.recruiter_user_id, gmail_messages.c.received_at)
 
+followup_sequences = Table(
+    "ws_followup_sequence", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("recruiter_user_id", nullable=False),
+    U("candidate_id", nullable=False), U("job_id"), S("status", nullable=False),
+    Column("cadence_days", JSON, nullable=False, default=list),
+    Column("next_step", Integer, nullable=False, default=0),
+    Column("stop_on_reply", Boolean, nullable=False, default=True),
+    S("stopped_reason"), D("started_at", nullable=False), D("stopped_at"),
+    D("created_at", nullable=False), D("updated_at", nullable=False),
+    CheckConstraint("status IN ('active','paused','completed','stopped')"),
+    ForeignKeyConstraint(["tenant_id","recruiter_user_id"], ["app_user.tenant_id","app_user.id"]),
+    ForeignKeyConstraint(["tenant_id","candidate_id"], ["candidate.tenant_id","candidate.id"]),
+    ForeignKeyConstraint(["tenant_id","job_id"], ["job.tenant_id","job.id"]),
+)
+Index("idx_ws_followup_sequence_due", followup_sequences.c.tenant_id,
+      followup_sequences.c.status, followup_sequences.c.updated_at)
+
+followup_sequence_steps = Table(
+    "ws_followup_sequence_step", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("sequence_id", nullable=False),
+    Column("step_number", Integer, nullable=False), D("due_at", nullable=False), S("status", nullable=False),
+    U("outreach_draft_id"), U("outreach_execution_id"),
+    D("created_at", nullable=False), D("updated_at", nullable=False),
+    UniqueConstraint("tenant_id","sequence_id","step_number"),
+    CheckConstraint("status IN ('scheduled','ready_for_review','queued','sent','cancelled','skipped')"),
+    ForeignKeyConstraint(["sequence_id"], ["ws_followup_sequence.id"]),
+    ForeignKeyConstraint(["outreach_draft_id"], ["ws_outreach_draft.id"]),
+    ForeignKeyConstraint(["outreach_execution_id"], ["ws_outreach_execution.id"]),
+)
+Index("idx_ws_followup_sequence_step_due", followup_sequence_steps.c.tenant_id,
+      followup_sequence_steps.c.status, followup_sequence_steps.c.due_at)
+
+contact_suppressions = Table(
+    "ws_contact_suppression", metadata,
+    U("tenant_id", primary_key=True), U("candidate_id", primary_key=True),
+    S("channel", primary_key=True), S("reason", nullable=False), S("source_type", nullable=False),
+    S("source_reference"), D("created_at", nullable=False),
+    CheckConstraint("channel IN ('email','sms')"),
+    ForeignKeyConstraint(["tenant_id","candidate_id"], ["candidate.tenant_id","candidate.id"]),
+)
+
 approval_requests = Table(
     "ws_approval_request", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), S("approval_type", nullable=False),

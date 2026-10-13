@@ -194,7 +194,10 @@ test('recruiter execution and AI outreach routes are allowlisted without a direc
   '/api/team/gmail/oauth/start',
   '/api/team/gmail/oauth/complete',
   '/api/team/gmail/disconnect',
-  '/api/team/outreach-executions/'+CASE+'/deliver-gmail'
+  '/api/team/outreach-executions/'+CASE+'/deliver-gmail',
+  '/api/team/followup-sequences',
+  '/api/team/followup-sequences/'+CASE+'/action',
+  '/api/team/contact-suppressions'
  ];
  for(const path of posts)assert.equal((await h.request(path,mutation(sessionCookie,data.csrf,{}))).status,200,path);
 

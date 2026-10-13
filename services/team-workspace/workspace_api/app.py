@@ -22,6 +22,7 @@ from .schemas import (
     OutreachDraftInput, OutreachDraftDecisionInput,
     OutreachExecutionInput, OutreachExecutionCancelInput,
     GmailOAuthCallbackInput, GmailDisconnectInput, GmailDeliverInput, GmailPubSubPush,
+    FollowupSequenceInput, FollowupSequenceActionInput, ContactSuppressionInput,
     MarginCalculationInput, MarginDiscussionInput, MarginFinalizeInput,
     CostAssumptionSetInput, CustomerEconomicRuleInput,
     W2PayPackageSnapshotInput, LocumsPayPackageSnapshotInput,
@@ -154,6 +155,8 @@ def build_app(store, verifier, gmail_pubsub_verification_token=None):
             "public.ws_gmail_connection",
             "public.ws_gmail_oauth_state",
             "public.ws_gmail_message",
+            "public.ws_followup_sequence",
+            "public.ws_contact_suppression",
         )
         try:
             with store.engine.connect() as conn:
@@ -395,6 +398,33 @@ def build_app(store, verifier, gmail_pubsub_verification_token=None):
         return store.decide_outreach_draft(
             who, str(draft_id), str(idempotency_key), value
         )
+
+    @app.post(prefix + "/followup-sequences", status_code=201)
+    def create_followup_sequence(value: FollowupSequenceInput,
+                                 idempotency_key: UUID = Header(),
+                                 who=Depends(identity)):
+        return store.create_followup_sequence(who, str(idempotency_key), value)
+
+    @app.get(prefix + "/followup-sequences")
+    def followup_sequences(status: str | None = None,
+                           limit: int = Query(default=50, ge=1, le=100),
+                           who=Depends(identity)):
+        return store.list_followup_sequences(who, status=status, limit=limit)
+
+    @app.post(prefix + "/followup-sequences/{sequence_id}/action")
+    def control_followup_sequence(sequence_id: UUID,
+                                  value: FollowupSequenceActionInput,
+                                  idempotency_key: UUID = Header(),
+                                  who=Depends(identity)):
+        return store.control_followup_sequence(
+            who, str(sequence_id), str(idempotency_key), value
+        )
+
+    @app.post(prefix + "/contact-suppressions", status_code=201)
+    def suppress_contact(value: ContactSuppressionInput,
+                         idempotency_key: UUID = Header(),
+                         who=Depends(identity)):
+        return store.suppress_contact(who, str(idempotency_key), value)
 
     @app.get(prefix + "/gmail/status")
     def gmail_status(who=Depends(identity)):

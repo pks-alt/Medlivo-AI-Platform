@@ -2563,3 +2563,70 @@ def test_gmail_pubsub_reply_matches_thread_and_cancels_pending_followup(seeded, 
     )
     assert relationship.status_code == 200
     assert relationship.json()["relationship"]["last_meaningful_type"] == "candidate_reply"
+
+
+def test_followup_sequence_materializes_steps_and_suppression_stops_it(seeded, verifier, headers):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open"
+        ))
+    client = TestClient(build_app(WorkspaceStore(seeded), verifier))
+
+    created = client.post(
+        "/api/v1/team/followup-sequences",
+        headers=headers("recruiter-a"),
+        json={
+            "candidate_id": idn(300),
+            "job_id": idn(200),
+            "cadence_days": [3, 7, 14],
+            "stop_on_reply": True,
+        },
+    )
+    assert created.status_code == 201
+    sequence_id = created.json()["id"]
+
+    listed = client.get(
+        "/api/v1/team/followup-sequences?status=active&limit=10",
+        headers=headers("recruiter-a"),
+    )
+    assert listed.status_code == 200
+    item = next(x for x in listed.json()["items"] if x["id"] == sequence_id)
+    assert [x["step_number"] for x in item["steps"]] == [1, 2, 3]
+    assert all(x["status"] == "scheduled" for x in item["steps"])
+
+    paused = client.post(
+        f"/api/v1/team/followup-sequences/{sequence_id}/action",
+        headers=headers("recruiter-a"),
+        json={"action": "pause"},
+    )
+    assert paused.status_code == 200
+    assert paused.json()["status"] == "paused"
+
+    resumed = client.post(
+        f"/api/v1/team/followup-sequences/{sequence_id}/action",
+        headers=headers("recruiter-a"),
+        json={"action": "resume"},
+    )
+    assert resumed.status_code == 200
+    assert resumed.json()["status"] == "active"
+
+    suppressed = client.post(
+        "/api/v1/team/contact-suppressions",
+        headers=headers("recruiter-a"),
+        json={
+            "candidate_id": idn(300),
+            "channel": "email",
+            "reason": "Synthetic opt-out request",
+        },
+    )
+    assert suppressed.status_code == 201
+    assert suppressed.json()["suppressed"] is True
+
+    after = client.get(
+        "/api/v1/team/followup-sequences?limit=10",
+        headers=headers("recruiter-a"),
+    )
+    stopped = next(x for x in after.json()["items"] if x["id"] == sequence_id)
+    assert stopped["status"] == "stopped"
+    assert stopped["stopped_reason"] == "contact_suppressed"
+    assert all(x["status"] == "cancelled" for x in stopped["steps"])
