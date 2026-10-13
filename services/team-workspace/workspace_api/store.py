@@ -4178,6 +4178,23 @@ class WorkspaceStore:
                         )
                     replies += 1
 
+                    conn.execute(
+                        update(t.followup_sequences)
+                        .where(
+                            t.followup_sequences.c.tenant_id == connection["tenant_id"],
+                            t.followup_sequences.c.recruiter_user_id == connection["recruiter_user_id"],
+                            t.followup_sequences.c.candidate_id == execution["candidate_id"],
+                            t.followup_sequences.c.status.in_(["active","paused"]),
+                            t.followup_sequences.c.stop_on_reply.is_(True),
+                        )
+                        .values(
+                            status="stopped",
+                            stopped_reason="candidate_reply_received",
+                            stopped_at=now(),
+                            updated_at=now(),
+                        )
+                    )
+
                     result = conn.execute(
                         update(t.outreach_executions)
                         .where(
