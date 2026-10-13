@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 from io import BytesIO
 from openpyxl import Workbook
@@ -2128,3 +2128,15 @@ def test_ai_outreach_draft_respects_active_relationship(seeded, verifier, header
     )
     assert blocked.status_code == 409
     assert "another recruiter" in blocked.json()["detail"].lower()
+
+
+def test_protected_deadline_counts_only_pacific_business_minutes(seeded):
+    store = WorkspaceStore(seeded)
+    friday = datetime(2026, 10, 16, 23, 30, tzinfo=timezone.utc)  # 4:30 PM Pacific
+    with seeded.begin() as conn:
+        deadline = store._protected_deadline(conn, idn(1), friday, minutes=60)
+        remaining = store._business_minutes_until(conn, idn(1), friday, deadline)
+    local_deadline = deadline.astimezone(__import__("zoneinfo").ZoneInfo("America/Los_Angeles"))
+    assert local_deadline.weekday() == 0
+    assert (local_deadline.hour, local_deadline.minute) == (8, 30)
+    assert remaining == 60
