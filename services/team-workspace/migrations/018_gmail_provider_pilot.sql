@@ -2,6 +2,9 @@
 -- Individual recruiter OAuth only. Refresh tokens are stored in Google Secret Manager,
 -- never in this database. Gmail send remains limited to approved outreach executions.
 
+ALTER TABLE public.ws_outreach_execution
+  ADD COLUMN IF NOT EXISTS provider_thread_id text;
+
 CREATE TABLE IF NOT EXISTS public.ws_gmail_connection (
   tenant_id uuid NOT NULL,
   recruiter_user_id uuid NOT NULL,
