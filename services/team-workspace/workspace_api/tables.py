@@ -283,7 +283,6 @@ submission_projections = Table(
     ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
     ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
     ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
-    ForeignKeyConstraint(["tenant_id", "meaningful_action_by"], ["app_user.tenant_id", "app_user.id"]),
 )
 
 interview_projections = Table(
