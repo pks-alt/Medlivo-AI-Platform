@@ -132,6 +132,11 @@ def build_app(store, verifier):
             "public.ws_submission_package",
             "public.ws_submission_validation_result",
             "public.ws_job_content_standard",
+            "public.ws_business_calendar_exception",
+            "public.ws_protected_action_window",
+            "public.ws_candidate_relationship",
+            "public.ws_candidate_engagement_event",
+            "public.ws_outreach_draft",
         )
         try:
             with store.engine.connect() as conn:
