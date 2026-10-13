@@ -403,3 +403,7 @@
 
 @media(max-width:950px){.priorityJobGrid{grid-template-columns:1fr 1fr}.recruiterContinue{grid-template-columns:1fr}.protectedActionCard{grid-template-columns:1fr}.conversationSelectors,.aiDraftMeta{grid-template-columns:1fr 1fr}}
 @media(max-width:620px){.priorityJobGrid,.todayRecommendation,.conversationSelectors,.aiDraftMeta{grid-template-columns:1fr}.protectedActionButtons{align-items:stretch;flex-direction:column}}
+
+
+/* Recruiter Jobs P1/P2 separation */
+.jobsWorkTabs{margin-bottom:12px}.jobsHubCard.priorityTwo{border-left:4px solid #7396ad;background:#fbfdfe}.jobsHubCard.priorityOne{border-left:4px solid transparent}.jobsHubCard.priorityTwo .jobsHubPrimary>small{color:#315f7c}.jobsHubCard.priorityTwo .jobsHubFoot a{background:#eef4f8;color:#315f7c;border:1px solid #d7e3ea}
