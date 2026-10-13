@@ -18,6 +18,7 @@ from .schemas import (
     JobPublicationDraftInput, JobPublicationDecision, MatchFeedbackInput,
     JobOperationalUpdate, JobAssignmentInput, JobIntakeItemDecision,
     ProtectedActionInput, CandidateEngagementInput,
+    OutreachDraftInput, OutreachDraftDecisionInput,
     MarginCalculationInput, MarginDiscussionInput, MarginFinalizeInput,
     CostAssumptionSetInput, CustomerEconomicRuleInput,
     W2PayPackageSnapshotInput, LocumsPayPackageSnapshotInput,
@@ -29,6 +30,7 @@ from .schemas import (
 from .store import WorkspaceStore, AccessError
 from .submission_ai import VertexGeminiSubmissionAIComposer
 from .job_intake_ai import VertexGeminiJobIntakeAIComposer
+from .outreach_ai import VertexGeminiOutreachAIComposer
 from .submission_artifacts import GCSDocumentResolver, SubmissionPacketGenerator
 
 
@@ -343,6 +345,33 @@ def build_app(store, verifier):
                    who=Depends(identity)):
         return store.match_work_queue(
             who, limit=limit, matches_per_job=matches_per_job
+        )
+
+    @app.post(prefix + "/outreach-drafts", status_code=201)
+    def create_outreach_draft(value: OutreachDraftInput,
+                              idempotency_key: UUID = Header(),
+                              who=Depends(identity)):
+        return store.create_outreach_draft(
+            who, str(idempotency_key), value
+        )
+
+    @app.get(prefix + "/outreach-drafts")
+    def outreach_drafts(candidate_id: UUID | None = None,
+                        limit: int = Query(default=50, ge=1, le=100),
+                        who=Depends(identity)):
+        return store.list_outreach_drafts(
+            who,
+            candidate_id=str(candidate_id) if candidate_id else None,
+            limit=limit,
+        )
+
+    @app.post(prefix + "/outreach-drafts/{draft_id}/decision")
+    def decide_outreach_draft(draft_id: UUID,
+                              value: OutreachDraftDecisionInput,
+                              idempotency_key: UUID = Header(),
+                              who=Depends(identity)):
+        return store.decide_outreach_draft(
+            who, str(draft_id), str(idempotency_key), value
         )
 
     @app.get(prefix + "/recruiter/protected-actions")
@@ -743,6 +772,14 @@ def create_app():
             model=settings.submission_ai_model,
         )
 
+    outreach_ai = None
+    if settings.outreach_ai_enabled:
+        outreach_ai = VertexGeminiOutreachAIComposer(
+            project=settings.outreach_ai_project,
+            location=settings.outreach_ai_location,
+            model=settings.outreach_ai_model,
+        )
+
     submission_packet_generator = None
     if settings.submission_packet_download_enabled:
         allowed_buckets = {
@@ -759,6 +796,7 @@ def create_app():
             submission_ai=submission_ai,
             submission_packet_generator=submission_packet_generator,
             job_intake_ai=job_intake_ai,
+            outreach_ai=outreach_ai,
         ),
         GoogleIdentityVerifier(settings.google_client_id, settings.google_hosted_domain),
     )
