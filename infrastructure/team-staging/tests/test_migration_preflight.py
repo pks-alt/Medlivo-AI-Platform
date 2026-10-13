@@ -189,7 +189,7 @@ class WorkflowPreflightTests(unittest.TestCase):
         before = self.workflow.index("Verify staging migration identity")
         self.assertLess(before, self.workflow.index("Configure Artifact Registry"))
         self.assertLess(before, self.workflow.index("Build and push private API"))
-        self.assertLess(before, self.workflow.index("Apply reviewed workspace migrations 014-021"))
+        self.assertLess(before, self.workflow.index("Apply reviewed workspace migrations 014-022"))
         for migration in (
             "014_job_content_standards.sql",
             "015_recruiter_execution_controls.sql",
@@ -199,6 +199,7 @@ class WorkflowPreflightTests(unittest.TestCase):
             "019_gmail_reply_sync.sql",
             "020_followup_sequences.sql",
             "021_scheduled_followup_execution.sql",
+            "022_repair_recruiter_execution_controls.sql",
         ):
             self.assertIn(migration, self.workflow)
 
