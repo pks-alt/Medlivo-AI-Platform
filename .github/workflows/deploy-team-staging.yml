@@ -131,10 +131,11 @@ jobs:
           set -euo pipefail
           FOLLOWUP_JOB="medlivo-followup-due-staging"
           API_SA="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format='value(spec.template.spec.serviceAccountName)')"
+          API_DB_SECRET="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="WORKSPACE_DATABASE_URL") | .valueFrom.secretKeyRef | if .name then (.name + ":" + (.key|tostring)) else empty end')"
           OUTREACH_PROJECT="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="WORKSPACE_OUTREACH_AI_PROJECT") | .value // empty')"
           OUTREACH_LOCATION="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="WORKSPACE_OUTREACH_AI_LOCATION") | .value // "global"')"
           OUTREACH_MODEL="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="WORKSPACE_OUTREACH_AI_MODEL") | .value // empty')"
-          if [ -z "${API_SA}" ] || [ -z "${OUTREACH_PROJECT}" ] || [ -z "${OUTREACH_MODEL}" ]; then
+          if [ -z "${API_SA}" ] || [ -z "${API_DB_SECRET}" ] || [ -z "${OUTREACH_PROJECT}" ] || [ -z "${OUTREACH_MODEL}" ]; then
             echo "::error::Follow-up worker requires the existing API service account and outreach AI configuration."
             exit 1
           fi
