@@ -4394,6 +4394,16 @@ class WorkspaceStore:
                     updated_at=timestamp,
                 )
             )
+            if new_status == "stopped":
+                conn.execute(
+                    update(t.followup_sequence_steps)
+                    .where(
+                        t.followup_sequence_steps.c.tenant_id == principal["tenant_id"],
+                        t.followup_sequence_steps.c.sequence_id == sequence_id,
+                        t.followup_sequence_steps.c.status.in_(["scheduled","ready_for_review","queued"]),
+                    )
+                    .values(status="cancelled", updated_at=timestamp)
+                )
             self._operational_audit(
                 conn, principal, "followup.sequence."+value.action, "followup_sequence", sequence_id,
                 {"status": row["status"]}, {"status": new_status}, reason=value.reason,
@@ -4431,6 +4441,20 @@ class WorkspaceStore:
                     t.followup_sequences.c.status.in_(["active","paused"]),
                 )
                 .values(status="stopped", stopped_reason="contact_suppressed", stopped_at=timestamp, updated_at=timestamp)
+            )
+            conn.execute(
+                update(t.followup_sequence_steps)
+                .where(
+                    t.followup_sequence_steps.c.tenant_id == principal["tenant_id"],
+                    t.followup_sequence_steps.c.sequence_id.in_(
+                        select(t.followup_sequences.c.id).where(
+                            t.followup_sequences.c.tenant_id == principal["tenant_id"],
+                            t.followup_sequences.c.candidate_id == candidate_id,
+                        )
+                    ),
+                    t.followup_sequence_steps.c.status.in_(["scheduled","ready_for_review","queued"]),
+                )
+                .values(status="cancelled", updated_at=timestamp)
             )
             conn.execute(
                 update(t.outreach_executions)
