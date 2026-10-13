@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     gmail_oauth_redirect_uri: str = ""
     gmail_pubsub_topic: str = ""
     gmail_secret_project: str = ""
+    gmail_pubsub_verification_token: SecretStr = Field(default_factory=lambda: SecretStr(""), repr=False)
     submission_packet_download_enabled: bool = False
     submission_document_buckets: str = ""
 
@@ -56,6 +57,8 @@ class Settings(BaseSettings):
                     raise ValueError("Configure the Gmail Pub/Sub topic")
                 if not self.gmail_secret_project or "/" in self.gmail_secret_project:
                     raise ValueError("Configure the Google Secret Manager project for Gmail")
+                if len(self.gmail_pubsub_verification_token.get_secret_value()) < 24:
+                    raise ValueError("Configure the Gmail Pub/Sub verification token")
             if self.submission_packet_download_enabled:
                 buckets = [x.strip() for x in self.submission_document_buckets.split(",") if x.strip()]
                 if not buckets or any("/" in x or ":" in x for x in buckets):

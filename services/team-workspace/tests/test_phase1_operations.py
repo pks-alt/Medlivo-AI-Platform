@@ -1,4 +1,6 @@
 from datetime import date, datetime, timedelta, timezone
+import base64
+import json
 from uuid import uuid4
 from io import BytesIO
 from types import SimpleNamespace
@@ -2276,6 +2278,8 @@ class FakeGmailProvider:
         self.email = email
         self.token_store = FakeGmailTokenStore()
         self.sent = []
+        self.history = {"history": [], "historyId": "101"}
+        self.messages = {}
 
     def authorization_url(self, state):
         return "https://accounts.google.test/oauth?state=" + state
@@ -2306,6 +2310,12 @@ class FakeGmailProvider:
     def send_message(self, access_token, *, to_address, subject, body_text, thread_id=None):
         self.sent.append((to_address, subject, body_text))
         return SimpleNamespace(message_id="gmail-message-1", thread_id="gmail-thread-1")
+
+    def list_history(self, access_token, start_history_id):
+        return self.history
+
+    def get_message(self, access_token, message_id):
+        return self.messages[message_id]
 
 
 def _connect_fake_gmail(client, headers):
@@ -2428,3 +2438,128 @@ def test_connected_gmail_sends_only_approved_queued_email(seeded, verifier, head
         json={"expected_status": "queued"},
     )
     assert second_send.status_code == 409
+
+
+def test_gmail_pubsub_reply_matches_thread_and_cancels_pending_followup(seeded, verifier, headers):
+    provider = FakeGmailProvider()
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open", profession="Physical Therapist"
+        ))
+        conn.execute(update(t.candidates).where(t.candidates.c.id == idn(300)).values(
+            profession="Physical Therapist",
+            primary_email="candidate@example.test",
+        ))
+
+    gmail_client = TestClient(build_app(
+        WorkspaceStore(seeded, outreach_ai=FakeOutreachAI(), gmail_provider=provider),
+        verifier,
+        "synthetic-pubsub-verification-token",
+    ))
+    _connect_fake_gmail(gmail_client, headers)
+
+    def approved_queue(purpose):
+        created = gmail_client.post(
+            "/api/v1/team/outreach-drafts",
+            headers=headers("recruiter-a"),
+            json={
+                "candidate_id": idn(300),
+                "job_id": idn(200),
+                "channel": "email",
+                "purpose": purpose,
+            },
+        )
+        assert created.status_code == 201
+        draft_id = created.json()["id"]
+        approved = gmail_client.post(
+            f"/api/v1/team/outreach-drafts/{draft_id}/decision",
+            headers=headers("recruiter-a"),
+            json={
+                "decision": "approved",
+                "subject": "Synthetic subject",
+                "body": "Synthetic approved body.",
+            },
+        )
+        assert approved.status_code == 200
+        queued = gmail_client.post(
+            f"/api/v1/team/outreach-drafts/{draft_id}/queue",
+            headers=headers("recruiter-a"),
+            json={},
+        )
+        assert queued.status_code == 201
+        return queued.json()
+
+    first = approved_queue("follow_up")
+    sent = gmail_client.post(
+        f"/api/v1/team/outreach-executions/{first['id']}/deliver-gmail",
+        headers=headers("recruiter-a"),
+        json={"expected_status": "queued"},
+    )
+    assert sent.status_code == 200
+
+    pending = approved_queue("next_step")
+    reply_body = base64.urlsafe_b64encode(b"Yes, I am interested. Please call me.").decode("ascii").rstrip("=")
+    provider.history = {
+        "history": [{
+            "id": "102",
+            "messagesAdded": [{"message": {"id": "gmail-reply-1", "threadId": "gmail-thread-1"}}],
+        }],
+        "historyId": "102",
+    }
+    provider.messages["gmail-reply-1"] = {
+        "id": "gmail-reply-1",
+        "threadId": "gmail-thread-1",
+        "internalDate": "1791914400000",
+        "payload": {
+            "mimeType": "text/plain",
+            "headers": [
+                {"name": "From", "value": "Candidate <candidate@example.test>"},
+                {"name": "To", "value": "recruiter-a@example.test"},
+                {"name": "Subject", "value": "Re: Synthetic subject"},
+            ],
+            "body": {"data": reply_body},
+        },
+    }
+    notification = base64.b64encode(json.dumps({
+        "emailAddress": "recruiter-a@example.test",
+        "historyId": "102",
+    }).encode("utf-8")).decode("ascii")
+
+    rejected = gmail_client.post(
+        "/internal/gmail/pubsub",
+        headers={"X-Gmail-Pubsub-Token": "wrong-token"},
+        json={"message": {"data": notification, "messageId": "pubsub-1"}},
+    )
+    assert rejected.status_code == 401
+
+    synced = gmail_client.post(
+        "/internal/gmail/pubsub",
+        headers={"X-Gmail-Pubsub-Token": "synthetic-pubsub-verification-token"},
+        json={"message": {"data": notification, "messageId": "pubsub-1"}},
+    )
+    assert synced.status_code == 200
+    assert synced.json()["meaningful_replies"] == 1
+    assert synced.json()["queued_followups_cancelled"] == 1
+
+    messages = gmail_client.get(
+        f"/api/v1/team/gmail/messages?candidate_id={idn(300)}&limit=10",
+        headers=headers("recruiter-a"),
+    )
+    assert messages.status_code == 200
+    assert messages.json()["items"][0]["gmail_message_id"] == "gmail-reply-1"
+    assert "interested" in messages.json()["items"][0]["body_text"].lower()
+
+    executions = gmail_client.get(
+        "/api/v1/team/outreach-executions?limit=20",
+        headers=headers("recruiter-a"),
+    )
+    pending_after = next(x for x in executions.json()["items"] if x["id"] == pending["id"])
+    assert pending_after["status"] == "cancelled"
+    assert pending_after["last_error"] == "candidate_reply_received"
+
+    relationship = gmail_client.get(
+        f"/api/v1/team/candidates/{idn(300)}/relationship",
+        headers=headers("recruiter-a"),
+    )
+    assert relationship.status_code == 200
+    assert relationship.json()["relationship"]["last_meaningful_type"] == "candidate_reply"

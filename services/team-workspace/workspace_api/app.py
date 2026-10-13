@@ -1,5 +1,6 @@
 """Factory for a separate private service; existing recruiter API is untouched."""
 from contextlib import asynccontextmanager
+import hmac
 import logging
 import os
 from uuid import UUID
@@ -20,7 +21,7 @@ from .schemas import (
     ProtectedActionInput, CandidateEngagementInput,
     OutreachDraftInput, OutreachDraftDecisionInput,
     OutreachExecutionInput, OutreachExecutionCancelInput,
-    GmailOAuthCallbackInput, GmailDisconnectInput, GmailDeliverInput,
+    GmailOAuthCallbackInput, GmailDisconnectInput, GmailDeliverInput, GmailPubSubPush,
     MarginCalculationInput, MarginDiscussionInput, MarginFinalizeInput,
     CostAssumptionSetInput, CustomerEconomicRuleInput,
     W2PayPackageSnapshotInput, LocumsPayPackageSnapshotInput,
@@ -84,7 +85,7 @@ class LimitsMiddleware:
         await self.app(scope, receive, secure_send)
 
 
-def build_app(store, verifier):
+def build_app(store, verifier, gmail_pubsub_verification_token=None):
     """Dependency injection for isolated tests; not configurable via a bypass flag."""
     @asynccontextmanager
     async def lifespan(app):
@@ -125,6 +126,15 @@ def build_app(store, verifier):
     def health():
         return {"ok": True, "workspace_enabled": True, "database_checked": False, "release_sha": os.environ.get("MEDLIVO_RELEASE_SHA", "unknown")}
 
+    @app.post("/internal/gmail/pubsub")
+    def gmail_pubsub_push(value: GmailPubSubPush,
+                          x_gmail_pubsub_token: str | None = Header(default=None)):
+        expected = gmail_pubsub_verification_token or ""
+        supplied = x_gmail_pubsub_token or ""
+        if not expected or not hmac.compare_digest(expected, supplied):
+            raise HTTPException(401, "Gmail Pub/Sub authentication required")
+        return store.process_gmail_pubsub(value)
+
     @app.get("/ready")
     def ready():
         required_schema = (
@@ -143,6 +153,7 @@ def build_app(store, verifier):
             "public.ws_outreach_execution",
             "public.ws_gmail_connection",
             "public.ws_gmail_oauth_state",
+            "public.ws_gmail_message",
         )
         try:
             with store.engine.connect() as conn:
@@ -388,6 +399,16 @@ def build_app(store, verifier):
     @app.get(prefix + "/gmail/status")
     def gmail_status(who=Depends(identity)):
         return store.gmail_status(who)
+
+    @app.get(prefix + "/gmail/messages")
+    def gmail_messages(candidate_id: UUID | None = None,
+                       limit: int = Query(default=50, ge=1, le=100),
+                       who=Depends(identity)):
+        return store.list_gmail_messages(
+            who,
+            candidate_id=str(candidate_id) if candidate_id else None,
+            limit=limit,
+        )
 
     @app.post(prefix + "/gmail/oauth/start", status_code=201)
     def gmail_oauth_start(idempotency_key: UUID = Header(), who=Depends(identity)):
@@ -880,4 +901,5 @@ def create_app():
             gmail_provider=gmail_provider,
         ),
         GoogleIdentityVerifier(settings.google_client_id, settings.google_hosted_domain),
+        settings.gmail_pubsub_verification_token.get_secret_value() if settings.gmail_pilot_enabled else None,
     )

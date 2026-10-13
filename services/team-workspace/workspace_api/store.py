@@ -2,6 +2,7 @@ from __future__ import annotations
 from datetime import datetime, date, timezone, timedelta
 from zoneinfo import ZoneInfo
 from decimal import Decimal
+import base64
 import hashlib
 import json
 import re
@@ -3979,6 +3980,253 @@ class WorkspaceStore:
                 ),
             })
         return self._global_mutate(identity, key, "outreach.draft.reviewed", payload, apply)
+
+    @staticmethod
+    def _gmail_header(payload, name):
+        for header in payload.get("headers") or []:
+            if str(header.get("name") or "").lower() == name.lower():
+                return str(header.get("value") or "")
+        return ""
+
+    @classmethod
+    def _gmail_body_text(cls, payload):
+        body = payload.get("body") or {}
+        data = body.get("data")
+        mime = str(payload.get("mimeType") or "")
+        if data and (mime.startswith("text/plain") or not payload.get("parts")):
+            try:
+                return base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("utf-8", errors="replace")[:12000]
+            except Exception:
+                return ""
+        for part in payload.get("parts") or []:
+            if str(part.get("mimeType") or "").startswith("text/plain"):
+                text_value = cls._gmail_body_text(part)
+                if text_value:
+                    return text_value
+        for part in payload.get("parts") or []:
+            text_value = cls._gmail_body_text(part)
+            if text_value:
+                return text_value
+        return ""
+
+    def process_gmail_pubsub(self, push):
+        if self.gmail_provider is None:
+            raise AccessError(503, "Gmail pilot is not configured")
+        try:
+            raw = base64.b64decode(push.message.data + "=" * (-len(push.message.data) % 4))
+            notification = json.loads(raw.decode("utf-8"))
+            email_address = str(notification.get("emailAddress") or "").lower()
+            notified_history_id = str(notification.get("historyId") or "")
+        except Exception:
+            raise AccessError(400, "Invalid Gmail Pub/Sub notification") from None
+        if not email_address or not notified_history_id:
+            raise AccessError(400, "Incomplete Gmail Pub/Sub notification")
+
+        with self.engine.begin() as conn:
+            connection = conn.execute(
+                select(t.gmail_connections).where(
+                    t.gmail_connections.c.gmail_address == email_address,
+                    t.gmail_connections.c.status == "connected",
+                ).with_for_update()
+            ).mappings().first()
+            if connection is None:
+                return {"accepted": True, "matched_connection": False}
+
+            start_history_id = str(connection["history_id"] or notified_history_id)
+            try:
+                access_token = self.gmail_provider.refresh_access_token(
+                    connection["refresh_token_secret_resource"]
+                )
+                history = self.gmail_provider.list_history(access_token, start_history_id)
+            except Exception:
+                conn.execute(
+                    update(t.gmail_connections)
+                    .where(
+                        t.gmail_connections.c.tenant_id == connection["tenant_id"],
+                        t.gmail_connections.c.recruiter_user_id == connection["recruiter_user_id"],
+                    )
+                    .values(status="reauthorization_required", updated_at=now())
+                )
+                raise AccessError(502, "Gmail history synchronization failed") from None
+
+            added_ids = []
+            for item in history.get("history") or []:
+                for added in item.get("messagesAdded") or []:
+                    message = added.get("message") or {}
+                    message_id = str(message.get("id") or "")
+                    if message_id:
+                        added_ids.append(message_id)
+
+            processed = 0
+            replies = 0
+            cancelled_followups = 0
+            for message_id in dict.fromkeys(added_ids):
+                existing_message = conn.execute(
+                    select(t.gmail_messages.c.id).where(
+                        t.gmail_messages.c.tenant_id == connection["tenant_id"],
+                        t.gmail_messages.c.gmail_message_id == message_id,
+                    )
+                ).first()
+                if existing_message is not None:
+                    continue
+                try:
+                    full = self.gmail_provider.get_message(access_token, message_id)
+                except Exception:
+                    continue
+                thread_id = str(full.get("threadId") or "")
+                if not thread_id:
+                    continue
+                execution = conn.execute(
+                    select(t.outreach_executions).where(
+                        t.outreach_executions.c.tenant_id == connection["tenant_id"],
+                        t.outreach_executions.c.recruiter_user_id == connection["recruiter_user_id"],
+                        t.outreach_executions.c.provider == "gmail",
+                        t.outreach_executions.c.provider_thread_id == thread_id,
+                        t.outreach_executions.c.status == "sent",
+                    ).order_by(t.outreach_executions.c.sent_at.desc()).limit(1)
+                ).mappings().first()
+                if execution is None or execution["provider_message_id"] == message_id:
+                    continue
+
+                payload = full.get("payload") or {}
+                from_header = self._gmail_header(payload, "From")
+                to_header = self._gmail_header(payload, "To")
+                subject = self._gmail_header(payload, "Subject")
+                body_text = self._gmail_body_text(payload)
+                candidate = conn.execute(
+                    select(t.candidates).where(
+                        t.candidates.c.tenant_id == connection["tenant_id"],
+                        t.candidates.c.id == execution["candidate_id"],
+                    )
+                ).mappings().first()
+                if candidate is None:
+                    continue
+                candidate_email = str(candidate["primary_email"] or "").lower()
+                from_lower = from_header.lower()
+                if candidate_email and candidate_email not in from_lower:
+                    continue
+
+                internal_date_ms = int(full.get("internalDate") or 0)
+                received_at = (
+                    datetime.fromtimestamp(internal_date_ms / 1000, tz=timezone.utc)
+                    if internal_date_ms > 0 else now()
+                )
+                conn.execute(insert(t.gmail_messages).values(
+                    id=uid(),
+                    tenant_id=connection["tenant_id"],
+                    recruiter_user_id=connection["recruiter_user_id"],
+                    candidate_id=execution["candidate_id"],
+                    job_id=execution["job_id"],
+                    execution_id=execution["id"],
+                    gmail_message_id=message_id,
+                    gmail_thread_id=thread_id,
+                    direction="inbound",
+                    from_address=from_header[:1000],
+                    to_address=to_header[:1000],
+                    subject=subject[:1000],
+                    body_text=body_text,
+                    received_at=received_at,
+                    history_id=notified_history_id,
+                    created_at=now(),
+                ))
+                processed += 1
+
+                active = conn.execute(
+                    select(t.candidate_relationships).where(
+                        t.candidate_relationships.c.tenant_id == connection["tenant_id"],
+                        t.candidate_relationships.c.candidate_id == execution["candidate_id"],
+                        t.candidate_relationships.c.status == "active",
+                    ).with_for_update()
+                ).mappings().first()
+                if active is None or active["recruiter_user_id"] == connection["recruiter_user_id"]:
+                    conn.execute(insert(t.candidate_engagement_events).values(
+                        id=uid(),
+                        tenant_id=connection["tenant_id"],
+                        candidate_id=execution["candidate_id"],
+                        recruiter_user_id=connection["recruiter_user_id"],
+                        job_id=execution["job_id"],
+                        event_type="candidate_reply",
+                        meaningful=True,
+                        source_type="gmail",
+                        source_reference=message_id,
+                        occurred_at=received_at,
+                        created_at=now(),
+                    ))
+                    if active is None:
+                        conn.execute(insert(t.candidate_relationships).values(
+                            id=uid(),
+                            tenant_id=connection["tenant_id"],
+                            candidate_id=execution["candidate_id"],
+                            recruiter_user_id=connection["recruiter_user_id"],
+                            status="active",
+                            started_at=received_at,
+                            last_meaningful_at=received_at,
+                            last_meaningful_type="candidate_reply",
+                            ended_at=None,
+                            created_at=now(),
+                            updated_at=now(),
+                        ))
+                    else:
+                        conn.execute(
+                            update(t.candidate_relationships)
+                            .where(t.candidate_relationships.c.id == active["id"])
+                            .values(
+                                last_meaningful_at=received_at,
+                                last_meaningful_type="candidate_reply",
+                                updated_at=now(),
+                            )
+                        )
+                    replies += 1
+
+                    result = conn.execute(
+                        update(t.outreach_executions)
+                        .where(
+                            t.outreach_executions.c.tenant_id == connection["tenant_id"],
+                            t.outreach_executions.c.recruiter_user_id == connection["recruiter_user_id"],
+                            t.outreach_executions.c.candidate_id == execution["candidate_id"],
+                            t.outreach_executions.c.status == "queued",
+                        )
+                        .values(
+                            status="cancelled",
+                            last_error="candidate_reply_received",
+                            updated_at=now(),
+                        )
+                    )
+                    cancelled_followups += int(result.rowcount or 0)
+
+            next_history_id = str(history.get("historyId") or notified_history_id)
+            conn.execute(
+                update(t.gmail_connections)
+                .where(
+                    t.gmail_connections.c.tenant_id == connection["tenant_id"],
+                    t.gmail_connections.c.recruiter_user_id == connection["recruiter_user_id"],
+                )
+                .values(history_id=next_history_id, last_sync_at=now(), updated_at=now())
+            )
+            return {
+                "accepted": True,
+                "matched_connection": True,
+                "messages_processed": processed,
+                "meaningful_replies": replies,
+                "queued_followups_cancelled": cancelled_followups,
+                "history_id": next_history_id,
+            }
+
+    def list_gmail_messages(self, identity, *, candidate_id=None, limit=50):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            statement = select(t.gmail_messages).where(
+                t.gmail_messages.c.tenant_id == principal["tenant_id"],
+                t.gmail_messages.c.recruiter_user_id == principal["id"],
+            )
+            if candidate_id:
+                statement = statement.where(t.gmail_messages.c.candidate_id == candidate_id)
+            rows = conn.execute(
+                statement.order_by(t.gmail_messages.c.received_at.desc()).limit(limit)
+            ).mappings().all()
+            return clean({"items": [dict(row) for row in rows]})
 
     def gmail_status(self, identity):
         with self.engine.begin() as conn:

@@ -223,6 +223,12 @@ class GmailProvider:
         })
         return self._gmail_json("GET", path, access_token)
 
+    def get_message(self, access_token: str, message_id: str) -> dict:
+        path = "/gmail/v1/users/me/messages/" + urllib.parse.quote(message_id, safe="") + "?" + urllib.parse.urlencode({
+            "format": "full",
+        })
+        return self._gmail_json("GET", path, access_token)
+
     def _gmail_json(self, method: str, path: str, access_token: str, payload: dict | None = None) -> dict:
         return self._request_json(
             "https://gmail.googleapis.com" + path,

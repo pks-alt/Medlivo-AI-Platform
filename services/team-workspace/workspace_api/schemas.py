@@ -188,6 +188,17 @@ class OutreachDraftDecisionInput(StrictInput):
         return self
 
 
+class GmailPubSubMessage(StrictInput):
+    data: str = Field(min_length=4, max_length=16384)
+    messageId: str | None = Field(default=None, max_length=500)
+    publishTime: str | None = Field(default=None, max_length=100)
+
+
+class GmailPubSubPush(StrictInput):
+    message: GmailPubSubMessage
+    subscription: str | None = Field(default=None, max_length=1000)
+
+
 class GmailOAuthCallbackInput(StrictInput):
     code: str = Field(min_length=5, max_length=4096)
     state: str = Field(min_length=20, max_length=512)

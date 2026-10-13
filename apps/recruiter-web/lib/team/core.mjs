@@ -125,7 +125,7 @@ function endpoint(path, method, query) {
     '/candidates', `/candidates/${id}`, `/candidates/${id}/best-jobs`,
     '/manager/overview', '/manager/weekly-review', '/manager/match-quality', '/manager/operational-audit',
     '/recruiter/dashboard', '/recruiter/follow-ups', '/recruiter/protected-actions', '/daily-priorities', '/work-queue',
-    '/outreach-drafts', '/outreach-executions', '/gmail/status', `/candidates/${id}/relationship`,
+    '/outreach-drafts', '/outreach-executions', '/gmail/status', '/gmail/messages', `/candidates/${id}/relationship`,
     '/admin/users', '/admin/teams', '/admin/audit', '/admin/operations',
     '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings',
     `/recruiters/${id}/weekly-goals`, '/job-publications', `/job-publications/${id}`,

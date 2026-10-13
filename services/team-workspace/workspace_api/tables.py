@@ -646,6 +646,25 @@ gmail_oauth_states = Table(
     ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
 )
 
+gmail_messages = Table(
+    "ws_gmail_message", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("recruiter_user_id", nullable=False),
+    U("candidate_id", nullable=False), U("job_id"), U("execution_id", nullable=False),
+    S("gmail_message_id", nullable=False), S("gmail_thread_id", nullable=False),
+    S("direction", nullable=False), S("from_address"), S("to_address"), S("subject"), S("body_text"),
+    D("received_at", nullable=False), S("history_id"), D("created_at", nullable=False),
+    UniqueConstraint("tenant_id", "gmail_message_id"),
+    CheckConstraint("direction IN ('inbound','outbound')"),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["execution_id"], ["ws_outreach_execution.id"]),
+)
+Index("idx_ws_gmail_message_candidate", gmail_messages.c.tenant_id,
+      gmail_messages.c.candidate_id, gmail_messages.c.received_at)
+Index("idx_ws_gmail_message_recruiter", gmail_messages.c.tenant_id,
+      gmail_messages.c.recruiter_user_id, gmail_messages.c.received_at)
+
 approval_requests = Table(
     "ws_approval_request", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), S("approval_type", nullable=False),
