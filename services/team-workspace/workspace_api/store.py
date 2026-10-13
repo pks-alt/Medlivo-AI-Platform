@@ -4195,6 +4195,22 @@ class WorkspaceStore:
                         )
                     )
 
+                    sequence_ids = select(t.followup_sequences.c.id).where(
+                        t.followup_sequences.c.tenant_id == connection["tenant_id"],
+                        t.followup_sequences.c.recruiter_user_id == connection["recruiter_user_id"],
+                        t.followup_sequences.c.candidate_id == execution["candidate_id"],
+                        t.followup_sequences.c.stopped_reason == "candidate_reply_received",
+                    )
+                    conn.execute(
+                        update(t.followup_sequence_steps)
+                        .where(
+                            t.followup_sequence_steps.c.tenant_id == connection["tenant_id"],
+                            t.followup_sequence_steps.c.sequence_id.in_(sequence_ids),
+                            t.followup_sequence_steps.c.status.in_(["scheduled","ready_for_review","queued"]),
+                        )
+                        .values(status="cancelled", updated_at=now())
+                    )
+
                     result = conn.execute(
                         update(t.outreach_executions)
                         .where(
