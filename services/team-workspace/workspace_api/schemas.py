@@ -188,6 +188,21 @@ class OutreachDraftDecisionInput(StrictInput):
         return self
 
 
+class OutreachExecutionInput(StrictInput):
+    scheduled_for: datetime | None = None
+
+    @field_validator("scheduled_for")
+    @classmethod
+    def scheduled_for_requires_zone(cls, value):
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("A timezone-aware send time is required")
+        return value
+
+
+class OutreachExecutionCancelInput(StrictInput):
+    reason: str = Field(min_length=3, max_length=1000)
+
+
 class ProtectedActionInput(StrictInput):
     action_type: Literal[
         "working", "email_sent", "sms_sent", "call_completed",
