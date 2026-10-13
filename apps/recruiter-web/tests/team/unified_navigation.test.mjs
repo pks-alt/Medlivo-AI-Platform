@@ -174,13 +174,15 @@ test("New recruiter destinations are first-class routes", async () => {
   }
 });
 
-test("Conversations uses persisted AI email and text draft APIs without enabling provider sends", async () => {
+test("Conversations uses persisted outreach APIs with guarded Gmail pilot delivery", async () => {
   const page = await readFile(new URL("../../app/conversations/page.tsx", import.meta.url), "utf8");
   assert.match(page, /AI-assisted Email and Text\/SMS drafting/);
   assert.match(page, /Text \/ SMS/);
   assert.match(page, /api\("outreach-drafts"/);
   assert.match(page, /Generate AI Draft/);
-  assert.match(page, /External provider send remains disabled/i);
+  assert.match(page, /Connect Gmail/i);
+  assert.match(page, /deliver-gmail/);
+  assert.match(page, /Send Approved Email/i);
   assert.match(page, /X-CSRF-Token/);
   assert.match(page, /policy_version/);
   assert.doesNotMatch(page, /send-email|send-sms|\/send"/);
@@ -224,7 +226,8 @@ test("Conversations uses persisted AI outreach draft workflow", async () => {
   assert.match(page, /model_provider/);
   assert.match(page, /policy_version/);
   assert.match(page, /Approve Draft/);
-  assert.match(page, /external provider send remains disabled/i);
+  assert.match(page, /Gmail pilot/i);
+  assert.match(page, /Connect Gmail before sending/i);
   assert.match(page, /candidates\/.*\/relationship/);
 });
 
