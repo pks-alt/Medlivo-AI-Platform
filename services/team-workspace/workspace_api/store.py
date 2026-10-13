@@ -4845,6 +4845,16 @@ class WorkspaceStore:
             if scheduled_for > now():
                 raise AccessError(409, "This outreach is scheduled for a future time")
 
+            suppressed = conn.execute(
+                select(t.contact_suppressions.c.candidate_id).where(
+                    t.contact_suppressions.c.tenant_id == principal["tenant_id"],
+                    t.contact_suppressions.c.candidate_id == execution["candidate_id"],
+                    t.contact_suppressions.c.channel == "email",
+                )
+            ).first()
+            if suppressed is not None:
+                raise AccessError(409, "Email outreach is suppressed for this candidate")
+
             connection = conn.execute(
                 select(t.gmail_connections).where(
                     t.gmail_connections.c.tenant_id == principal["tenant_id"],
@@ -4870,6 +4880,7 @@ class WorkspaceStore:
                     to_address=recipient,
                     subject=snapshot.get("subject"),
                     body_text=body,
+                    thread_id=execution["provider_thread_id"],
                 )
             except Exception:
                 timestamp = now()
@@ -4913,6 +4924,39 @@ class WorkspaceStore:
                 occurred_at=timestamp,
                 created_at=timestamp,
             ))
+            draft = conn.execute(
+                select(t.outreach_drafts).where(
+                    t.outreach_drafts.c.tenant_id == principal["tenant_id"],
+                    t.outreach_drafts.c.id == execution["draft_id"],
+                )
+            ).mappings().first()
+            if draft is not None and draft["followup_sequence_step_id"] is not None:
+                conn.execute(
+                    update(t.followup_sequence_steps)
+                    .where(
+                        t.followup_sequence_steps.c.tenant_id == principal["tenant_id"],
+                        t.followup_sequence_steps.c.id == draft["followup_sequence_step_id"],
+                    )
+                    .values(status="sent", updated_at=timestamp)
+                )
+                remaining = conn.execute(
+                    select(func.count()).select_from(t.followup_sequence_steps).where(
+                        t.followup_sequence_steps.c.tenant_id == principal["tenant_id"],
+                        t.followup_sequence_steps.c.sequence_id == draft["followup_sequence_id"],
+                        t.followup_sequence_steps.c.status.in_(["scheduled","ready_for_review","queued"]),
+                    )
+                ).scalar_one()
+                if int(remaining or 0) == 0:
+                    conn.execute(
+                        update(t.followup_sequences)
+                        .where(
+                            t.followup_sequences.c.tenant_id == principal["tenant_id"],
+                            t.followup_sequences.c.id == draft["followup_sequence_id"],
+                            t.followup_sequences.c.status == "active",
+                        )
+                        .values(status="completed", updated_at=timestamp)
+                    )
+
             self._operational_audit(
                 conn, principal, "outreach.execution.sent", "outreach_execution", execution_id,
                 {"status": "queued"},
