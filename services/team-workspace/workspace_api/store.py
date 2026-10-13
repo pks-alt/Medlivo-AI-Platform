@@ -1001,10 +1001,16 @@ class WorkspaceStore:
                     "due_at": None,
                     "version": 0,
                 }
+                case_owner_id = conn.execute(
+                    select(t.cases.c.owner_user_id).where(
+                        t.cases.c.tenant_id == principal["tenant_id"],
+                        t.cases.c.job_id == row["id"],
+                    ).order_by(t.cases.c.updated_at.desc()).limit(1)
+                ).scalar_one_or_none()
                 assigned_recruiter_id = (
                     overlay["recruiter_user_id"]
                     if overlay and overlay["recruiter_user_id"] is not None
-                    else row["owner_user_id"]
+                    else case_owner_id or row["owner_user_id"]
                 )
                 item["operational_owner_user_id"] = assigned_recruiter_id
                 item["operational_owner_name"] = None
@@ -2570,6 +2576,15 @@ class WorkspaceStore:
                     )
                 )
             }
+            assigned_job_ids.update(
+                job_id for job_id, in conn.execute(
+                    select(t.cases.c.job_id).where(
+                        t.cases.c.tenant_id == principal["tenant_id"],
+                        t.cases.c.owner_user_id == principal["id"],
+                        t.cases.c.job_id.is_not(None),
+                    )
+                ).all()
+            )
 
             remaining = max(0, limit - len(items))
             strong_match_count = 0
@@ -2729,10 +2744,16 @@ class WorkspaceStore:
                         t.job_operational_overlays.c.job_id == job["id"],
                     )
                 ).mappings().first()
+                case_owner_id = conn.execute(
+                    select(t.cases.c.owner_user_id).where(
+                        t.cases.c.tenant_id == principal["tenant_id"],
+                        t.cases.c.job_id == job["id"],
+                    ).order_by(t.cases.c.updated_at.desc()).limit(1)
+                ).scalar_one_or_none()
                 assigned_recruiter_id = (
                     overlay["recruiter_user_id"]
                     if overlay and overlay["recruiter_user_id"] is not None
-                    else job["owner_user_id"]
+                    else case_owner_id or job["owner_user_id"]
                 )
                 owner_name = None
                 if assigned_recruiter_id:
