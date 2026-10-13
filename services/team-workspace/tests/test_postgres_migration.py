@@ -123,3 +123,23 @@ def test_staging_workflow_applies_explicit_reviewed_migrations():
     assert "016_outreach_drafts.sql" in workflow
     assert "for MIGRATION in" in workflow
     assert "find " not in workflow
+
+
+def test_reviewed_migration_runner_has_replay_safe_ledger_and_legacy_sentinels():
+    runner = (Path(__file__).parents[1] / "workspace_api" / "migrate.py").read_text()
+    assert "ws_schema_migration" in runner
+    assert "checksum_sha256" in runner
+    assert "Reviewed migration checksum changed after recording" in runner
+    for name in (
+        "014_job_content_standards.sql",
+        "015_recruiter_execution_controls.sql",
+        "016_outreach_drafts.sql",
+        "017_outreach_execution.sql",
+        "018_gmail_provider_pilot.sql",
+        "019_gmail_reply_sync.sql",
+        "020_followup_sequences.sql",
+        "021_scheduled_followup_execution.sql",
+    ):
+        assert name in runner
+    assert "Baselined existing reviewed migration" in runner
+    assert "Migration already recorded" in runner
