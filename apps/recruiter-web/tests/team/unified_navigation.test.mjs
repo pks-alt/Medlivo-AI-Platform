@@ -142,3 +142,42 @@ test("Job Intake prepares all JDs from approved Medlivo standards", async () => 
   assert.match(ui, /Medlivo Standard Ready/);
   assert.match(ui, /need a Job Content Standard/);
 });
+
+
+test("Recruiter workspace uses the finalized nine-destination navigation", async () => {
+  const shell = await readFile(new URL("../../app/components/WorkspaceShell.tsx", import.meta.url), "utf8");
+  assert.match(shell, /href:"\\/",label:"Today"/);
+  assert.match(shell, /href:"\\/jobs",label:"Jobs"/);
+  assert.match(shell, /href:"\\/candidates",label:"Candidates"/);
+  assert.match(shell, /href:"\\/matching",label:"Matching"/);
+  assert.match(shell, /href:"\\/conversations",label:"Conversations"/);
+  assert.match(shell, /href:"\\/interviews",label:"Interviews"/);
+  assert.match(shell, /href:"\\/pay-gm",label:"Pay & GM"/);
+  assert.match(shell, /href:"\\/funnel",label:"Submissions"/);
+  assert.match(shell, /href:"\\/weekly",label:"My Week"/);
+});
+
+test("Recruiter and management navigation are separate workspace models", async () => {
+  const shell = await readFile(new URL("../../app/components/WorkspaceShell.tsx", import.meta.url), "utf8");
+  assert.match(shell, /if\(recruiter\)/);
+  assert.match(shell, /RECRUITER WORKSPACE/);
+  assert.match(shell, /MANAGEMENT/);
+  assert.match(shell, /Recruiter Workspace/);
+  assert.match(shell, /Delivery Manager Workspace/);
+  assert.match(shell, /Executive Workspace/);
+});
+
+test("New recruiter destinations are first-class routes", async () => {
+  for (const file of ["matching/page.tsx","conversations/page.tsx","interviews/page.tsx","pay-gm/page.tsx"]) {
+    const source = await readFile(new URL("../../app/"+file, import.meta.url), "utf8");
+    assert.ok(source.length > 100);
+  }
+});
+
+test("Conversations covers AI email and text drafts without enabling provider sends", async () => {
+  const page = await readFile(new URL("../../app/conversations/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /AI EMAIL \/ TEXT DRAFT/);
+  assert.match(page, /Text \/ SMS/);
+  assert.match(page, /No provider send is triggered from this page/);
+  assert.match(page, /Sending will be wired only after approved email\/SMS provider integration/);
+});
