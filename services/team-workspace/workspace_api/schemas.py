@@ -165,6 +165,37 @@ class JobAssignmentInput(StrictInput):
     expected_version: int = Field(ge=0)
 
 
+class ProtectedActionInput(StrictInput):
+    action_type: Literal[
+        "working", "email_sent", "sms_sent", "call_completed",
+        "follow_up_completed", "next_step_recorded", "submission_advanced",
+        "interview_advanced", "candidate_reply"
+    ]
+    candidate_id: UUID | None = None
+    source_type: Literal["medlivo", "gmail", "zoom_phone", "jobdiva", "manual", "system"] = "medlivo"
+    source_reference: str | None = Field(default=None, max_length=500)
+
+
+class CandidateEngagementInput(StrictInput):
+    event_type: Literal[
+        "candidate_reply", "completed_call", "availability_confirmed",
+        "preferences_confirmed", "interest_confirmed", "next_step_agreed",
+        "email_sent", "sms_sent", "working", "follow_up_completed",
+        "submission_advanced", "interview_advanced", "profile_view", "internal_note"
+    ]
+    job_id: UUID | None = None
+    source_type: Literal["medlivo", "gmail", "zoom_phone", "jobdiva", "manual", "system"] = "manual"
+    source_reference: str | None = Field(default=None, max_length=500)
+    occurred_at: datetime | None = None
+
+    @field_validator("occurred_at")
+    @classmethod
+    def engagement_occurred_at_requires_zone(cls, value):
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("A timezone-aware event time is required")
+        return value
+
+
 class JobIntakeItemDecision(StrictInput):
     decision: Literal["approved", "rejected"]
     final_approved_values: dict | None = None
