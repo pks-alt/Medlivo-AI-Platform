@@ -202,3 +202,34 @@ test("Candidate 360 surfaces active relationship continuity", async () => {
   assert.match(page, /No active relationship/);
   assert.match(page, /Unanswered outreach, profile views and internal notes do not establish a relationship/);
 });
+
+
+test("Final Today uses real protected-action and funnel APIs", async () => {
+  const page = await readFile(new URL("../../app/components/RecruiterToday.tsx", import.meta.url), "utf8");
+  assert.match(page, /recruiter\/protected-actions\?limit=50/);
+  assert.match(page, /funnel\?limit=200/);
+  assert.match(page, /protected-action/);
+  assert.match(page, /action_type:"working"/);
+  assert.match(page, /TIME-SENSITIVE ASSIGNED WORK/);
+  assert.match(page, /REHABILITATION OPPORTUNITIES YOU CAN HELP WITH/);
+});
+
+test("Conversations uses persisted AI outreach draft workflow", async () => {
+  const page = await readFile(new URL("../../app/conversations/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /outreach-drafts/);
+  assert.match(page, /Generate AI Draft/);
+  assert.match(page, /model_provider/);
+  assert.match(page, /policy_version/);
+  assert.match(page, /Approve Draft/);
+  assert.match(page, /external provider send remains disabled/i);
+  assert.match(page, /candidates\/.*\/relationship/);
+});
+
+test("Candidate 360 exposes operational relationship state and meaningful activity", async () => {
+  const page = await readFile(new URL("../../app/candidates/\[candidateId\]/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /candidates\/.*\/relationship/);
+  assert.match(page, /Active with you/);
+  assert.match(page, /Coordinate before outreach/);
+  assert.match(page, /RELATIONSHIP ACTIVITY/);
+  assert.match(page, /Meaningful/);
+});
