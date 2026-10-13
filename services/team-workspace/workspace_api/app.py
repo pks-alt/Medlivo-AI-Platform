@@ -153,6 +153,7 @@ def build_app(store, verifier, gmail_pubsub_verification_token=None):
             "public.ws_outreach_execution",
             "public.ws_gmail_connection",
             "public.ws_gmail_oauth_state",
+            "public.ws_gmail_message",
         )
         try:
             with store.engine.connect() as conn:
