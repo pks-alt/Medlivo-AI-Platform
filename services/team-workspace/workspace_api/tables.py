@@ -546,6 +546,7 @@ protected_action_windows = Table(
     CheckConstraint("status IN ('protected','working','available_for_support','completed')"),
     ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
     ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "meaningful_action_by"], ["app_user.tenant_id", "app_user.id"]),
 )
 
 candidate_relationships = Table(
