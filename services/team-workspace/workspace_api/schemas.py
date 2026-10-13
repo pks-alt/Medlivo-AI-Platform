@@ -165,6 +165,21 @@ class JobAssignmentInput(StrictInput):
     expected_version: int = Field(ge=0)
 
 
+class OutreachDraftInput(StrictInput):
+    candidate_id: UUID
+    job_id: UUID | None = None
+    channel: Literal["email", "sms"]
+    purpose: Literal[
+        "initial_outreach", "follow_up", "availability_reconfirm",
+        "interview_followup", "pay_followup", "next_step"
+    ]
+    instruction: str | None = Field(default=None, max_length=1200)
+
+
+class OutreachDraftDecisionInput(StrictInput):
+    decision: Literal["approved", "cancelled"]
+
+
 class ProtectedActionInput(StrictInput):
     action_type: Literal[
         "working", "email_sent", "sms_sent", "call_completed",
