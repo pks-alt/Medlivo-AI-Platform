@@ -188,6 +188,10 @@ class OutreachDraftDecisionInput(StrictInput):
         return self
 
 
+class FollowupPrepareDueInput(StrictInput):
+    limit: int = Field(default=10, ge=1, le=50)
+
+
 class FollowupSequenceInput(StrictInput):
     candidate_id: UUID
     job_id: UUID | None = None
