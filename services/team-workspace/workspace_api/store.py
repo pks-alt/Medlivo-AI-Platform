@@ -2545,6 +2545,32 @@ class WorkspaceStore:
                     "recommended_next_action": "Complete overdue follow-up" if overdue else "Complete upcoming follow-up",
                 })
 
+            assigned_rows = conn.execute(
+                select(
+                    t.jobs.c.id,
+                    t.jobs.c.owner_user_id,
+                    t.job_operational_overlays.c.recruiter_user_id.label("operational_recruiter_user_id"),
+                )
+                .outerjoin(t.job_operational_overlays, and_(
+                    t.job_operational_overlays.c.job_id == t.jobs.c.id,
+                    t.job_operational_overlays.c.tenant_id == t.jobs.c.tenant_id,
+                ))
+                .where(
+                    t.jobs.c.tenant_id == principal["tenant_id"],
+                    t.jobs.c.division == scope["division"],
+                )
+            ).mappings().all()
+            assigned_job_ids = {
+                row["id"] for row in assigned_rows
+                if (
+                    row["operational_recruiter_user_id"] == principal["id"]
+                    or (
+                        row["operational_recruiter_user_id"] is None
+                        and row["owner_user_id"] == principal["id"]
+                    )
+                )
+            }
+
             remaining = max(0, limit - len(items))
             strong_match_count = 0
             if remaining:
@@ -2608,14 +2634,7 @@ class WorkspaceStore:
                         "profession": row["profession"],
                         "specialty": row["specialty"],
                         "start_date": row["start_date"],
-                        "work_priority": "priority_1" if row["job_id"] in {
-                            job_id for job_id, in conn.execute(
-                                select(t.jobs.c.id).where(
-                                    t.jobs.c.tenant_id == principal["tenant_id"],
-                                    t.jobs.c.owner_user_id == principal["id"],
-                                )
-                            ).all()
-                        } else "priority_2",
+                        "work_priority": "priority_1" if row["job_id"] in assigned_job_ids else "priority_2",
                         "recommended_next_action": "Review strong match" if score >= 9 else "Review match",
                     })
 
@@ -2704,12 +2723,23 @@ class WorkspaceStore:
                     .limit(1)
                 ).scalar_one_or_none()
 
+                overlay = conn.execute(
+                    select(t.job_operational_overlays).where(
+                        t.job_operational_overlays.c.tenant_id == principal["tenant_id"],
+                        t.job_operational_overlays.c.job_id == job["id"],
+                    )
+                ).mappings().first()
+                assigned_recruiter_id = (
+                    overlay["recruiter_user_id"]
+                    if overlay and overlay["recruiter_user_id"] is not None
+                    else job["owner_user_id"]
+                )
                 owner_name = None
-                if job["owner_user_id"]:
+                if assigned_recruiter_id:
                     owner_name = conn.execute(
                         select(t.users.c.display_name).where(
                             t.users.c.tenant_id == principal["tenant_id"],
-                            t.users.c.id == job["owner_user_id"],
+                            t.users.c.id == assigned_recruiter_id,
                         )
                     ).scalar_one_or_none()
 
@@ -2902,11 +2932,11 @@ class WorkspaceStore:
                     "start_date": job["start_date"],
                     "status": job["status"],
                     "priority": job["priority"],
-                    "owner_user_id": job["owner_user_id"],
+                    "owner_user_id": assigned_recruiter_id,
                     "owner_name": owner_name,
                     "work_priority": (
                         "priority_1"
-                        if principal["role"] == "recruiter" and job["owner_user_id"] == principal["id"]
+                        if principal["role"] == "recruiter" and assigned_recruiter_id == principal["id"]
                         else "priority_2" if principal["role"] == "recruiter" else None
                     ),
                     "customer_name": customer_name,
@@ -2937,10 +2967,19 @@ class WorkspaceStore:
                     "matches": match_items,
                 })
 
+            if principal["role"] == "recruiter":
+                items.sort(key=lambda item: (
+                    0 if item.get("work_priority") == "priority_1" else 1,
+                    -int(item.get("priority") or 0),
+                    str(item.get("start_date") or "9999-12-31"),
+                    str(item.get("job_id")),
+                ))
+
             return {
                 "items": clean(items),
                 "read_only": True,
                 "source_of_record": "jobdiva",
+                "division_scope": recruiter_scope["division"] if recruiter_scope else None,
             }
 
 
