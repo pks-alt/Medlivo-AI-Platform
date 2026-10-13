@@ -66,8 +66,8 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
   return <div className="appShell">
     <aside className="appSidebar">
       <div className="appBrand">
-        <b>medlivo</b><span>RECRUIT AI</span>
-        <small>Healthcare Staffing Intelligence</small>
+        <div className="appBrandMark">M</div>
+        <div><b>medlivo</b><span>RECRUIT AI</span><small>Healthcare Staffing Intelligence</small></div>
       </div>
       <nav aria-label="Recruit AI navigation">
         {groups.map(group=><div className="appNavGroup" key={group.label}>
@@ -76,8 +76,11 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
         </div>)}
       </nav>
       <div className="appSidebarFoot">
-        <div><span className="appStatusDot"/><b>Medlivo secure staging</b></div>
-        <small>{me?.display_name||"Medlivo team"} · {String(me?.business_role||me?.role||"user").replaceAll("_"," ")}</small>
+        <div className="appUserCard">
+          <div className="appUserAvatar">{(me?.display_name||"M").slice(0,1).toUpperCase()}</div>
+          <div><b>{me?.display_name||"Medlivo team"}</b><small>{String(me?.business_role||me?.role||"user").replaceAll("_"," ")}</small></div>
+        </div>
+        <div className="appEnv"><span className="appStatusDot"/><b>Secure staging</b></div>
         <em>Block 1 · Intake → Distribution → Recruiter Work</em>
       </div>
     </aside>
