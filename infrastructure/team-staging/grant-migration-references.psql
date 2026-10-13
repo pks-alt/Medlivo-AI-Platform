@@ -1,0 +1,26 @@
+-- One-time staging administrator grant for the dedicated migration role.
+-- Run only as the owner/admin of the canonical staging schema.
+-- The migration role needs REFERENCES to create tenant-preserving foreign keys.
+-- It receives no SELECT/INSERT/UPDATE/DELETE privilege from this script.
+
+\if :{?migration_role}
+\else
+  \echo 'migration_role psql variable is required'
+  \quit 1
+\endif
+
+GRANT REFERENCES ON TABLE public.job TO :"migration_role";
+GRANT REFERENCES ON TABLE public.candidate TO :"migration_role";
+
+SELECT
+  has_table_privilege(:'migration_role', 'public.job', 'REFERENCES')
+  AND has_table_privilege(:'migration_role', 'public.candidate', 'REFERENCES')
+  AS references_ready
+\gset
+
+\if :references_ready
+  \echo 'Migration REFERENCES grants verified.'
+\else
+  \echo 'Migration role REFERENCES grants are incomplete.'
+  \quit 1
+\endif
