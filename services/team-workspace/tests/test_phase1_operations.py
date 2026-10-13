@@ -676,6 +676,37 @@ def seed_candidate_best_jobs(seeded):
         ))
 
 
+def test_recruiter_match_queue_separates_assigned_and_division_opportunities(client, headers, seeded):
+    seed_candidate_best_jobs(seeded)
+    response = client.get(
+        "/api/v1/team/work-queue?limit=25&matches_per_job=5",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["division_scope"] == "Rehabilitation"
+    by_id = {item["job_id"]: item for item in body["items"]}
+    assert by_id[idn(200)]["work_priority"] == "priority_1"
+    assert by_id[idn(201)]["work_priority"] == "priority_2"
+    assert [item["job_id"] for item in body["items"][:2]] == [idn(200), idn(201)]
+
+
+def test_daily_priorities_include_same_division_priority_two_matches(client, headers, seeded):
+    seed_candidate_best_jobs(seeded)
+    response = client.get(
+        "/api/v1/team/daily-priorities?limit=10",
+        headers=headers("recruiter-a"),
+    )
+    assert response.status_code == 200
+    body = response.json()
+    matches = [item for item in body["items"] if item["type"] == "match_review"]
+    by_job = {item["job_id"]: item for item in matches}
+    assert by_job[idn(200)]["work_priority"] == "priority_1"
+    assert by_job[idn(201)]["work_priority"] == "priority_2"
+    assert body["totals"]["priority_1_matches"] == 1
+    assert body["totals"]["priority_2_matches"] == 1
+
+
 def test_candidate_best_jobs_returns_ranked_current_matches(client, headers, seeded):
     seed_candidate_best_jobs(seeded)
     response = client.get(
