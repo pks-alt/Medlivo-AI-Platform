@@ -3884,6 +3884,22 @@ class WorkspaceStore:
                 raise AccessError(502, "Recruiter outreach AI could not generate a draft") from None
 
             timestamp = now()
+            prior_thread_id = None
+            if provider == "gmail":
+                prior_thread_id = conn.execute(
+                    select(t.outreach_executions.c.provider_thread_id)
+                    .where(
+                        t.outreach_executions.c.tenant_id == principal["tenant_id"],
+                        t.outreach_executions.c.recruiter_user_id == principal["id"],
+                        t.outreach_executions.c.candidate_id == draft["candidate_id"],
+                        t.outreach_executions.c.provider == "gmail",
+                        t.outreach_executions.c.status == "sent",
+                        t.outreach_executions.c.provider_thread_id.is_not(None),
+                    )
+                    .order_by(t.outreach_executions.c.sent_at.desc())
+                    .limit(1)
+                ).scalar_one_or_none()
+
             row = dict(
                 id=uid(),
                 tenant_id=principal["tenant_id"],
@@ -4972,6 +4988,16 @@ class WorkspaceStore:
             if candidate is None:
                 raise AccessError(404, "Candidate not found")
 
+            suppressed = conn.execute(
+                select(t.contact_suppressions.c.candidate_id).where(
+                    t.contact_suppressions.c.tenant_id == principal["tenant_id"],
+                    t.contact_suppressions.c.candidate_id == draft["candidate_id"],
+                    t.contact_suppressions.c.channel == draft["channel"],
+                )
+            ).first()
+            if suppressed is not None:
+                raise AccessError(409, "Outreach is suppressed for this candidate and channel")
+
             provider = "gmail" if draft["channel"] == "email" else "zoom_phone"
             destination = candidate["primary_email"] if draft["channel"] == "email" else candidate["primary_phone"]
             if not destination:
@@ -5006,6 +5032,7 @@ class WorkspaceStore:
                 attempt_count=0,
                 max_attempts=3,
                 provider_message_id=None,
+                provider_thread_id=prior_thread_id,
                 last_error=None,
                 payload_snapshot={
                     "recipient": destination,
@@ -5019,6 +5046,19 @@ class WorkspaceStore:
                 updated_at=timestamp,
             )
             conn.execute(insert(t.outreach_executions).values(**row))
+            if draft["followup_sequence_step_id"] is not None:
+                conn.execute(
+                    update(t.followup_sequence_steps)
+                    .where(
+                        t.followup_sequence_steps.c.tenant_id == principal["tenant_id"],
+                        t.followup_sequence_steps.c.id == draft["followup_sequence_step_id"],
+                    )
+                    .values(
+                        status="queued",
+                        outreach_execution_id=row["id"],
+                        updated_at=timestamp,
+                    )
+                )
             self._operational_audit(
                 conn, principal, "outreach.execution.queued", "outreach_execution", row["id"],
                 None,
