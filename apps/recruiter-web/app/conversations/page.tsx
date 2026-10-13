@@ -34,6 +34,25 @@ export default function ConversationsPage(){
  const selectedJob=useMemo(()=>jobs.find(j=>j.id===jobId),[jobs,jobId]);
  const followups=useMemo(()=>(priorities.items||[]).filter((x:any)=>x.type==="follow_up"),[priorities]);
 
+ async function prepareDueFollowups(){
+  setBusy(true);setError("");setMessage("");
+  try{
+    const s=await session();
+    const result=await api("followup-sequences/prepare-due",{method:"POST",headers:{"Content-Type":"application/json","X-CSRF-Token":s.csrf,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify({limit:20})});
+    const prepared=result.prepared||[];
+    if(prepared.length){
+      setDrafts(prev=>[...prepared,...prev.filter(x=>!prepared.some((p:any)=>p.id===x.id))]);
+      const first=prepared[0];
+      setActiveDraft(first);setCandidateId(first.candidate_id);setJobId(first.job_id||"");setChannel("email");setPurpose("follow_up");setSubject(first.subject||"");setBody(first.body||"");
+      setMessage(prepared.length+" due follow-up draft"+(prepared.length===1?" is":"s are")+" ready for recruiter review.");
+    }else{
+      setMessage("No follow-up steps are due for review right now.");
+    }
+    const refreshed=await api("followup-sequences?limit=50");
+    setSequences(refreshed.items||[]);
+  }catch(e:any){setError(e.message||"Due follow-ups could not be prepared")}finally{setBusy(false)}
+ }
+
  async function startSequence(){
   if(!candidateId){setError("Select a candidate before starting follow-ups.");return}
   setBusy(true);setError("");setMessage("");
@@ -144,6 +163,7 @@ export default function ConversationsPage(){
   <div className="pageHead"><div><small>Recruiter communication</small><h1>Conversations</h1><p>AI-assisted Email and Text/SMS drafting backed by trusted candidate/job data, recruiter review and an auditable draft record.</p></div><span className="sourcePill">HUMAN REVIEW REQUIRED</span></div>
   {error&&<div className="adminError"><b>Conversation action unavailable</b><span>{error}</span></div>}
   {message&&<div className="goodState conversationMessage">{message}</div>}
+  <section className="panelBox gmailPilotBar"><div><small>SCHEDULED FOLLOW-UPS</small><b>Due steps become normal recruiter-reviewed drafts</b><span>Nothing sends automatically. Prepare due steps, review the AI draft, approve it, then queue/send through the existing Gmail guardrails.</span></div><button className="button primary" disabled={busy} onClick={prepareDueFollowups}>Prepare Due Follow-ups</button></section>
   <section className="panelBox gmailPilotBar"><div><small>GMAIL PILOT</small><b>{gmail.connected?"Connected as "+gmail.gmail_address:"Gmail not connected"}</b><span>{gmail.connected?"Approved queued emails can be sent from your own Medlivo mailbox. Replies are tracked with Gmail Watch + Pub/Sub history.":"Connect your own Medlivo Gmail account before live email delivery."}</span></div>{gmail.connected?<button className="button" disabled={busy} onClick={disconnectGmail}>Disconnect Gmail</button>:<button className="button primary" disabled={busy} onClick={connectGmail}>Connect Gmail</button>}</section>
 
   <div className="conversationLayout">

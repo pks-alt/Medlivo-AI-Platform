@@ -583,7 +583,7 @@ Index("idx_ws_candidate_engagement_candidate", candidate_engagement_events.c.ten
 outreach_drafts = Table(
     "ws_outreach_draft", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
-    U("job_id"), U("recruiter_user_id", nullable=False), S("channel", nullable=False),
+    U("job_id"), U("recruiter_user_id", nullable=False), U("followup_sequence_id"), U("followup_sequence_step_id"), S("channel", nullable=False),
     S("purpose", nullable=False), S("status", nullable=False), S("subject"), S("body", nullable=False),
     Column("warnings", JSON, nullable=False, default=list),
     Column("source_context", JSON, nullable=False, default=dict),
@@ -595,6 +595,8 @@ outreach_drafts = Table(
     ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
     ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
     ForeignKeyConstraint(["tenant_id", "approved_by"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["followup_sequence_id"], ["ws_followup_sequence.id"]),
+    ForeignKeyConstraint(["followup_sequence_step_id"], ["ws_followup_sequence_step.id"]),
 )
 Index("idx_ws_outreach_draft_recruiter", outreach_drafts.c.tenant_id,
       outreach_drafts.c.recruiter_user_id, outreach_drafts.c.created_at)

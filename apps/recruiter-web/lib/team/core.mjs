@@ -142,7 +142,7 @@ function endpoint(path, method, query) {
     '/admin/users', `/matches/${id}/feedback`, '/outreach-drafts', `/outreach-drafts/${id}/decision`,
     `/outreach-drafts/${id}/queue`, `/outreach-executions/${id}/cancel`,
     '/gmail/oauth/start', '/gmail/oauth/complete', '/gmail/disconnect',
-    '/followup-sequences', `/followup-sequences/${id}/action`, '/contact-suppressions',
+    '/followup-sequences', '/followup-sequences/prepare-due', `/followup-sequences/${id}/action`, '/contact-suppressions',
     `/outreach-executions/${id}/deliver-gmail`,
     `/jobs/${id}/protected-action`, `/candidates/${id}/engagement`,
     '/job-intake/upload', '/job-intake/batches',

@@ -196,6 +196,7 @@ test('recruiter execution and AI outreach routes are allowlisted without a direc
   '/api/team/gmail/disconnect',
   '/api/team/outreach-executions/'+CASE+'/deliver-gmail',
   '/api/team/followup-sequences',
+  '/api/team/followup-sequences/prepare-due',
   '/api/team/followup-sequences/'+CASE+'/action',
   '/api/team/contact-suppressions'
  ];

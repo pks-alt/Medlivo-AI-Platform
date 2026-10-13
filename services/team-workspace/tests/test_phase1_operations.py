@@ -2630,3 +2630,155 @@ def test_followup_sequence_materializes_steps_and_suppression_stops_it(seeded, v
     assert stopped["status"] == "stopped"
     assert stopped["stopped_reason"] == "contact_suppressed"
     assert all(x["status"] == "cancelled" for x in stopped["steps"])
+
+
+def test_due_followup_becomes_reviewed_draft_and_continues_gmail_thread(seeded, verifier, headers):
+    provider = FakeGmailProvider()
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open", profession="Physical Therapist"
+        ))
+        conn.execute(update(t.candidates).where(t.candidates.c.id == idn(300)).values(
+            profession="Physical Therapist",
+            primary_email="candidate@example.test",
+        ))
+
+    client = TestClient(build_app(
+        WorkspaceStore(seeded, outreach_ai=FakeOutreachAI(), gmail_provider=provider),
+        verifier,
+    ))
+    _connect_fake_gmail(client, headers)
+
+    # Seed a sent Gmail thread that the scheduled follow-up should continue.
+    first = client.post(
+        "/api/v1/team/outreach-drafts",
+        headers=headers("recruiter-a"),
+        json={"candidate_id": idn(300), "job_id": idn(200), "channel": "email", "purpose": "follow_up"},
+    )
+    assert first.status_code == 201
+    approved = client.post(
+        f"/api/v1/team/outreach-drafts/{first.json()['id']}/decision",
+        headers=headers("recruiter-a"),
+        json={"decision": "approved", "subject": "Initial synthetic subject", "body": "Initial synthetic body."},
+    )
+    assert approved.status_code == 200
+    queued = client.post(
+        f"/api/v1/team/outreach-drafts/{first.json()['id']}/queue",
+        headers=headers("recruiter-a"),
+        json={},
+    )
+    assert queued.status_code == 201
+    sent = client.post(
+        f"/api/v1/team/outreach-executions/{queued.json()['id']}/deliver-gmail",
+        headers=headers("recruiter-a"),
+        json={"expected_status": "queued"},
+    )
+    assert sent.status_code == 200
+    assert sent.json()["provider_thread_id"] == "gmail-thread-1"
+
+    sequence = client.post(
+        "/api/v1/team/followup-sequences",
+        headers=headers("recruiter-a"),
+        json={"candidate_id": idn(300), "job_id": idn(200), "cadence_days": [3], "stop_on_reply": True},
+    )
+    assert sequence.status_code == 201
+    with seeded.begin() as conn:
+        conn.execute(
+            update(t.followup_sequence_steps)
+            .where(t.followup_sequence_steps.c.sequence_id == sequence.json()["id"])
+            .values(due_at=now()-timedelta(minutes=1))
+        )
+
+    prepared = client.post(
+        "/api/v1/team/followup-sequences/prepare-due",
+        headers=headers("recruiter-a"),
+        json={"limit": 10},
+    )
+    assert prepared.status_code == 200
+    assert prepared.json()["count"] == 1
+    draft = prepared.json()["prepared"][0]
+    assert draft["status"] == "draft"
+    assert draft["followup_sequence_id"] == sequence.json()["id"]
+    assert draft["followup_sequence_step_id"] is not None
+    assert prepared.json()["human_review_required"] is True
+    assert prepared.json()["automatic_send_enabled"] is False
+
+    reviewed = client.post(
+        f"/api/v1/team/outreach-drafts/{draft['id']}/decision",
+        headers=headers("recruiter-a"),
+        json={"decision": "approved", "subject": "Reviewed follow-up", "body": "Reviewed follow-up body."},
+    )
+    assert reviewed.status_code == 200
+    queued_followup = client.post(
+        f"/api/v1/team/outreach-drafts/{draft['id']}/queue",
+        headers=headers("recruiter-a"),
+        json={},
+    )
+    assert queued_followup.status_code == 201
+    assert queued_followup.json()["provider_thread_id"] == "gmail-thread-1"
+
+    with seeded.begin() as conn:
+        step = conn.execute(
+            select(t.followup_sequence_steps).where(
+                t.followup_sequence_steps.c.id == draft["followup_sequence_step_id"]
+            )
+        ).mappings().one()
+    assert step["status"] == "queued"
+    assert step["outreach_execution_id"] == queued_followup.json()["id"]
+
+    sent_followup = client.post(
+        f"/api/v1/team/outreach-executions/{queued_followup.json()['id']}/deliver-gmail",
+        headers=headers("recruiter-a"),
+        json={"expected_status": "queued"},
+    )
+    assert sent_followup.status_code == 200
+    with seeded.begin() as conn:
+        step = conn.execute(
+            select(t.followup_sequence_steps).where(
+                t.followup_sequence_steps.c.id == draft["followup_sequence_step_id"]
+            )
+        ).mappings().one()
+        seq = conn.execute(
+            select(t.followup_sequences).where(t.followup_sequences.c.id == sequence.json()["id"])
+        ).mappings().one()
+    assert step["status"] == "sent"
+    assert seq["status"] == "completed"
+
+
+def test_suppression_blocks_approved_followup_at_queue_and_send_boundaries(seeded, verifier, headers):
+    with seeded.begin() as conn:
+        conn.execute(update(t.jobs).where(t.jobs.c.id == idn(200)).values(
+            division="Rehabilitation", status="open"
+        ))
+        conn.execute(update(t.candidates).where(t.candidates.c.id == idn(300)).values(
+            primary_email="candidate@example.test"
+        ))
+    client = TestClient(build_app(WorkspaceStore(seeded, outreach_ai=FakeOutreachAI()), verifier))
+
+    created = client.post(
+        "/api/v1/team/outreach-drafts",
+        headers=headers("recruiter-a"),
+        json={"candidate_id": idn(300), "job_id": idn(200), "channel": "email", "purpose": "follow_up"},
+    )
+    assert created.status_code == 201
+    approved = client.post(
+        f"/api/v1/team/outreach-drafts/{created.json()['id']}/decision",
+        headers=headers("recruiter-a"),
+        json={"decision": "approved", "body": "Approved but should be suppressed."},
+    )
+    assert approved.status_code == 200
+
+    suppressed = client.post(
+        "/api/v1/team/contact-suppressions",
+        headers=headers("recruiter-a"),
+        json={"candidate_id": idn(300), "channel": "email", "reason": "Synthetic opt-out"},
+    )
+    assert suppressed.status_code == 201
+
+    blocked = client.post(
+        f"/api/v1/team/outreach-drafts/{created.json()['id']}/queue",
+        headers=headers("recruiter-a"),
+        json={},
+    )
+    assert blocked.status_code == 409
+    assert "suppressed" in blocked.json()["detail"].lower()

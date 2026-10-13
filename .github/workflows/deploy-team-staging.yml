@@ -67,7 +67,7 @@ jobs:
           docker push "${API_IMAGE}"
           echo "API_IMAGE=${API_IMAGE}" >> "${GITHUB_ENV}"
 
-      - name: Apply reviewed workspace migrations 014-020
+      - name: Apply reviewed workspace migrations 014-021
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
         run: |
           set -euo pipefail
@@ -80,7 +80,8 @@ jobs:
             017_outreach_execution.sql \
             018_gmail_provider_pilot.sql \
             019_gmail_reply_sync.sql \
-            020_followup_sequences.sql
+            020_followup_sequences.sql \
+            021_scheduled_followup_execution.sql
           do
             echo "Applying reviewed migration ${MIGRATION}"
             gcloud run jobs deploy "${MIGRATION_JOB}" \
