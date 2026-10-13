@@ -178,6 +178,14 @@ class OutreachDraftInput(StrictInput):
 
 class OutreachDraftDecisionInput(StrictInput):
     decision: Literal["approved", "cancelled"]
+    subject: str | None = Field(default=None, max_length=250)
+    body: str | None = Field(default=None, max_length=6000)
+
+    @model_validator(mode="after")
+    def approved_draft_requires_body(self):
+        if self.decision == "approved" and self.body is not None and not self.body.strip():
+            raise ValueError("Approved outreach body cannot be empty")
+        return self
 
 
 class ProtectedActionInput(StrictInput):
