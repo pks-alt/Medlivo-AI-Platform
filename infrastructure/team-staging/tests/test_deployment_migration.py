@@ -26,7 +26,7 @@ class DeploymentMigrationTests(unittest.TestCase):
         self.assertIn("016_outreach_drafts.sql", workflow)
         self.assertIn(migration, workflow)
         self.assertLess(
-            workflow.index("Apply reviewed workspace migration 014"),
+            workflow.index("Apply reviewed workspace migrations 014-016"),
             workflow.index("Deploy private API candidate with schema readiness gate"),
         )
         self.assertIn("--set-cloudsql-instances", workflow)
