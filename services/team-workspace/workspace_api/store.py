@@ -1,5 +1,6 @@
 from __future__ import annotations
 from datetime import datetime, date, timezone, timedelta
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 import hashlib
 import json
@@ -30,6 +31,18 @@ def now():
 
 def uid():
     return str(uuid4())
+
+
+PACIFIC = ZoneInfo("America/Los_Angeles")
+RELATIONSHIP_MEANINGFUL_EVENTS = {
+    "candidate_reply", "completed_call", "availability_confirmed",
+    "preferences_confirmed", "interest_confirmed", "next_step_agreed",
+}
+PROTECTED_ACTION_TYPES = {
+    "working", "email_sent", "sms_sent", "call_completed",
+    "follow_up_completed", "next_step_recorded", "submission_advanced",
+    "interview_advanced", "candidate_reply",
+}
 
 
 def json_value(value):
@@ -129,12 +142,20 @@ class WorkspaceStore:
     def me(self, identity):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
+            division = None
+            team_name = None
+            if principal["role"] == "recruiter":
+                scope = self._recruiter_scope(conn, principal)
+                division = scope["division"]
+                team_name = scope["team_name"]
             return {
                 "id": principal["id"],
                 "display_name": principal["display_name"],
                 "role": principal["role"],
                 "business_role": principal["business_role"],
                 "system_admin": bool(principal["system_admin"]),
+                "division": division,
+                "team_name": team_name,
                 "submission_ai_enabled": self.submission_ai is not None,
                 "submission_packet_download_enabled": self.submission_packet_generator is not None,
             }
@@ -1539,6 +1560,83 @@ class WorkspaceStore:
         if row is None:
             raise AccessError(403, "Recruiter division scope is not configured")
         return row
+
+    def _is_business_day(self, conn, tenant_id, local_date):
+        exception = conn.execute(
+            select(t.business_calendar_exceptions.c.exception_type).where(
+                t.business_calendar_exceptions.c.tenant_id == tenant_id,
+                t.business_calendar_exceptions.c.calendar_date == local_date,
+            )
+        ).scalar_one_or_none()
+        if exception == "working_day_override":
+            return True
+        if exception == "holiday":
+            return False
+        return local_date.weekday() < 5
+
+    def _protected_deadline(self, conn, tenant_id, assigned_at, minutes=60):
+        current = assigned_at.astimezone(PACIFIC)
+        remaining = float(minutes)
+        while remaining > 0:
+            if not self._is_business_day(conn, tenant_id, current.date()):
+                current = (current + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+                continue
+            start = current.replace(hour=8, minute=0, second=0, microsecond=0)
+            end = current.replace(hour=17, minute=0, second=0, microsecond=0)
+            if current < start:
+                current = start
+            if current >= end:
+                current = (current + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+                continue
+            available = max(0.0, (end - current).total_seconds() / 60.0)
+            if available >= remaining:
+                return (current + timedelta(minutes=remaining)).astimezone(timezone.utc)
+            remaining -= available
+            current = (current + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
+        return current.astimezone(timezone.utc)
+
+    def _effective_protected_status(self, row, timestamp=None):
+        if row is None:
+            return None
+        timestamp = timestamp or now()
+        status = row["status"]
+        protected_until = row["protected_until"]
+        if protected_until is not None and protected_until.tzinfo is None:
+            protected_until = protected_until.replace(tzinfo=timezone.utc)
+        if status == "protected" and protected_until and timestamp >= protected_until:
+            return "available_for_support"
+        return status
+
+    def _candidate_in_recruiter_division(self, conn, principal, candidate_id):
+        scope = self._recruiter_scope(conn, principal)
+        through_case = conn.execute(
+            select(t.cases.c.id)
+            .join(t.teams, and_(
+                t.teams.c.id == t.cases.c.team_id,
+                t.teams.c.tenant_id == t.cases.c.tenant_id,
+            ))
+            .where(
+                t.cases.c.tenant_id == principal["tenant_id"],
+                t.cases.c.candidate_id == candidate_id,
+                t.teams.c.division == scope["division"],
+            ).limit(1)
+        ).first()
+        if through_case is not None:
+            return True
+        through_match = conn.execute(
+            select(t.matches.c.id)
+            .join(t.jobs, and_(
+                t.jobs.c.id == t.matches.c.job_id,
+                t.jobs.c.tenant_id == t.matches.c.tenant_id,
+            ))
+            .where(
+                t.matches.c.tenant_id == principal["tenant_id"],
+                t.matches.c.candidate_id == candidate_id,
+                t.jobs.c.division == scope["division"],
+                t.jobs.c.status.not_in(["closed", "cancelled", "canceled"]),
+            ).limit(1)
+        ).first()
+        return through_match is not None
 
     def create_job_intake_batch(self, identity, key, value):
         payload = {
