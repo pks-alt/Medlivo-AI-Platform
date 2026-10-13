@@ -609,7 +609,7 @@ outreach_executions = Table(
     D("scheduled_for", nullable=False), D("claimed_at"), D("sent_at"), D("failed_at"),
     Column("attempt_count", Integer, nullable=False, default=0),
     Column("max_attempts", Integer, nullable=False, default=3),
-    S("provider_message_id"), S("last_error"),
+    S("provider_message_id"), S("provider_thread_id"), S("last_error"),
     Column("payload_snapshot", JSON, nullable=False, default=dict),
     D("created_at", nullable=False), D("updated_at", nullable=False),
     UniqueConstraint("tenant_id", "draft_id"),
