@@ -22,7 +22,7 @@ from .schemas import (
     OutreachDraftInput, OutreachDraftDecisionInput,
     OutreachExecutionInput, OutreachExecutionCancelInput,
     GmailOAuthCallbackInput, GmailDisconnectInput, GmailDeliverInput, GmailPubSubPush,
-    FollowupSequenceInput, FollowupSequenceActionInput, ContactSuppressionInput,
+    FollowupPrepareDueInput, FollowupSequenceInput, FollowupSequenceActionInput, ContactSuppressionInput,
     MarginCalculationInput, MarginDiscussionInput, MarginFinalizeInput,
     CostAssumptionSetInput, CustomerEconomicRuleInput,
     W2PayPackageSnapshotInput, LocumsPayPackageSnapshotInput,
@@ -157,6 +157,7 @@ def build_app(store, verifier, gmail_pubsub_verification_token=None):
             "public.ws_gmail_message",
             "public.ws_followup_sequence",
             "public.ws_contact_suppression",
+            "public.ws_followup_sequence_step",
         )
         try:
             with store.engine.connect() as conn:
@@ -397,6 +398,14 @@ def build_app(store, verifier, gmail_pubsub_verification_token=None):
                               who=Depends(identity)):
         return store.decide_outreach_draft(
             who, str(draft_id), str(idempotency_key), value
+        )
+
+    @app.post(prefix + "/followup-sequences/prepare-due")
+    def prepare_due_followups(value: FollowupPrepareDueInput,
+                              idempotency_key: UUID = Header(),
+                              who=Depends(identity)):
+        return store.prepare_due_followups(
+            who, str(idempotency_key), value
         )
 
     @app.post(prefix + "/followup-sequences", status_code=201)
