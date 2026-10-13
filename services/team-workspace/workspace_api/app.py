@@ -138,6 +138,7 @@ def build_app(store, verifier):
             "public.ws_candidate_relationship",
             "public.ws_candidate_engagement_event",
             "public.ws_outreach_draft",
+            "public.ws_outreach_execution",
         )
         try:
             with store.engine.connect() as conn:
