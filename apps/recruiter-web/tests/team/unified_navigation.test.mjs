@@ -174,24 +174,27 @@ test("New recruiter destinations are first-class routes", async () => {
   }
 });
 
-test("Conversations uses real AI email and text draft APIs without enabling provider sends", async () => {
+test("Conversations uses persisted AI email and text draft APIs without enabling provider sends", async () => {
   const page = await readFile(new URL("../../app/conversations/page.tsx", import.meta.url), "utf8");
-  assert.match(page, /AI Email \/ Text Draft/);
+  assert.match(page, /AI-assisted Email and Text\/SMS drafting/);
   assert.match(page, /Text \/ SMS/);
-  assert.match(page, /post\("outreach-drafts"/);
-  assert.match(page, /Generate with Medlivo AI/);
-  assert.match(page, /external send disabled/i);
+  assert.match(page, /api\("outreach-drafts"/);
+  assert.match(page, /Generate AI Draft/);
+  assert.match(page, /External provider send remains disabled/i);
   assert.match(page, /X-CSRF-Token/);
+  assert.match(page, /policy_version/);
   assert.doesNotMatch(page, /send-email|send-sms|\/send"/);
 });
 
 test("Today consumes protected action windows and preserves assignment", async () => {
   const page = await readFile(new URL("../../app/page.tsx", import.meta.url), "utf8");
+  const today = await readFile(new URL("../../app/components/RecruiterToday.tsx", import.meta.url), "utf8");
   assert.match(page, /recruiter\/protected-actions/);
-  assert.match(page, /protected-action/);
-  assert.match(page, /Available for Support/);
-  assert.match(page, /assignment stays unchanged/);
-  assert.match(page, /8 AM–5 PM Pacific/);
+  assert.match(today, /protected-action/);
+  assert.match(today, /AVAILABLE FOR SUPPORT/);
+  assert.match(today, /assignment stays unchanged/);
+  assert.match(today, /8 AM–5 PM Pacific/);
+  assert.match(today, /remaining_business_minutes/);
 });
 
 test("Candidate 360 surfaces active relationship continuity", async () => {
