@@ -139,9 +139,11 @@ def test_reviewed_migration_runner_has_replay_safe_ledger_and_legacy_sentinels()
         "019_gmail_reply_sync.sql",
         "020_followup_sequences.sql",
         "021_scheduled_followup_execution.sql",
-        "022_repair_recruiter_execution_controls.sql",
     ):
         assert name in runner
+    # 022 is intentionally NOT a legacy sentinel: it is the new repair migration
+    # and must execute rather than being baselined.
+    assert "022_repair_recruiter_execution_controls.sql" not in runner
     assert "Baselined existing reviewed migration" in runner
     assert "Migration already recorded" in runner
     assert "MIGRATION_FAILED" in runner
