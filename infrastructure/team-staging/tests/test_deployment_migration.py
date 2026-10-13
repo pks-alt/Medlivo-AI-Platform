@@ -46,3 +46,14 @@ class DeploymentMigrationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_staging_migration_reference_grant_is_least_privilege():
+    grant_file = (ROOT / "infrastructure/team-staging/grant-migration-references.psql").read_text()
+    assert 'GRANT REFERENCES ON TABLE public.job' in grant_file
+    assert 'GRANT REFERENCES ON TABLE public.candidate' in grant_file
+    assert 'GRANT SELECT' not in grant_file
+    assert 'GRANT INSERT' not in grant_file
+    assert 'GRANT UPDATE' not in grant_file
+    assert 'GRANT DELETE' not in grant_file
+    assert 'Migration REFERENCES grants verified.' in grant_file
