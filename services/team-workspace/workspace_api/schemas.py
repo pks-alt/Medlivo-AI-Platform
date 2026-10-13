@@ -188,6 +188,33 @@ class OutreachDraftDecisionInput(StrictInput):
         return self
 
 
+class FollowupSequenceInput(StrictInput):
+    candidate_id: UUID
+    job_id: UUID | None = None
+    cadence_days: list[int] = Field(min_length=1, max_length=5)
+    stop_on_reply: bool = True
+
+    @field_validator("cadence_days")
+    @classmethod
+    def validate_cadence_days(cls, value):
+        if any(day < 1 or day > 30 for day in value):
+            raise ValueError("Follow-up days must be between 1 and 30")
+        if value != sorted(set(value)):
+            raise ValueError("Follow-up days must be unique and ascending")
+        return value
+
+
+class FollowupSequenceActionInput(StrictInput):
+    action: Literal["pause","resume","stop"]
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+class ContactSuppressionInput(StrictInput):
+    candidate_id: UUID
+    channel: Literal["email","sms"]
+    reason: str = Field(min_length=3, max_length=1000)
+
+
 class GmailPubSubMessage(StrictInput):
     data: str = Field(min_length=4, max_length=16384)
     messageId: str | None = Field(default=None, max_length=500)
