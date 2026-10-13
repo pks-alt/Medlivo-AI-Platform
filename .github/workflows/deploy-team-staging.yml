@@ -67,28 +67,36 @@ jobs:
           docker push "${API_IMAGE}"
           echo "API_IMAGE=${API_IMAGE}" >> "${GITHUB_ENV}"
 
-      - name: Apply reviewed workspace migration 014
+      - name: Apply reviewed workspace migrations 014-016
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
         run: |
+          set -euo pipefail
           MIGRATION_JOB="medlivo-team-schema-staging"
           MIGRATION_SA="medlivo-team-schema-staging@${PROJECT_ID}.iam.gserviceaccount.com"
-          gcloud run jobs deploy "${MIGRATION_JOB}" \
-            --project="${PROJECT_ID}" \
-            --region="${REGION}" \
-            --image="${API_IMAGE}" \
-            --service-account="${MIGRATION_SA}" \
-            --set-cloudsql-instances="${PROJECT_ID}:${REGION}:medlivo-ai-postgres" \
-            --set-secrets="WORKSPACE_DATABASE_URL=medlivo-team-staging-migration-database-url:latest" \
-            --command="python" \
-            --args="-m,workspace_api.migrate,/app/migrations/014_job_content_standards.sql" \
-            --max-retries=0 \
-            --task-timeout=300s \
-            --quiet
-          gcloud run jobs execute "${MIGRATION_JOB}" \
-            --project="${PROJECT_ID}" \
-            --region="${REGION}" \
-            --wait \
-            --quiet
+          for MIGRATION in \
+            014_job_content_standards.sql \
+            015_recruiter_execution_controls.sql \
+            016_outreach_drafts.sql
+          do
+            echo "Applying reviewed migration ${MIGRATION}"
+            gcloud run jobs deploy "${MIGRATION_JOB}" \
+              --project="${PROJECT_ID}" \
+              --region="${REGION}" \
+              --image="${API_IMAGE}" \
+              --service-account="${MIGRATION_SA}" \
+              --set-cloudsql-instances="${PROJECT_ID}:${REGION}:medlivo-ai-postgres" \
+              --set-secrets="WORKSPACE_DATABASE_URL=medlivo-team-staging-migration-database-url:latest" \
+              --command="python" \
+              --args="-m,workspace_api.migrate,/app/migrations/${MIGRATION}" \
+              --max-retries=0 \
+              --task-timeout=300s \
+              --quiet
+            gcloud run jobs execute "${MIGRATION_JOB}" \
+              --project="${PROJECT_ID}" \
+              --region="${REGION}" \
+              --wait \
+              --quiet
+          done
 
       - name: Deploy private API candidate with schema readiness gate
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
