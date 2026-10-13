@@ -682,6 +682,21 @@ followup_sequences = Table(
 Index("idx_ws_followup_sequence_due", followup_sequences.c.tenant_id,
       followup_sequences.c.status, followup_sequences.c.updated_at)
 
+followup_sequence_steps = Table(
+    "ws_followup_sequence_step", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("sequence_id", nullable=False),
+    Column("step_number", Integer, nullable=False), D("due_at", nullable=False), S("status", nullable=False),
+    U("outreach_draft_id"), U("outreach_execution_id"),
+    D("created_at", nullable=False), D("updated_at", nullable=False),
+    UniqueConstraint("tenant_id","sequence_id","step_number"),
+    CheckConstraint("status IN ('scheduled','ready_for_review','queued','sent','cancelled','skipped')"),
+    ForeignKeyConstraint(["sequence_id"], ["ws_followup_sequence.id"]),
+    ForeignKeyConstraint(["outreach_draft_id"], ["ws_outreach_draft.id"]),
+    ForeignKeyConstraint(["outreach_execution_id"], ["ws_outreach_execution.id"]),
+)
+Index("idx_ws_followup_sequence_step_due", followup_sequence_steps.c.tenant_id,
+      followup_sequence_steps.c.status, followup_sequence_steps.c.due_at)
+
 contact_suppressions = Table(
     "ws_contact_suppression", metadata,
     U("tenant_id", primary_key=True), U("candidate_id", primary_key=True),
