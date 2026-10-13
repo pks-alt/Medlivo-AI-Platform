@@ -595,8 +595,6 @@ outreach_drafts = Table(
     ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
     ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
     ForeignKeyConstraint(["tenant_id", "approved_by"], ["app_user.tenant_id", "app_user.id"]),
-    ForeignKeyConstraint(["followup_sequence_id"], ["ws_followup_sequence.id"]),
-    ForeignKeyConstraint(["followup_sequence_step_id"], ["ws_followup_sequence_step.id"]),
 )
 Index("idx_ws_outreach_draft_recruiter", outreach_drafts.c.tenant_id,
       outreach_drafts.c.recruiter_user_id, outreach_drafts.c.created_at)

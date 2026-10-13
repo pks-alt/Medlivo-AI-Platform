@@ -3884,22 +3884,6 @@ class WorkspaceStore:
                 raise AccessError(502, "Recruiter outreach AI could not generate a draft") from None
 
             timestamp = now()
-            prior_thread_id = None
-            if provider == "gmail":
-                prior_thread_id = conn.execute(
-                    select(t.outreach_executions.c.provider_thread_id)
-                    .where(
-                        t.outreach_executions.c.tenant_id == principal["tenant_id"],
-                        t.outreach_executions.c.recruiter_user_id == principal["id"],
-                        t.outreach_executions.c.candidate_id == draft["candidate_id"],
-                        t.outreach_executions.c.provider == "gmail",
-                        t.outreach_executions.c.status == "sent",
-                        t.outreach_executions.c.provider_thread_id.is_not(None),
-                    )
-                    .order_by(t.outreach_executions.c.sent_at.desc())
-                    .limit(1)
-                ).scalar_one_or_none()
-
             row = dict(
                 id=uid(),
                 tenant_id=principal["tenant_id"],
@@ -4276,6 +4260,50 @@ class WorkspaceStore:
                 statement.order_by(t.gmail_messages.c.received_at.desc()).limit(limit)
             ).mappings().all()
             return clean({"items": [dict(row) for row in rows]})
+
+    def prepare_due_followups_system(self, *, limit_per_recruiter=20):
+        if self.outreach_ai is None:
+            raise AccessError(503, "Recruiter outreach AI is not configured")
+        with self.engine.begin() as conn:
+            identities = conn.execute(
+                select(
+                    t.identities.c.subject,
+                    t.users.c.email,
+                )
+                .join(t.users, and_(
+                    t.users.c.id == t.identities.c.user_id,
+                    t.users.c.tenant_id == t.identities.c.tenant_id,
+                ))
+                .where(
+                    t.identities.c.provider == "google",
+                    t.users.c.role == "recruiter",
+                    t.users.c.is_active.is_(True),
+                )
+                .order_by(t.users.c.email)
+            ).mappings().all()
+
+        total = 0
+        recruiters = []
+        for row in identities:
+            identity = Identity("google", row["subject"], row["email"])
+            result = self.prepare_due_followups(
+                identity,
+                uid(),
+                type("FollowupPrepareValue", (), {"limit": limit_per_recruiter})(),
+            )
+            count = int(result.get("count") or 0)
+            total += count
+            recruiters.append({
+                "email": row["email"],
+                "prepared_count": count,
+            })
+        return {
+            "recruiters_checked": len(recruiters),
+            "drafts_prepared": total,
+            "human_review_required": True,
+            "automatic_send_enabled": False,
+            "recruiters": recruiters,
+        }
 
     def prepare_due_followups(self, identity, key, value):
         payload = {"limit": value.limit}

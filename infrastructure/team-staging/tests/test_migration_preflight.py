@@ -216,7 +216,7 @@ class WorkflowPreflightTests(unittest.TestCase):
             if any(token in step for token in ("docker build", "docker push", "gcloud auth configure-docker", "gcloud run jobs", "gcloud run deploy", "gcloud run services update")):
                 self.assertIn(self.guard, step)
                 count += 1
-        self.assertEqual(count, 7)
+        self.assertEqual(count, 8)
 
     def test_readonly_step_cannot_be_skipped_by_diagnostic_flag(self):
         step = self.workflow.split("- name: Verify staging migration identity", 1)[1].split("- name:", 1)[0]
