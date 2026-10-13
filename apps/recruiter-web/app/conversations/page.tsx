@@ -17,15 +17,15 @@ async function session(){
 function title(v:any){return String(v||"").replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase())}
 
 export default function ConversationsPage(){
- const[candidates,setCandidates]=useState<any[]>([]),[jobs,setJobs]=useState<any[]>([]),[priorities,setPriorities]=useState<any>({items:[]}),[drafts,setDrafts]=useState<any[]>([]),[executions,setExecutions]=useState<any[]>([]);
+ const[candidates,setCandidates]=useState<any[]>([]),[jobs,setJobs]=useState<any[]>([]),[priorities,setPriorities]=useState<any>({items:[]}),[drafts,setDrafts]=useState<any[]>([]),[executions,setExecutions]=useState<any[]>([]),[gmailMessages,setGmailMessages]=useState<any[]>([]);
  const[candidateId,setCandidateId]=useState(""),[jobId,setJobId]=useState(""),[channel,setChannel]=useState<"email"|"sms">("email"),[purpose,setPurpose]=useState("follow_up");
  const[instruction,setInstruction]=useState(""),[activeDraft,setActiveDraft]=useState<any>(null),[subject,setSubject]=useState(""),[body,setBody]=useState("");
  const[relationship,setRelationship]=useState<any>(null),[gmail,setGmail]=useState<any>({connected:false,status:"not_connected"}),[error,setError]=useState(""),[message,setMessage]=useState(""),[busy,setBusy]=useState(false);
 
  async function load(){
   setError("");
-  const[c,j,p,d,x,g]=await Promise.all([api("candidates?limit=100"),api("jobs?limit=100"),api("daily-priorities?limit=50"),api("outreach-drafts?limit=50"),api("outreach-executions?limit=50"),api("gmail/status")]);
-  setCandidates(c.items||[]);setJobs(j.items||[]);setPriorities(p);setDrafts(d.items||[]);setExecutions(x.items||[]);setGmail(g);
+  const[c,j,p,d,x,g,m]=await Promise.all([api("candidates?limit=100"),api("jobs?limit=100"),api("daily-priorities?limit=50"),api("outreach-drafts?limit=50"),api("outreach-executions?limit=50"),api("gmail/status"),api("gmail/messages?limit=25")]);
+  setCandidates(c.items||[]);setJobs(j.items||[]);setPriorities(p);setDrafts(d.items||[]);setExecutions(x.items||[]);setGmail(g);setGmailMessages(m.items||[]);
  }
  useEffect(()=>{load().catch(e=>setError(e.message))},[]);
  useEffect(()=>{if(!candidateId){setRelationship(null);return}api("candidates/"+candidateId+"/relationship").then(setRelationship).catch(()=>setRelationship(null))},[candidateId]);
@@ -118,6 +118,9 @@ export default function ConversationsPage(){
   <div className="conversationLayout">
    <section className="panelBox"><small>NEEDS RESPONSE / FOLLOW-UP</small>
     <div className="conversationQueue">{followups.map((x:any,i:number)=><article key={x.id||i}><b>{x.candidate_name||x.title||"Follow-up"}</b><span>{x.detail||x.urgency||"Review next action"}</span>{x.job_id&&<Link href={"/jobs/"+x.job_id}>Open job</Link>}</article>)}{!followups.length&&<div className="emptyState">No current follow-up actions are visible.</div>}</div>
+    <hr className="sectionRule"/>
+    <small>RECENT GMAIL REPLIES</small>
+    <div className="conversationQueue">{gmailMessages.slice(0,8).map((x:any)=><article key={x.id}><b>{x.subject||"Candidate reply"}</b><span>{x.from_address||"Candidate"} · {x.received_at?new Date(x.received_at).toLocaleString():""}</span><span>{String(x.body_text||"").slice(0,220)||"Reply received"}</span>{x.candidate_id&&<Link href={"/candidates/"+x.candidate_id}>Open candidate</Link>}</article>)}{!gmailMessages.length&&<div className="emptyState">No synchronized Gmail replies yet.</div>}</div>
     <hr className="sectionRule"/>
     <small>OUTREACH EXECUTION QUEUE</small>
     <div className="conversationQueue">{executions.slice(0,8).map((x:any)=><article key={x.id}><b>{title(x.channel)} · {title(x.status)}</b><span>{title(x.provider)} · {x.scheduled_for?new Date(x.scheduled_for).toLocaleString():"Ready"}</span>{x.status==="queued"&&x.provider==="gmail"&&gmail.connected&&<button className="button primary" disabled={busy} onClick={()=>sendQueuedGmail(x.id)}>Send Email</button>}{(x.status==="queued"||x.status==="failed")&&<button className="button subtle" disabled={busy} onClick={()=>cancelExecution(x.id)}>Cancel</button>}</article>)}{!executions.length&&<div className="emptyState">No approved outreach is queued yet.</div>}</div>
