@@ -898,14 +898,15 @@ class WorkspaceStore:
             )
 
             if principal["role"] == "recruiter":
-                owned_case_jobs = select(t.cases.c.job_id).where(
+                scope = self._recruiter_scope(conn, principal)
+                division_case_jobs = select(t.cases.c.job_id).where(
                     t.cases.c.tenant_id == principal["tenant_id"],
-                    t.cases.c.owner_user_id == principal["id"],
+                    t.cases.c.team_id == scope["team_id"],
                     t.cases.c.job_id.is_not(None),
                 )
                 statement = statement.where(or_(
-                    t.jobs.c.owner_user_id == principal["id"],
-                    t.jobs.c.id.in_(owned_case_jobs),
+                    t.jobs.c.division == scope["division"],
+                    t.jobs.c.id.in_(division_case_jobs),
                 ))
             elif principal["role"] == "manager":
                 managed_teams = select(t.teams.c.id).where(
@@ -1000,6 +1001,24 @@ class WorkspaceStore:
                     "due_at": None,
                     "version": 0,
                 }
+                assigned_recruiter_id = (
+                    overlay["recruiter_user_id"]
+                    if overlay and overlay["recruiter_user_id"] is not None
+                    else row["owner_user_id"]
+                )
+                item["operational_owner_user_id"] = assigned_recruiter_id
+                item["operational_owner_name"] = None
+                if assigned_recruiter_id:
+                    item["operational_owner_name"] = conn.execute(
+                        select(t.users.c.display_name).where(
+                            t.users.c.tenant_id == principal["tenant_id"],
+                            t.users.c.id == assigned_recruiter_id,
+                        )
+                    ).scalar_one_or_none()
+                if principal["role"] == "recruiter":
+                    item["work_priority"] = (
+                        "priority_1" if assigned_recruiter_id == principal["id"] else "priority_2"
+                    )
                 result_rows.append(item)
             return self._page(result_rows, limit)
 
@@ -1022,14 +1041,15 @@ class WorkspaceStore:
                 raise AccessError(404, "Job not found")
 
             if principal["role"] == "recruiter":
-                owned_case = conn.execute(
+                scope = self._recruiter_scope(conn, principal)
+                division_case = conn.execute(
                     select(t.cases.c.id).where(
                         t.cases.c.tenant_id == principal["tenant_id"],
                         t.cases.c.job_id == job_id,
-                        t.cases.c.owner_user_id == principal["id"],
+                        t.cases.c.team_id == scope["team_id"],
                     ).limit(1)
                 ).scalar_one_or_none()
-                if job["owner_user_id"] != principal["id"] and owned_case is None:
+                if job["division"] != scope["division"] and division_case is None:
                     raise AccessError(404, "Job not found")
             elif principal["role"] == "manager":
                 managed_teams = select(t.teams.c.id).where(
@@ -1487,6 +1507,32 @@ class WorkspaceStore:
                 t.teams.c.manager_user_id == principal["id"]
             )).first() is not None
         return False
+
+    def _recruiter_scope(self, conn, principal):
+        """Return the recruiter's configured team/division scope.
+
+        Recruiters may discover all active jobs in their own division, while
+        assignment remains a separate operational responsibility.
+        """
+        row = conn.execute(
+            select(
+                t.profiles.c.team_id,
+                t.teams.c.division,
+                t.teams.c.name.label("team_name"),
+            )
+            .join(t.teams, and_(
+                t.teams.c.id == t.profiles.c.team_id,
+                t.teams.c.tenant_id == t.profiles.c.tenant_id,
+            ))
+            .where(
+                t.profiles.c.tenant_id == principal["tenant_id"],
+                t.profiles.c.user_id == principal["id"],
+            )
+            .limit(1)
+        ).mappings().first()
+        if row is None:
+            raise AccessError(403, "Recruiter division scope is not configured")
+        return row
 
     def create_job_intake_batch(self, identity, key, value):
         payload = {
@@ -2446,6 +2492,7 @@ class WorkspaceStore:
             if principal["role"] != "recruiter":
                 raise AccessError(403, "Recruiter access required")
 
+            scope = self._recruiter_scope(conn, principal)
             timestamp = now()
             due_soon = timestamp + timedelta(hours=24)
 
@@ -2531,7 +2578,7 @@ class WorkspaceStore:
                     ))
                     .where(
                         t.matches.c.tenant_id == principal["tenant_id"],
-                        t.jobs.c.owner_user_id == principal["id"],
+                        t.jobs.c.division == scope["division"],
                         t.jobs.c.status.not_in(["closed", "cancelled", "canceled"]),
                         t.matches.c.status != "excluded",
                         t.matches.c.overall_score >= 8,
@@ -2561,6 +2608,14 @@ class WorkspaceStore:
                         "profession": row["profession"],
                         "specialty": row["specialty"],
                         "start_date": row["start_date"],
+                        "work_priority": "priority_1" if row["job_id"] in {
+                            job_id for job_id, in conn.execute(
+                                select(t.jobs.c.id).where(
+                                    t.jobs.c.tenant_id == principal["tenant_id"],
+                                    t.jobs.c.owner_user_id == principal["id"],
+                                )
+                            ).all()
+                        } else "priority_2",
                         "recommended_next_action": "Review strong match" if score >= 9 else "Review match",
                     })
 
@@ -2570,6 +2625,14 @@ class WorkspaceStore:
                     "overdue_followups": overdue_count,
                     "due_soon_followups": due_soon_count,
                     "match_reviews": strong_match_count,
+                    "priority_1_matches": sum(
+                        1 for item in items
+                        if item.get("type") == "match_review" and item.get("work_priority") == "priority_1"
+                    ),
+                    "priority_2_matches": sum(
+                        1 for item in items
+                        if item.get("type") == "match_review" and item.get("work_priority") == "priority_2"
+                    ),
                 },
                 "read_only": True,
                 "window_hours": 24,
@@ -2591,8 +2654,18 @@ class WorkspaceStore:
                 t.jobs.c.tenant_id == principal["tenant_id"],
                 t.jobs.c.status.not_in(["closed", "cancelled", "canceled"]),
             )
+            recruiter_scope = None
             if principal["role"] == "recruiter":
-                job_stmt = job_stmt.where(t.jobs.c.owner_user_id == principal["id"])
+                recruiter_scope = self._recruiter_scope(conn, principal)
+                same_team_case_jobs = select(t.cases.c.job_id).where(
+                    t.cases.c.tenant_id == principal["tenant_id"],
+                    t.cases.c.team_id == recruiter_scope["team_id"],
+                    t.cases.c.job_id.is_not(None),
+                )
+                job_stmt = job_stmt.where(or_(
+                    t.jobs.c.division == recruiter_scope["division"],
+                    t.jobs.c.id.in_(same_team_case_jobs),
+                ))
             elif principal["role"] == "manager":
                 managed_recruiters = (
                     select(t.profiles.c.user_id)
@@ -2831,6 +2904,11 @@ class WorkspaceStore:
                     "priority": job["priority"],
                     "owner_user_id": job["owner_user_id"],
                     "owner_name": owner_name,
+                    "work_priority": (
+                        "priority_1"
+                        if principal["role"] == "recruiter" and job["owner_user_id"] == principal["id"]
+                        else "priority_2" if principal["role"] == "recruiter" else None
+                    ),
                     "customer_name": customer_name,
                     "updated_at": job["updated_at"],
                     "job_context": {
