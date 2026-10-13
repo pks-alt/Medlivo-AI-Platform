@@ -3911,7 +3911,12 @@ class WorkspaceStore:
             })
 
     def decide_outreach_draft(self, identity, draft_id, key, value):
-        payload = {"draft_id": draft_id, "decision": value.decision}
+        payload = {
+            "draft_id": draft_id,
+            "decision": value.decision,
+            "subject": value.subject,
+            "body": value.body,
+        }
         def apply(conn, principal):
             if principal["role"] != "recruiter":
                 raise AccessError(403, "Recruiter access required")
@@ -3929,6 +3934,8 @@ class WorkspaceStore:
             timestamp = now()
             values = {
                 "status": value.decision,
+                "subject": value.subject if value.subject is not None else row["subject"],
+                "body": value.body if value.body is not None else row["body"],
                 "updated_at": timestamp,
                 "approved_by": principal["id"] if value.decision == "approved" else None,
                 "approved_at": timestamp if value.decision == "approved" else None,
