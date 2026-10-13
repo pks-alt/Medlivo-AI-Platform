@@ -4120,7 +4120,7 @@ class WorkspaceStore:
                 ).limit(limit)
             ).mappings().all()
             return clean({
-                "items": rows,
+                "items": [dict(row) for row in rows],
                 "provider_send_enabled": False,
                 "provider_activation_required": True,
                 "jobdiva_writeback_enabled": False,
