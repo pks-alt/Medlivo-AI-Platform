@@ -146,15 +146,15 @@ test("Job Intake prepares all JDs from approved Medlivo standards", async () => 
 
 test("Recruiter workspace uses the finalized nine-destination navigation", async () => {
   const shell = await readFile(new URL("../../app/components/WorkspaceShell.tsx", import.meta.url), "utf8");
-  assert.match(shell, /href:"\\/",label:"Today"/);
-  assert.match(shell, /href:"\\/jobs",label:"Jobs"/);
-  assert.match(shell, /href:"\\/candidates",label:"Candidates"/);
-  assert.match(shell, /href:"\\/matching",label:"Matching"/);
-  assert.match(shell, /href:"\\/conversations",label:"Conversations"/);
-  assert.match(shell, /href:"\\/interviews",label:"Interviews"/);
-  assert.match(shell, /href:"\\/pay-gm",label:"Pay & GM"/);
-  assert.match(shell, /href:"\\/funnel",label:"Submissions"/);
-  assert.match(shell, /href:"\\/weekly",label:"My Week"/);
+  assert.match(shell, /href:"\/",label:"Today"/);
+  assert.match(shell, /href:"\/jobs",label:"Jobs"/);
+  assert.match(shell, /href:"\/candidates",label:"Candidates"/);
+  assert.match(shell, /href:"\/matching",label:"Matching"/);
+  assert.match(shell, /href:"\/conversations",label:"Conversations"/);
+  assert.match(shell, /href:"\/interviews",label:"Interviews"/);
+  assert.match(shell, /href:"\/pay-gm",label:"Pay & GM"/);
+  assert.match(shell, /href:"\/funnel",label:"Submissions"/);
+  assert.match(shell, /href:"\/weekly",label:"My Week"/);
 });
 
 test("Recruiter and management navigation are separate workspace models", async () => {
