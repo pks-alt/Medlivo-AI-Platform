@@ -87,3 +87,39 @@ def test_admin_user_management_migration_is_audited_and_guarded(seeded):
                  "DELETE FROM ws_admin_audit"):
         with pytest.raises(DBAPIError), seeded.begin() as conn:
             conn.exec_driver_sql(verb)
+
+
+def test_recruiter_execution_and_outreach_migrations_are_repeatable(engine):
+    if engine.dialect.name != "postgresql":
+        pytest.skip("Requires PostgreSQL migration execution")
+    root = Path(__file__).parents[1] / "migrations"
+    with engine.begin() as conn:
+        test_schema = conn.scalar(text("SELECT current_schema()"))
+        for name in (
+            "015_recruiter_execution_controls.sql",
+            "016_outreach_drafts.sql",
+        ):
+            sql = (root / name).read_text().replace(
+                "public.", '"' + test_schema + '".'
+            )
+            conn.exec_driver_sql(sql)
+            conn.exec_driver_sql(sql)
+        names = set(inspect(conn).get_table_names())
+        assert {
+            "ws_business_calendar_exception",
+            "ws_protected_action_window",
+            "ws_candidate_relationship",
+            "ws_candidate_engagement_event",
+            "ws_outreach_draft",
+        } <= names
+
+
+def test_staging_workflow_applies_explicit_reviewed_migrations():
+    workflow = (
+        Path(__file__).parents[3] / ".github" / "workflows" / "deploy-team-staging.yml"
+    ).read_text()
+    assert "014_job_content_standards.sql" in workflow
+    assert "015_recruiter_execution_controls.sql" in workflow
+    assert "016_outreach_drafts.sql" in workflow
+    assert "for MIGRATION in" in workflow
+    assert "find " not in workflow

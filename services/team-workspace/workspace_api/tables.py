@@ -527,6 +527,80 @@ job_ownership_history = Table(
     ForeignKeyConstraint(["tenant_id", "changed_by"], ["app_user.tenant_id", "app_user.id"]),
 )
 
+business_calendar_exceptions = Table(
+    "ws_business_calendar_exception", metadata,
+    U("tenant_id", primary_key=True), Column("calendar_date", Date, primary_key=True),
+    S("exception_type", nullable=False), S("label"), D("created_at", nullable=False),
+    CheckConstraint("exception_type IN ('holiday','working_day_override')"),
+    ForeignKeyConstraint(["tenant_id"], ["tenant.id"]),
+)
+
+protected_action_windows = Table(
+    "ws_protected_action_window", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("job_id", nullable=False),
+    U("recruiter_user_id", nullable=False), Column("assignment_version", Integer),
+    S("status", nullable=False), D("assigned_at", nullable=False), D("protected_until", nullable=False),
+    D("meaningful_action_at"), S("meaningful_action_type"), U("meaningful_action_by"),
+    D("created_at", nullable=False), D("updated_at", nullable=False),
+    CheckConstraint("status IN ('protected','working','available_for_support','completed')"),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "meaningful_action_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+candidate_relationships = Table(
+    "ws_candidate_relationship", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
+    U("recruiter_user_id", nullable=False), S("status", nullable=False),
+    D("started_at", nullable=False), D("last_meaningful_at", nullable=False),
+    S("last_meaningful_type", nullable=False), D("ended_at"),
+    D("created_at", nullable=False), D("updated_at", nullable=False),
+    CheckConstraint("status IN ('active','ended')"),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+)
+
+candidate_engagement_events = Table(
+    "ws_candidate_engagement_event", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
+    U("recruiter_user_id", nullable=False), U("job_id"), S("event_type", nullable=False),
+    Column("meaningful", Boolean, nullable=False), S("source_type", nullable=False),
+    S("source_reference"), D("occurred_at", nullable=False), D("created_at", nullable=False),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+)
+
+Index("idx_ws_protected_action_recruiter", protected_action_windows.c.tenant_id,
+      protected_action_windows.c.recruiter_user_id, protected_action_windows.c.status,
+      protected_action_windows.c.protected_until)
+Index("idx_ws_candidate_relationship_recruiter", candidate_relationships.c.tenant_id,
+      candidate_relationships.c.recruiter_user_id, candidate_relationships.c.status,
+      candidate_relationships.c.last_meaningful_at)
+Index("idx_ws_candidate_engagement_candidate", candidate_engagement_events.c.tenant_id,
+      candidate_engagement_events.c.candidate_id, candidate_engagement_events.c.occurred_at)
+
+outreach_drafts = Table(
+    "ws_outreach_draft", metadata,
+    U("id", primary_key=True), U("tenant_id", nullable=False), U("candidate_id", nullable=False),
+    U("job_id"), U("recruiter_user_id", nullable=False), S("channel", nullable=False),
+    S("purpose", nullable=False), S("status", nullable=False), S("subject"), S("body", nullable=False),
+    Column("warnings", JSON, nullable=False, default=list),
+    Column("source_context", JSON, nullable=False, default=dict),
+    S("model_provider"), S("model_version"), S("policy_version", nullable=False),
+    U("approved_by"), D("approved_at"), D("created_at", nullable=False), D("updated_at", nullable=False),
+    CheckConstraint("channel IN ('email','sms')"),
+    CheckConstraint("status IN ('draft','approved','cancelled')"),
+    ForeignKeyConstraint(["tenant_id", "candidate_id"], ["candidate.tenant_id", "candidate.id"]),
+    ForeignKeyConstraint(["tenant_id", "job_id"], ["job.tenant_id", "job.id"]),
+    ForeignKeyConstraint(["tenant_id", "recruiter_user_id"], ["app_user.tenant_id", "app_user.id"]),
+    ForeignKeyConstraint(["tenant_id", "approved_by"], ["app_user.tenant_id", "app_user.id"]),
+)
+Index("idx_ws_outreach_draft_recruiter", outreach_drafts.c.tenant_id,
+      outreach_drafts.c.recruiter_user_id, outreach_drafts.c.created_at)
+Index("idx_ws_outreach_draft_candidate", outreach_drafts.c.tenant_id,
+      outreach_drafts.c.candidate_id, outreach_drafts.c.created_at)
+
 approval_requests = Table(
     "ws_approval_request", metadata,
     U("id", primary_key=True), U("tenant_id", nullable=False), S("approval_type", nullable=False),

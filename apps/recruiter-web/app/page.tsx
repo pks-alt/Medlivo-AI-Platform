@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import RecruiterToday from "./components/RecruiterToday";
 import {useEffect,useState} from "react";
 
 function monday(){
@@ -16,17 +17,30 @@ async function optional(path:string){
  try{return {ok:true,data:await get(path),error:""}}
  catch(e:any){return {ok:false,data:null,error:e?.message||"Unavailable"}}
 }
+async function post(path:string,body:any){
+ const sessionResponse=await fetch("/api/team/session",{cache:"no-store",credentials:"same-origin"});
+ const session=await sessionResponse.json().catch(()=>({}));
+ if(!sessionResponse.ok||!session.csrf)throw new Error("Please reload the workspace before saving.");
+ const r=await fetch("/api/team/"+path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRF-Token":session.csrf,"Idempotency-Key":crypto.randomUUID()},body:JSON.stringify(body)});
+ const b=await r.json().catch(()=>({}));
+ if(!r.ok)throw new Error(b.detail||path+" HTTP "+r.status);
+ return b;
+}
+function daysUntil(v:any){if(!v)return null;const d=new Date(v+"T12:00:00");if(Number.isNaN(d.getTime()))return null;return Math.ceil((d.getTime()-Date.now())/86400000)}
+function todayLocal(v:any){if(!v)return false;const d=new Date(v),n=new Date();return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate()}
 export default function Home(){
- const[me,setMe]=useState<any>(null);const[data,setData]=useState<any>(null);const[err,setErr]=useState("");
+ const[me,setMe]=useState<any>(null);const[data,setData]=useState<any>(null);const[err,setErr]=useState(""),[actionErr,setActionErr]=useState("");
  useEffect(()=>{(async()=>{
   const who=await get("me");setMe(who);
   if(who.business_role==="recruiter"){
-    const[dash,priorities,queue]=await Promise.all([
+    const[dash,priorities,queue,protectedActions,funnel]=await Promise.all([
       get("recruiter/dashboard?week_start="+monday()),
-      get("daily-priorities?limit=20"),
-      get("work-queue?limit=10&matches_per_job=3")
+      get("daily-priorities?limit=40"),
+      get("work-queue?limit=20&matches_per_job=5"),
+      get("recruiter/protected-actions?limit=50"),
+      get("funnel?limit=200")
     ]);
-    setData({dash,priorities,queue});return;
+    setData({dash,priorities,queue,protectedActions,funnel});return;
   }
   const [overview,funnel,margin,ops]=await Promise.all([
     optional("manager/overview"),
@@ -85,26 +99,6 @@ export default function Home(){
    </main>;
  }
 
- const p=data.priorities||{},d=data.dash||{},q=data.queue||{};
- const priority1=(p.items||[]).filter((x:any)=>x.type==="follow_up"||x.work_priority==="priority_1");
- const priority2=(p.items||[]).filter((x:any)=>x.type==="match_review"&&x.work_priority==="priority_2");
- const assignedJobs=(q.items||[]).filter((x:any)=>x.work_priority==="priority_1");
- const divisionJobs=(q.items||[]).filter((x:any)=>x.work_priority==="priority_2");
- const actionCard=(x:any,i:number)=><article key={x.id||x.match_id||i} className={"priorityItem "+(x.urgency||"")}><div><small>{x.work_priority==="priority_2"?"PRIORITY 2 · DIVISION OPPORTUNITY":String(x.type||"work").replaceAll("_"," ")}</small><b>{x.title||x.candidate_name||"Review work item"}</b><span>{x.detail?x.detail+" · ":""}{x.score?"Score "+Number(x.score).toFixed(1)+" · ":""}{x.urgency||"review"}</span></div>{x.job_id&&<Link href={"/jobs/"+x.job_id}>Open</Link>}</article>;
- return <main className="page todayPage">
-   <div className="pageHead"><div><small>Recruiter command center</small><h1>Today</h1><p>Your assigned work first, then AI-ranked opportunities across your division.</p></div><span className="sourcePill">LIVE MEDLIVO · JOBDIVA SYNC</span></div>
-   <section className="todayWelcome"><small>DAILY WORK ORDER</small><h2>Priority 1 first. Never lose sight of Priority 2.</h2><p>Delivery Manager assignments define Priority 1. You can still see strong opportunities from other active jobs in your division as Priority 2.</p></section>
-   <div className="adminMetricGrid recruiterMetrics">
-    <article><strong>{p.totals?.overdue_followups??0}</strong><b>Overdue follow-ups</b><span>Work needing immediate action</span></article>
-    <article><strong>{p.totals?.due_soon_followups??0}</strong><b>Due soon</b><span>Upcoming recruiter commitments</span></article>
-    <article><strong>{p.totals?.priority_1_matches??0}</strong><b>Priority 1 matches</b><span>Matches on your assigned jobs</span></article>
-    <article><strong>{p.totals?.priority_2_matches??0}</strong><b>Priority 2 matches</b><span>Other opportunities in your division</span></article>
-    <article><strong>{d.workload?.owned_work_items??0}</strong><b>Owned work</b><span>Current recruiter workload</span></article>
-    <article><strong>{d.workload?.unreviewed_matches??0}</strong><b>Unreviewed matches</b><span>Explainable matches awaiting feedback</span></article>
-   </div>
-   <h3>Priority 1 · My assigned work</h3><div className="priorityList">{priority1.length?priority1.map(actionCard):<div className="emptyState">No assigned actions need attention right now.</div>}</div>
-   <h3>Priority 2 · Division opportunities</h3><div className="priorityList">{priority2.length?priority2.map(actionCard):<div className="emptyState">No additional strong division opportunities are waiting right now.</div>}</div>
-   <h3>Jobs with candidate matches</h3>
-   <div className="cards">{[...assignedJobs,...divisionJobs].slice(0,8).map((job:any)=><article key={job.job_id}><strong>{(job.matches||[]).length}</strong><div><b>{job.title}</b><span>{job.work_priority==="priority_1"?"Priority 1 · Assigned to you":"Priority 2 · Division opportunity"} · JobDiva {job.jobdiva_job_id||"—"}</span></div><Link className="linkButton" href={"/jobs/"+job.job_id}>Open Job</Link></article>)}</div>
- </main>
+ return <RecruiterToday me={me} data={data}/>;
+
 }

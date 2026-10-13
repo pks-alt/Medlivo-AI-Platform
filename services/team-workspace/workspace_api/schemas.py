@@ -165,6 +165,60 @@ class JobAssignmentInput(StrictInput):
     expected_version: int = Field(ge=0)
 
 
+class OutreachDraftInput(StrictInput):
+    candidate_id: UUID
+    job_id: UUID | None = None
+    channel: Literal["email", "sms"]
+    purpose: Literal[
+        "initial_outreach", "follow_up", "availability_reconfirm",
+        "interview_followup", "pay_followup", "next_step"
+    ]
+    instruction: str | None = Field(default=None, max_length=1200)
+
+
+class OutreachDraftDecisionInput(StrictInput):
+    decision: Literal["approved", "cancelled"]
+    subject: str | None = Field(default=None, max_length=250)
+    body: str | None = Field(default=None, max_length=6000)
+
+    @model_validator(mode="after")
+    def approved_draft_requires_body(self):
+        if self.decision == "approved" and self.body is not None and not self.body.strip():
+            raise ValueError("Approved outreach body cannot be empty")
+        return self
+
+
+class ProtectedActionInput(StrictInput):
+    action_type: Literal[
+        "working", "email_sent", "sms_sent", "call_completed",
+        "follow_up_completed", "next_step_recorded", "submission_advanced",
+        "interview_advanced", "candidate_reply"
+    ]
+    candidate_id: UUID | None = None
+    source_type: Literal["medlivo", "gmail", "zoom_phone", "jobdiva", "manual", "system"] = "medlivo"
+    source_reference: str | None = Field(default=None, max_length=500)
+
+
+class CandidateEngagementInput(StrictInput):
+    event_type: Literal[
+        "candidate_reply", "completed_call", "availability_confirmed",
+        "preferences_confirmed", "interest_confirmed", "next_step_agreed",
+        "email_sent", "sms_sent", "working", "follow_up_completed",
+        "submission_advanced", "interview_advanced", "profile_view", "internal_note"
+    ]
+    job_id: UUID | None = None
+    source_type: Literal["medlivo", "gmail", "zoom_phone", "jobdiva", "manual", "system"] = "manual"
+    source_reference: str | None = Field(default=None, max_length=500)
+    occurred_at: datetime | None = None
+
+    @field_validator("occurred_at")
+    @classmethod
+    def engagement_occurred_at_requires_zone(cls, value):
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("A timezone-aware event time is required")
+        return value
+
+
 class JobIntakeItemDecision(StrictInput):
     decision: Literal["approved", "rejected"]
     final_approved_values: dict | None = None

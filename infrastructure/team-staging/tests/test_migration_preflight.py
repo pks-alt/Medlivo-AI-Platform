@@ -189,7 +189,13 @@ class WorkflowPreflightTests(unittest.TestCase):
         before = self.workflow.index("Verify staging migration identity")
         self.assertLess(before, self.workflow.index("Configure Artifact Registry"))
         self.assertLess(before, self.workflow.index("Build and push private API"))
-        self.assertLess(before, self.workflow.index("Apply reviewed workspace migration 014"))
+        self.assertLess(before, self.workflow.index("Apply reviewed workspace migrations 014-016"))
+        for migration in (
+            "014_job_content_standards.sql",
+            "015_recruiter_execution_controls.sql",
+            "016_outreach_drafts.sql",
+        ):
+            self.assertIn(migration, self.workflow)
 
     def test_diagnostic_mode_is_explicit_and_default_for_manual_runs(self):
         inputs = self.workflow.split("workflow_dispatch:", 1)[1].split("permissions:", 1)[0]

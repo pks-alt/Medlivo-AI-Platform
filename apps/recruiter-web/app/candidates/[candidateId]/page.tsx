@@ -3,12 +3,13 @@
 import Link from "next/link";
 import {useEffect,useState} from "react";
 
-async function load(id:string){
- const r=await fetch("/api/team/candidates/"+id,{cache:"no-store",credentials:"same-origin"});
+async function api(path:string){
+ const r=await fetch("/api/team/"+path,{cache:"no-store",credentials:"same-origin"});
  const b=await r.json().catch(()=>({}));
- if(!r.ok)throw new Error(b.detail||"Candidate HTTP "+r.status);
+ if(!r.ok)throw new Error(b.detail||path+" HTTP "+r.status);
  return b;
 }
+async function load(id:string){return api("candidates/"+id)}
 function scoreBand(v:number){return v>=9?"Strong":v>=8?"Good":v>0?"Needs Review":"Excluded"}
 function title(v:any){return String(v||"").replaceAll("_"," ").replace(/\b\w/g,m=>m.toUpperCase())}
 function evidenceLabel(x:any){
@@ -23,8 +24,11 @@ function readinessLabel(v:any){
 }
 
 export default function CandidatePage({params}:{params:Promise<{candidateId:string}>}){
- const[c,setC]=useState<any>(null),[err,setErr]=useState("");
- useEffect(()=>{params.then(p=>load(p.candidateId)).then(setC).catch(e=>setErr(e.message))},[params]);
+ const[c,setC]=useState<any>(null),[relationship,setRelationship]=useState<any>(null),[err,setErr]=useState("");
+ useEffect(()=>{params.then(async p=>{
+   const[candidate,rel]=await Promise.all([load(p.candidateId),api("candidates/"+p.candidateId+"/relationship")]);
+   setC(candidate);setRelationship(rel);
+ }).catch(e=>setErr(e.message))},[params]);
 
  if(err)return <main className="page"><div className="adminError"><b>Candidate unavailable</b><span>{err}</span></div></main>;
  if(!c)return <main className="page"><div className="adminLoading">Loading Candidate 360...</div></main>;
@@ -42,6 +46,13 @@ export default function CandidatePage({params}:{params:Promise<{candidateId:stri
   <section className="candidate360Hero">
    <div><small>TALENT OVERVIEW</small><h2>{c.profession||"Profession pending"}{c.specialty?" · "+c.specialty:""}</h2><p>{owner.division||"Division pending"} · Owner {owner.owner_name||"not assigned"}{owner.manager_name?" · Delivery Manager "+owner.manager_name:""}</p></div>
    <span className={"candidateReadinessBadge "+(ready.status||"information_missing")}>{readinessLabel(ready.status)}</span>
+  </section>
+
+  <section className={"candidateRelationshipBanner "+(relationship?.relationship?.is_mine?"mine":relationship?.relationship?"other":"none")}>
+   <div><small>CANDIDATE RELATIONSHIP</small>
+    {relationship?.relationship?<><b>{relationship.relationship.is_mine?"Active with you":"Active with "+(relationship.relationship.recruiter_name||"another recruiter")}</b><span>Last meaningful activity {relationship.relationship.relationship_age_hours??"—"} hours ago · {title(relationship.relationship.last_meaningful_type)}</span></>:<><b>No active relationship</b><span>Normal recruiter engagement is available within your division scope.</span></>}
+   </div>
+   <div className="candidateRelationshipRule">{relationship?.relationship&&!relationship.relationship.is_mine?"Coordinate before outreach":"Company-owned candidate · operational continuity, not permanent ownership"}</div>
   </section>
 
   <div className="candidate360Facts">
@@ -135,6 +146,10 @@ export default function CandidatePage({params}:{params:Promise<{candidateId:stri
    </div>
   </section>
 
-  <div className="candidate360Boundary"><b>Human decision boundary</b><span>Recruit AI normalizes, validates, ranks and explains. No outreach, qualification call, submission, ownership change or JobDiva writeback happens automatically from Candidate 360 in Phase 1.</span></div>
+  <section className="panelBox"><small>RELATIONSHIP ACTIVITY</small>
+   {(relationship?.events||[]).length?<div className="relationshipTimeline">{relationship.events.slice(0,10).map((e:any)=><article key={e.id}><div><b>{title(e.event_type)}</b><span>{e.recruiter_name||"Recruiter"} · {e.occurred_at?new Date(e.occurred_at).toLocaleString():""}</span></div><strong className={e.meaningful?"meaningful":"notMeaningful"}>{e.meaningful?"Meaningful":"Activity only"}</strong></article>)}</div>:<div className="emptyState">No relationship activity has been recorded yet.</div>}
+  </section>
+
+  <div className="candidate360Boundary"><b>Human decision boundary</b><span>Recruit AI normalizes, validates, ranks and explains. Candidate relationship protection comes only from meaningful engagement. Unanswered outreach, profile views and internal notes do not establish a relationship, and no JobDiva writeback happens automatically.</span></div>
  </main>;
 }

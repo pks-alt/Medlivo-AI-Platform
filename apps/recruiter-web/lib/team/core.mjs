@@ -124,7 +124,8 @@ function endpoint(path, method, query) {
     '/me', '/cases', '/jobs', `/jobs/${id}`, `/jobs/${id}/operational`,
     '/candidates', `/candidates/${id}`, `/candidates/${id}/best-jobs`,
     '/manager/overview', '/manager/weekly-review', '/manager/match-quality', '/manager/operational-audit',
-    '/recruiter/dashboard', '/recruiter/follow-ups', '/daily-priorities', '/work-queue',
+    '/recruiter/dashboard', '/recruiter/follow-ups', '/recruiter/protected-actions', '/daily-priorities', '/work-queue',
+    '/outreach-drafts', `/candidates/${id}/relationship`,
     '/admin/users', '/admin/teams', '/admin/audit', '/admin/operations',
     '/job-intake/batches', `/job-intake/batches/${id}/items`, '/job-intake/mappings',
     `/recruiters/${id}/weekly-goals`, '/job-publications', `/job-publications/${id}`,
@@ -138,7 +139,9 @@ function endpoint(path, method, query) {
     root, `${root}/(?:notes|tasks|audit|eligible-owners)`
   ];
   const post = [
-    '/admin/users', `/matches/${id}/feedback`, '/job-intake/upload', '/job-intake/batches',
+    '/admin/users', `/matches/${id}/feedback`, '/outreach-drafts', `/outreach-drafts/${id}/decision`,
+    `/jobs/${id}/protected-action`, `/candidates/${id}/engagement`,
+    '/job-intake/upload', '/job-intake/batches',
     `/job-intake/batches/${id}/rows`, '/job-publications', `/job-publications/${id}/decision`,
     '/economic-config/bootstrap-assumptions', '/economic-config/assumptions', '/economic-config/customers',
     '/margin/locums-pay-package-snapshots', '/margin/w2-pay-package-snapshots', '/margin/snapshots',

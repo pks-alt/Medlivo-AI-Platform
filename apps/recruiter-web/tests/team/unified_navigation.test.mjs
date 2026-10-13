@@ -2,10 +2,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 
-test("Weekly is exposed through the unified app shell", async () => {
+test("My Week is exposed through the finalized recruiter workspace shell", async () => {
   const shell = await readFile(new URL("../../app/components/WorkspaceShell.tsx", import.meta.url), "utf8");
-  assert.match(shell, /href:"\/weekly",label:"Weekly",show:true/);
-  assert.match(shell, /pathname\.startsWith\("\/weekly"\)/);
+  assert.match(shell, /href:"\/weekly",label:"My Week"/);
+  assert.match(shell, /return base!=="\/"&&pathname\.startsWith\(base\)/);
 });
 
 test("Weekly has a first-class application route", async () => {
@@ -141,4 +141,109 @@ test("Job Intake prepares all JDs from approved Medlivo standards", async () => 
   assert.match(ui, /prepare-standards/);
   assert.match(ui, /Medlivo Standard Ready/);
   assert.match(ui, /need a Job Content Standard/);
+});
+
+
+test("Recruiter workspace uses the finalized nine-destination navigation", async () => {
+  const shell = await readFile(new URL("../../app/components/WorkspaceShell.tsx", import.meta.url), "utf8");
+  assert.match(shell, /href:"\/",label:"Today"/);
+  assert.match(shell, /href:"\/jobs",label:"Jobs"/);
+  assert.match(shell, /href:"\/candidates",label:"Candidates"/);
+  assert.match(shell, /href:"\/matching",label:"Matching"/);
+  assert.match(shell, /href:"\/conversations",label:"Conversations"/);
+  assert.match(shell, /href:"\/interviews",label:"Interviews"/);
+  assert.match(shell, /href:"\/pay-gm",label:"Pay & GM"/);
+  assert.match(shell, /href:"\/funnel",label:"Submissions"/);
+  assert.match(shell, /href:"\/weekly",label:"My Week"/);
+});
+
+test("Recruiter and management navigation are separate workspace models", async () => {
+  const shell = await readFile(new URL("../../app/components/WorkspaceShell.tsx", import.meta.url), "utf8");
+  assert.match(shell, /if\(recruiter\)/);
+  assert.match(shell, /RECRUITER WORKSPACE/);
+  assert.match(shell, /MANAGEMENT/);
+  assert.match(shell, /Recruiter Workspace/);
+  assert.match(shell, /Delivery Manager Workspace/);
+  assert.match(shell, /Executive Workspace/);
+});
+
+test("New recruiter destinations are first-class routes", async () => {
+  for (const file of ["matching/page.tsx","conversations/page.tsx","interviews/page.tsx","pay-gm/page.tsx"]) {
+    const source = await readFile(new URL("../../app/"+file, import.meta.url), "utf8");
+    assert.ok(source.length > 100);
+  }
+});
+
+test("Conversations uses persisted AI email and text draft APIs without enabling provider sends", async () => {
+  const page = await readFile(new URL("../../app/conversations/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /AI-assisted Email and Text\/SMS drafting/);
+  assert.match(page, /Text \/ SMS/);
+  assert.match(page, /api\("outreach-drafts"/);
+  assert.match(page, /Generate AI Draft/);
+  assert.match(page, /External provider send remains disabled/i);
+  assert.match(page, /X-CSRF-Token/);
+  assert.match(page, /policy_version/);
+  assert.doesNotMatch(page, /send-email|send-sms|\/send"/);
+});
+
+test("Today consumes protected action windows and preserves assignment", async () => {
+  const page = await readFile(new URL("../../app/page.tsx", import.meta.url), "utf8");
+  const today = await readFile(new URL("../../app/components/RecruiterToday.tsx", import.meta.url), "utf8");
+  assert.match(page, /recruiter\/protected-actions/);
+  assert.match(today, /protected-action/);
+  assert.match(today, /AVAILABLE FOR SUPPORT/);
+  assert.match(today, /assignment stays unchanged/);
+  assert.match(today, /8 AM–5 PM Pacific/);
+  assert.match(today, /remaining_business_minutes/);
+});
+
+test("Candidate 360 surfaces active relationship continuity", async () => {
+  const page = await readFile(new URL("../../app/candidates/[candidateId]/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /\/relationship/);
+  assert.match(page, /Active with you/);
+  assert.match(page, /Active with /);
+  assert.match(page, /No active relationship/);
+  assert.match(page, /Unanswered outreach, profile views and internal notes do not establish a relationship/);
+});
+
+
+test("Final Today uses real protected-action and funnel APIs", async () => {
+  const page = await readFile(new URL("../../app/components/RecruiterToday.tsx", import.meta.url), "utf8");
+  assert.match(page, /recruiter\/protected-actions\?limit=50/);
+  assert.match(page, /funnel\?limit=200/);
+  assert.match(page, /protected-action/);
+  assert.match(page, /action_type:"working"/);
+  assert.match(page, /TIME-SENSITIVE ASSIGNED WORK/);
+  assert.match(page, /REHABILITATION OPPORTUNITIES YOU CAN HELP WITH/);
+});
+
+test("Conversations uses persisted AI outreach draft workflow", async () => {
+  const page = await readFile(new URL("../../app/conversations/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /outreach-drafts/);
+  assert.match(page, /Generate AI Draft/);
+  assert.match(page, /model_provider/);
+  assert.match(page, /policy_version/);
+  assert.match(page, /Approve Draft/);
+  assert.match(page, /external provider send remains disabled/i);
+  assert.match(page, /candidates\/.*\/relationship/);
+});
+
+test("Candidate 360 exposes operational relationship state and meaningful activity", async () => {
+  const page = await readFile(new URL("../../app/candidates/\[candidateId\]/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /candidates\/.*\/relationship/);
+  assert.match(page, /Active with you/);
+  assert.match(page, /Coordinate before outreach/);
+  assert.match(page, /RELATIONSHIP ACTIVITY/);
+  assert.match(page, /Meaningful/);
+});
+
+
+test("Recruiter Jobs separates Priority 1 accountability from Priority 2 opportunity", async () => {
+  const page = await readFile(new URL("../../app/jobs/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /My Jobs · Priority 1/);
+  assert.match(page, /Division Opportunities · Priority 2/);
+  assert.match(page, /priority_1/);
+  assert.match(page, /priority_2/);
+  assert.match(page, /Primary assignment remains with/);
+  assert.match(page, /No Priority 2 opportunities currently meet the evidence-backed visibility rule/);
 });
