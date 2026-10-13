@@ -9,6 +9,7 @@ type Me={
   role?:string;
   business_role?:string;
   system_admin?:boolean;
+  division?:string;
 };
 
 async function loadMe(){
@@ -23,44 +24,51 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
   const[me,setMe]=useState<Me|null>(null);
   useEffect(()=>{loadMe().then(setMe).catch(()=>setMe(null));setSection(new URLSearchParams(window.location.search).get("section")||"")},[pathname]);
 
+  const recruiter=me?.business_role==="recruiter";
+  const workspaceLabel=recruiter?"Recruiter Workspace":me?.business_role==="executive"?"Executive Workspace":me?.business_role==="delivery_manager"?"Delivery Manager Workspace":"Admin Workspace";
+  const divisionLabel=recruiter?(me?.division||"Rehabilitation"):"Medlivo";
+
   const groups=useMemo(()=>{
-    const recruiter=me?.business_role==="recruiter";
+    if(recruiter){
+      return [{label:"RECRUITER WORKSPACE",items:[
+        {href:"/",label:"Today"},
+        {href:"/jobs",label:"Jobs"},
+        {href:"/candidates",label:"Candidates"},
+        {href:"/matching",label:"Matching"},
+        {href:"/conversations",label:"Conversations"},
+        {href:"/interviews",label:"Interviews"},
+        {href:"/pay-gm",label:"Pay & GM"},
+        {href:"/funnel",label:"Submissions"},
+        {href:"/weekly",label:"My Week"},
+      ]}];
+    }
     return [
-      {label:"DAILY WORK",items:[
-        {href:"/",label:"Today",show:true},
-        {href:"/distribution",label:"Job Distribution",show:!recruiter},
-        {href:"/jobs",label:"Jobs",show:true},
-        {href:"/candidates",label:"Candidates",show:true},
-        {href:"/funnel",label:"Submission to Start",show:true},
-      ]},
-      {label:"OPERATING RHYTHM",items:[
-        {href:"/weekly",label:"Weekly",show:true},
-        {href:"/manager",label:"Team Overview",show:!recruiter},
+      {label:"MANAGEMENT",items:[
+        {href:"/",label:"Today"},
+        {href:"/distribution",label:"Job Distribution"},
+        {href:"/jobs",label:"Jobs"},
+        {href:"/candidates",label:"Candidates"},
+        {href:"/funnel",label:"Submission to Start"},
+        {href:"/weekly",label:"Weekly Review"},
+        {href:"/manager",label:"Team Overview",show:me?.business_role!=="executive"},
         {href:"/executive",label:"Executive",show:me?.business_role==="executive"},
       ]},
       {label:"CONTROL",items:[
-        {href:"/team?section=intake",label:"Job Intake",show:!recruiter},
-        {href:"/team?section=standards",label:"Job Content Standards",show:!recruiter},
-        {href:"/team?section=approvals",label:"Job Approval",show:!recruiter},
+        {href:"/team?section=intake",label:"Job Intake"},
+        {href:"/team?section=standards",label:"Job Content Standards"},
+        {href:"/team?section=approvals",label:"Job Approval"},
         {href:"/admin",label:"Admin & Access",show:Boolean(me?.system_admin||me?.role==="admin")},
       ]},
-    ].map(group=>({...group,items:group.items.filter(x=>x.show)})).filter(group=>group.items.length);
-  },[me]);
+    ].map(group=>({...group,items:group.items.filter((x:any)=>x.show!==false)})).filter(group=>group.items.length);
+  },[me,recruiter]);
 
   const active=(href:string)=>{
     if(href==="/")return pathname==="/";
     if(href==="/team?section=intake")return pathname==="/team"&&section==="intake";
     if(href==="/team?section=approvals")return pathname==="/team"&&section==="approvals";
     if(href==="/team?section=standards")return pathname==="/team"&&section==="standards";
-    if(href==="/admin")return pathname.startsWith("/admin");
-    if(href==="/executive")return pathname.startsWith("/executive");
-    if(href==="/funnel")return pathname.startsWith("/funnel");
-    if(href==="/jobs")return pathname.startsWith("/jobs");
-    if(href==="/candidates")return pathname.startsWith("/candidates");
-    if(href==="/weekly")return pathname.startsWith("/weekly");
-    if(href==="/manager")return pathname.startsWith("/manager");
-    if(href==="/distribution")return pathname.startsWith("/distribution");
-    return pathname===href;
+    const base=href.split("?")[0];
+    return base!=="/"&&pathname.startsWith(base);
   };
 
   return <div className="appShell">
@@ -69,19 +77,27 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
         <div className="appBrandMark">M</div>
         <div><b>medlivo</b><span>RECRUIT AI</span><small>Healthcare Staffing Intelligence</small></div>
       </div>
-      <nav aria-label="Recruit AI navigation">
+
+      <div className="workspaceIdentity">
+        <small>WORKSPACE</small>
+        <b>{workspaceLabel}</b>
+        <span>{divisionLabel}</span>
+      </div>
+
+      <nav aria-label={recruiter?"Recruiter workspace navigation":"Management workspace navigation"}>
         {groups.map(group=><div className="appNavGroup" key={group.label}>
           <small>{group.label}</small>
-          {group.items.map(item=><Link key={item.href} href={item.href} className={active(item.href)?"active":""}>{item.label}</Link>)}
+          {group.items.map((item:any)=><Link key={item.href} href={item.href} className={active(item.href)?"active":""}>{item.label}</Link>)}
         </div>)}
       </nav>
+
       <div className="appSidebarFoot">
         <div className="appUserCard">
           <div className="appUserAvatar">{(me?.display_name||"M").slice(0,1).toUpperCase()}</div>
           <div><b>{me?.display_name||"Medlivo team"}</b><small>{String(me?.business_role||me?.role||"user").replaceAll("_"," ")}</small></div>
         </div>
         <div className="appEnv"><span className="appStatusDot"/><b>Secure staging</b></div>
-        <em>Block 1 · Intake → Distribution → Recruiter Work</em>
+        <em>{recruiter?"Block 1 · Recruiter workflow":"Block 1 · Management workflow"}</em>
       </div>
     </aside>
     <div className="appCanvas">{children}</div>
