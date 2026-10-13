@@ -2941,6 +2941,17 @@ class WorkspaceStore:
                         "my_feedback_reason": feedback["reason_code"] if feedback else None,
                     })
 
+                work_priority = (
+                    "priority_1"
+                    if principal["role"] == "recruiter" and assigned_recruiter_id == principal["id"]
+                    else "priority_2" if principal["role"] == "recruiter" else None
+                )
+                # Priority 2 is an opportunity queue, not a second copy of the
+                # division job list. Surface it only when candidate intelligence
+                # has produced at least one eligible match.
+                if principal["role"] == "recruiter" and work_priority == "priority_2" and not match_items:
+                    continue
+
                 items.append({
                     "job_id": job["id"],
                     "jobdiva_job_id": jobdiva_id,
@@ -2955,11 +2966,7 @@ class WorkspaceStore:
                     "priority": job["priority"],
                     "owner_user_id": assigned_recruiter_id,
                     "owner_name": owner_name,
-                    "work_priority": (
-                        "priority_1"
-                        if principal["role"] == "recruiter" and assigned_recruiter_id == principal["id"]
-                        else "priority_2" if principal["role"] == "recruiter" else None
-                    ),
+                    "work_priority": work_priority,
                     "customer_name": customer_name,
                     "updated_at": job["updated_at"],
                     "job_context": {
