@@ -12,13 +12,15 @@
 GRANT REFERENCES ON TABLE public.job TO :"migration_role";
 GRANT REFERENCES ON TABLE public.candidate TO :"migration_role";
 
-DO $$
-BEGIN
-  IF NOT has_table_privilege(:'migration_role', 'public.job', 'REFERENCES') THEN
-    RAISE EXCEPTION 'migration role still lacks REFERENCES on public.job';
-  END IF;
-  IF NOT has_table_privilege(:'migration_role', 'public.candidate', 'REFERENCES') THEN
-    RAISE EXCEPTION 'migration role still lacks REFERENCES on public.candidate';
-  END IF;
-END
-$$;
+SELECT
+  has_table_privilege(:'migration_role', 'public.job', 'REFERENCES')
+  AND has_table_privilege(:'migration_role', 'public.candidate', 'REFERENCES')
+  AS references_ready
+\gset
+
+\if :references_ready
+  \echo 'Migration REFERENCES grants verified.'
+\else
+  \echo 'Migration role REFERENCES grants are incomplete.'
+  \quit 1
+\endif
