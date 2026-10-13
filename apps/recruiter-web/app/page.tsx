@@ -86,18 +86,25 @@ export default function Home(){
  }
 
  const p=data.priorities||{},d=data.dash||{},q=data.queue||{};
+ const priority1=(p.items||[]).filter((x:any)=>x.type==="follow_up"||x.work_priority==="priority_1");
+ const priority2=(p.items||[]).filter((x:any)=>x.type==="match_review"&&x.work_priority==="priority_2");
+ const assignedJobs=(q.items||[]).filter((x:any)=>x.work_priority==="priority_1");
+ const divisionJobs=(q.items||[]).filter((x:any)=>x.work_priority==="priority_2");
+ const actionCard=(x:any,i:number)=><article key={x.id||x.match_id||i} className={"priorityItem "+(x.urgency||"")}><div><small>{x.work_priority==="priority_2"?"PRIORITY 2 · DIVISION OPPORTUNITY":String(x.type||"work").replaceAll("_"," ")}</small><b>{x.title||x.candidate_name||"Review work item"}</b><span>{x.detail?x.detail+" · ":""}{x.score?"Score "+Number(x.score).toFixed(1)+" · ":""}{x.urgency||"review"}</span></div>{x.job_id&&<Link href={"/jobs/"+x.job_id}>Open</Link>}</article>;
  return <main className="page todayPage">
-   <div className="pageHead"><div><small>Recruiter command center</small><h1>Today</h1><p>Prioritized recruiter work and explainable candidate matching.</p></div><span className="sourcePill">JOBDIVA · READ ONLY</span></div>
-   <section className="todayWelcome"><small>DAILY PRIORITIES</small><h2>What should you work on next?</h2><p>Overdue follow-ups come first, then due-soon work and unreviewed Strong/Good matches. You make the recruiting decision.</p></section>
+   <div className="pageHead"><div><small>Recruiter command center</small><h1>Today</h1><p>Your assigned work first, then AI-ranked opportunities across your division.</p></div><span className="sourcePill">LIVE MEDLIVO · JOBDIVA SYNC</span></div>
+   <section className="todayWelcome"><small>DAILY WORK ORDER</small><h2>Priority 1 first. Never lose sight of Priority 2.</h2><p>Delivery Manager assignments define Priority 1. You can still see strong opportunities from other active jobs in your division as Priority 2.</p></section>
    <div className="adminMetricGrid recruiterMetrics">
     <article><strong>{p.totals?.overdue_followups??0}</strong><b>Overdue follow-ups</b><span>Work needing immediate action</span></article>
     <article><strong>{p.totals?.due_soon_followups??0}</strong><b>Due soon</b><span>Upcoming recruiter commitments</span></article>
-    <article><strong>{p.totals?.match_reviews??0}</strong><b>Match reviews</b><span>Strong/Good matches not yet reviewed</span></article>
+    <article><strong>{p.totals?.priority_1_matches??0}</strong><b>Priority 1 matches</b><span>Matches on your assigned jobs</span></article>
+    <article><strong>{p.totals?.priority_2_matches??0}</strong><b>Priority 2 matches</b><span>Other opportunities in your division</span></article>
     <article><strong>{d.workload?.owned_work_items??0}</strong><b>Owned work</b><span>Current recruiter workload</span></article>
-    <article><strong>{d.workload?.active_priority_jobs??0}</strong><b>Priority jobs</b><span>Active jobs requiring attention</span></article>
     <article><strong>{d.workload?.unreviewed_matches??0}</strong><b>Unreviewed matches</b><span>Explainable matches awaiting feedback</span></article>
    </div>
-   <h3>Your next actions</h3><div className="priorityList">{(p.items||[]).map((x:any,i:number)=><article key={x.id||i} className={"priorityItem "+(x.urgency||"")}><div><small>{String(x.type||"work").replaceAll("_"," ")}</small><b>{x.title||x.candidate_name||"Review work item"}</b><span>{x.score?"Score "+Number(x.score).toFixed(1)+" · ":""}{x.urgency||"review"}</span></div>{x.job_id&&<Link href={"/jobs/"+x.job_id}>Open</Link>}</article>)}</div>
-   <h3>Priority matching</h3><div className="cards">{(q.items||[]).slice(0,5).map((job:any)=><article key={job.job_id}><strong>{(job.matches||[]).length}</strong><div><b>{job.title}</b><span>JobDiva {job.jobdiva_job_id||"—"} · priority {job.priority??0}</span></div><Link className="linkButton" href={"/jobs/"+job.job_id}>Open Job</Link></article>)}</div>
+   <h3>Priority 1 · My assigned work</h3><div className="priorityList">{priority1.length?priority1.map(actionCard):<div className="emptyState">No assigned actions need attention right now.</div>}</div>
+   <h3>Priority 2 · Division opportunities</h3><div className="priorityList">{priority2.length?priority2.map(actionCard):<div className="emptyState">No additional strong division opportunities are waiting right now.</div>}</div>
+   <h3>Jobs with candidate matches</h3>
+   <div className="cards">{[...assignedJobs,...divisionJobs].slice(0,8).map((job:any)=><article key={job.job_id}><strong>{(job.matches||[]).length}</strong><div><b>{job.title}</b><span>{job.work_priority==="priority_1"?"Priority 1 · Assigned to you":"Priority 2 · Division opportunity"} · JobDiva {job.jobdiva_job_id||"—"}</span></div><Link className="linkButton" href={"/jobs/"+job.job_id}>Open Job</Link></article>)}</div>
  </main>
 }
