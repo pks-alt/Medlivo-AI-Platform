@@ -177,7 +177,7 @@ function endpoint(path, method, query) {
     else if (key === 'matches_per_job' && /^(?:[1-9]|10)$/.test(value)) params.set(key, value);
     else if (key === 'team_id' && UUID.test(value)) params.set(key, value);
     else if (key === 'week_start' && /^20[0-9]{2}-[01][0-9]-[0-3][0-9]$/.test(value)) params.set(key, value);
-    else if (key === 'status' && ['open','done','all','pending','approved','rejected'].includes(value)) params.set(key, value);
+    else if (key === 'status' && ['open','done','all','pending','approved','rejected','queued','processing','sent','failed','cancelled'].includes(value)) params.set(key, value);
     else if (key === 'division' && ['Rehabilitation','Nursing & Allied','Locum Tenens'].includes(value)) params.set(key, value);
     else if (['job_id','candidate_id','object_id'].includes(key) && UUID.test(value)) params.set(key, value);
     else if (key === 'profile' && /^[a-z0-9_]{1,80}$/.test(value)) params.set(key, value);
