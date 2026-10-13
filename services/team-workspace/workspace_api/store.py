@@ -4228,6 +4228,182 @@ class WorkspaceStore:
             ).mappings().all()
             return clean({"items": [dict(row) for row in rows]})
 
+    def create_followup_sequence(self, identity, key, value):
+        payload = {
+            "candidate_id": str(value.candidate_id),
+            "job_id": str(value.job_id) if value.job_id else None,
+            "cadence_days": value.cadence_days,
+            "stop_on_reply": value.stop_on_reply,
+        }
+        def apply(conn, principal):
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            candidate_id = str(value.candidate_id)
+            if not self._candidate_in_recruiter_division(conn, principal, candidate_id):
+                raise AccessError(404, "Candidate not found")
+            suppressed = conn.execute(
+                select(t.contact_suppressions.c.candidate_id).where(
+                    t.contact_suppressions.c.tenant_id == principal["tenant_id"],
+                    t.contact_suppressions.c.candidate_id == candidate_id,
+                    t.contact_suppressions.c.channel == "email",
+                )
+            ).first()
+            if suppressed is not None:
+                raise AccessError(409, "Email outreach is suppressed for this candidate")
+            active = conn.execute(
+                select(t.followup_sequences).where(
+                    t.followup_sequences.c.tenant_id == principal["tenant_id"],
+                    t.followup_sequences.c.recruiter_user_id == principal["id"],
+                    t.followup_sequences.c.candidate_id == candidate_id,
+                    t.followup_sequences.c.status.in_(["active","paused"]),
+                )
+            ).mappings().first()
+            if active is not None:
+                raise AccessError(409, "An active follow-up sequence already exists for this candidate")
+            timestamp = now()
+            row = dict(
+                id=uid(),
+                tenant_id=principal["tenant_id"],
+                recruiter_user_id=principal["id"],
+                candidate_id=candidate_id,
+                job_id=str(value.job_id) if value.job_id else None,
+                status="active",
+                cadence_days=list(value.cadence_days),
+                next_step=0,
+                stop_on_reply=bool(value.stop_on_reply),
+                stopped_reason=None,
+                started_at=timestamp,
+                stopped_at=None,
+                created_at=timestamp,
+                updated_at=timestamp,
+            )
+            conn.execute(insert(t.followup_sequences).values(**row))
+            self._operational_audit(
+                conn, principal, "followup.sequence.started", "followup_sequence", row["id"],
+                None,
+                {"candidate_id": candidate_id, "job_id": row["job_id"], "cadence_days": row["cadence_days"]},
+            )
+            return clean(row)
+        return self._global_mutate(identity, key, "followup.sequence.started", payload, apply)
+
+    def list_followup_sequences(self, identity, *, status=None, limit=50):
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            statement = select(t.followup_sequences).where(
+                t.followup_sequences.c.tenant_id == principal["tenant_id"],
+                t.followup_sequences.c.recruiter_user_id == principal["id"],
+            )
+            if status:
+                if status not in {"active","paused","completed","stopped"}:
+                    raise AccessError(422, "Unsupported follow-up sequence status")
+                statement = statement.where(t.followup_sequences.c.status == status)
+            rows = conn.execute(
+                statement.order_by(t.followup_sequences.c.updated_at.desc()).limit(limit)
+            ).mappings().all()
+            return clean({"items":[dict(row) for row in rows]})
+
+    def control_followup_sequence(self, identity, sequence_id, key, value):
+        payload = {"sequence_id": sequence_id, "action": value.action, "reason": value.reason}
+        def apply(conn, principal):
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            row = conn.execute(
+                select(t.followup_sequences).where(
+                    t.followup_sequences.c.tenant_id == principal["tenant_id"],
+                    t.followup_sequences.c.id == sequence_id,
+                    t.followup_sequences.c.recruiter_user_id == principal["id"],
+                ).with_for_update()
+            ).mappings().first()
+            if row is None:
+                raise AccessError(404, "Follow-up sequence not found")
+            timestamp = now()
+            if value.action == "pause":
+                if row["status"] != "active":
+                    raise AccessError(409, "Only an active follow-up sequence can be paused")
+                new_status = "paused"
+                stopped_at = None
+            elif value.action == "resume":
+                if row["status"] != "paused":
+                    raise AccessError(409, "Only a paused follow-up sequence can be resumed")
+                suppressed = conn.execute(
+                    select(t.contact_suppressions.c.candidate_id).where(
+                        t.contact_suppressions.c.tenant_id == principal["tenant_id"],
+                        t.contact_suppressions.c.candidate_id == row["candidate_id"],
+                        t.contact_suppressions.c.channel == "email",
+                    )
+                ).first()
+                if suppressed is not None:
+                    raise AccessError(409, "Email outreach is suppressed for this candidate")
+                new_status = "active"
+                stopped_at = None
+            else:
+                if row["status"] in {"completed","stopped"}:
+                    raise AccessError(409, "Follow-up sequence is already closed")
+                new_status = "stopped"
+                stopped_at = timestamp
+            conn.execute(
+                update(t.followup_sequences)
+                .where(t.followup_sequences.c.id == sequence_id)
+                .values(
+                    status=new_status,
+                    stopped_reason=value.reason if new_status == "stopped" else None,
+                    stopped_at=stopped_at,
+                    updated_at=timestamp,
+                )
+            )
+            self._operational_audit(
+                conn, principal, "followup.sequence."+value.action, "followup_sequence", sequence_id,
+                {"status": row["status"]}, {"status": new_status}, reason=value.reason,
+            )
+            return clean({**dict(row), "status": new_status, "stopped_reason": value.reason if new_status=="stopped" else None, "stopped_at": stopped_at, "updated_at": timestamp})
+        return self._global_mutate(identity, key, "followup.sequence."+value.action, payload, apply)
+
+    def suppress_contact(self, identity, key, value):
+        payload = {"candidate_id": str(value.candidate_id), "channel": value.channel, "reason": value.reason}
+        def apply(conn, principal):
+            if principal["role"] != "recruiter":
+                raise AccessError(403, "Recruiter access required")
+            candidate_id = str(value.candidate_id)
+            if not self._candidate_in_recruiter_division(conn, principal, candidate_id):
+                raise AccessError(404, "Candidate not found")
+            timestamp = now()
+            existing = conn.execute(
+                select(t.contact_suppressions).where(
+                    t.contact_suppressions.c.tenant_id == principal["tenant_id"],
+                    t.contact_suppressions.c.candidate_id == candidate_id,
+                    t.contact_suppressions.c.channel == value.channel,
+                )
+            ).mappings().first()
+            if existing is None:
+                conn.execute(insert(t.contact_suppressions).values(
+                    tenant_id=principal["tenant_id"], candidate_id=candidate_id,
+                    channel=value.channel, reason=value.reason, source_type="manual",
+                    source_reference=None, created_at=timestamp,
+                ))
+            conn.execute(
+                update(t.followup_sequences)
+                .where(
+                    t.followup_sequences.c.tenant_id == principal["tenant_id"],
+                    t.followup_sequences.c.candidate_id == candidate_id,
+                    t.followup_sequences.c.status.in_(["active","paused"]),
+                )
+                .values(status="stopped", stopped_reason="contact_suppressed", stopped_at=timestamp, updated_at=timestamp)
+            )
+            conn.execute(
+                update(t.outreach_executions)
+                .where(
+                    t.outreach_executions.c.tenant_id == principal["tenant_id"],
+                    t.outreach_executions.c.candidate_id == candidate_id,
+                    t.outreach_executions.c.channel == value.channel,
+                    t.outreach_executions.c.status == "queued",
+                )
+                .values(status="cancelled", last_error="contact_suppressed", updated_at=timestamp)
+            )
+            return {"candidate_id":candidate_id,"channel":value.channel,"suppressed":True,"reason":value.reason}
+        return self._global_mutate(identity, key, "contact.suppressed", payload, apply)
+
     def gmail_status(self, identity):
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
