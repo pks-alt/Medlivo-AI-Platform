@@ -28,7 +28,7 @@ async function post(path:string,body:any){
 function daysUntil(v:any){if(!v)return null;const d=new Date(v+"T12:00:00");if(Number.isNaN(d.getTime()))return null;return Math.ceil((d.getTime()-Date.now())/86400000)}
 function todayLocal(v:any){if(!v)return false;const d=new Date(v),n=new Date();return d.getFullYear()===n.getFullYear()&&d.getMonth()===n.getMonth()&&d.getDate()===n.getDate()}
 export default function Home(){
- const[me,setMe]=useState<any>(null);const[data,setData]=useState<any>(null);const[err,setErr]=useState("");
+ const[me,setMe]=useState<any>(null);const[data,setData]=useState<any>(null);const[err,setErr]=useState(""),[actionErr,setActionErr]=useState("");
  useEffect(()=>{(async()=>{
   const who=await get("me");setMe(who);
   if(who.business_role==="recruiter"){
@@ -128,16 +128,15 @@ export default function Home(){
  };
  const remaining=(row:any)=>{
    if(row.effective_status==="working")return "Working";
-   const ms=new Date(row.protected_until).getTime()-Date.now();
-   if(ms<=0)return "Available for Support";
-   const mins=Math.ceil(ms/60000);
-   return mins+" min protected";
+   if(row.effective_status==="available_for_support")return "Available for Support";
+   return String(row.remaining_business_minutes??0)+" min protected";
  };
 
  return <main className="page todayPage recruiterTodayFinal">
    <div className="pageHead"><div><small>Recruiter command center</small><h1>Today</h1><p>Urgent work first, then assigned work, schedule, new matches and division opportunities.</p></div><span className="sourcePill">{me.division||"Rehabilitation"} · LIVE MEDLIVO</span></div>
 
    <section className="todayWelcome finalTodayHero"><small>YOUR DAY</small><h2>What should you work on next?</h2><p>Medlivo ranks actionable work while Delivery Manager assignment remains the source of Priority 1 accountability.</p></section>
+   {actionErr&&<div className="adminError todayActionError"><b>Action could not be saved</b><span>{actionErr}</span></div>}
 
    <div className="todayMetricGrid">
     <article className={attention.length?"attention":""}><strong>{attention.length}</strong><b>Needs attention</b><span>Replies, follow-ups and start risks</span></article>
