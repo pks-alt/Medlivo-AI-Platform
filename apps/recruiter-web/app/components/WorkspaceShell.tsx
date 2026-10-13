@@ -26,9 +26,9 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
   const items=useMemo(()=>{
     const base=[
       {href:"/",label:"Today",show:true},
-      {href:"/team",label:"My Work",show:true},
       {href:"/jobs",label:"Jobs",show:true},
       {href:"/candidates",label:"Candidates",show:true},
+      {href:"/distribution",label:"Job Distribution",show:me?.business_role!=="recruiter"},
       {href:"/team?section=intake",label:"Job Intake",show:me?.business_role!=="recruiter"},
       {href:"/team?section=standards",label:"Job Content Standards",show:me?.business_role!=="recruiter"},
       {href:"/team?section=approvals",label:"Job Approval",show:me?.business_role!=="recruiter"},
@@ -53,7 +53,7 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
     if(href==="/candidates")return pathname.startsWith("/candidates");
     if(href==="/weekly")return pathname.startsWith("/weekly");
     if(href==="/manager")return pathname.startsWith("/manager");
-    if(href==="/team")return pathname==="/team"&&!["intake","approvals","standards"].includes(section);
+    if(href==="/distribution")return pathname.startsWith("/distribution");
     return pathname===href;
   };
 
