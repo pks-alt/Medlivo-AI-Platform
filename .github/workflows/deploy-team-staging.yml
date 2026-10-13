@@ -139,7 +139,19 @@ jobs:
             echo "::error::Follow-up worker requires the existing API service account and outreach AI configuration."
             exit 1
           fi
-          gcloud run jobs deploy "${FOLLOWUP_JOB}"             --project="${PROJECT_ID}"             --region="${REGION}"             --image="${API_IMAGE}"             --service-account="${API_SA}"             --set-cloudsql-instances="${PROJECT_ID}:${REGION}:medlivo-ai-postgres"             --set-secrets="WORKSPACE_DATABASE_URL=medlivo-team-staging-api-database-url:latest"             --set-env-vars="WORKSPACE_OUTREACH_AI_PROJECT=${OUTREACH_PROJECT},WORKSPACE_OUTREACH_AI_LOCATION=${OUTREACH_LOCATION},WORKSPACE_OUTREACH_AI_MODEL=${OUTREACH_MODEL}"             --command="python"             --args="-m,workspace_api.followup_worker"             --max-retries=1             --task-timeout=300s             --quiet
+          gcloud run jobs deploy "${FOLLOWUP_JOB}" \
+            --project="${PROJECT_ID}" \
+            --region="${REGION}" \
+            --image="${API_IMAGE}" \
+            --service-account="${API_SA}" \
+            --set-cloudsql-instances="${PROJECT_ID}:${REGION}:medlivo-ai-postgres" \
+            --set-secrets="WORKSPACE_DATABASE_URL=${API_DB_SECRET}" \
+            --set-env-vars="WORKSPACE_OUTREACH_AI_PROJECT=${OUTREACH_PROJECT},WORKSPACE_OUTREACH_AI_LOCATION=${OUTREACH_LOCATION},WORKSPACE_OUTREACH_AI_MODEL=${OUTREACH_MODEL}" \
+            --command="python" \
+            --args="-m,workspace_api.followup_worker" \
+            --max-retries=1 \
+            --task-timeout=300s \
+            --quiet
 
       - name: Build and push private team web
         if: ${{ github.event_name != 'workflow_dispatch' || !inputs.diagnostics_only }}
