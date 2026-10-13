@@ -4218,7 +4218,7 @@ class WorkspaceStore:
             return clean({
                 "candidate_id": candidate_id,
                 "relationship": item,
-                "events": events,
+                "events": [dict(event) for event in events],
                 "company_owned_candidate": True,
                 "relationship_is_operational_not_permanent_ownership": True,
             })
