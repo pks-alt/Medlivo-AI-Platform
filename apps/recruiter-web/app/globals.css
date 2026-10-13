@@ -407,3 +407,5 @@
 
 /* Recruiter Jobs P1/P2 separation */
 .jobsWorkTabs{margin-bottom:12px}.jobsHubCard.priorityTwo{border-left:4px solid #7396ad;background:#fbfdfe}.jobsHubCard.priorityOne{border-left:4px solid transparent}.jobsHubCard.priorityTwo .jobsHubPrimary>small{color:#315f7c}.jobsHubCard.priorityTwo .jobsHubFoot a{background:#eef4f8;color:#315f7c;border:1px solid #d7e3ea}
+
+.todaySupportLabel{font-size:6.8px;font-weight:900;letter-spacing:.08em;color:#5f7d55;margin:13px 0 7px}.protectedActionGrid.support{margin-top:0}.protectedActionCard.available_for_support{background:#f4faf0;border-color:#d7e8cb}
