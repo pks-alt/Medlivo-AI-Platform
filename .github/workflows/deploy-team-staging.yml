@@ -33,6 +33,9 @@ env:
   GAR_REPOSITORY: medlivo-ai-containers
   API_SERVICE: medlivo-team-api-staging
   WEB_SERVICE: medlivo-team-web-staging
+  OUTREACH_AI_PROJECT: medlivo-ai-platform
+  OUTREACH_AI_LOCATION: global
+  OUTREACH_AI_MODEL: gemini-3.7-flash
 
 jobs:
   deploy:
@@ -121,7 +124,7 @@ jobs:
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --image="${API_IMAGE}" \
-            --update-env-vars="MEDLIVO_RELEASE_SHA=${GITHUB_SHA}" \
+            --update-env-vars="MEDLIVO_RELEASE_SHA=${GITHUB_SHA},WORKSPACE_OUTREACH_AI_ENABLED=true,WORKSPACE_OUTREACH_AI_PROJECT=${OUTREACH_AI_PROJECT},WORKSPACE_OUTREACH_AI_LOCATION=${OUTREACH_AI_LOCATION},WORKSPACE_OUTREACH_AI_MODEL=${OUTREACH_AI_MODEL}" \
             --no-traffic \
             --startup-probe="httpGet.path=/ready,httpGet.port=8080,timeoutSeconds=3,periodSeconds=5,failureThreshold=6" \
             --no-log-http \
@@ -143,11 +146,8 @@ jobs:
           FOLLOWUP_JOB="medlivo-followup-due-staging"
           API_SA="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format='value(spec.template.spec.serviceAccountName)')"
           API_DB_SECRET="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="WORKSPACE_DATABASE_URL") | .valueFrom.secretKeyRef | if .name then (.name + ":" + (.key|tostring)) else empty end')"
-          OUTREACH_PROJECT="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="WORKSPACE_OUTREACH_AI_PROJECT") | .value // empty')"
-          OUTREACH_LOCATION="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="WORKSPACE_OUTREACH_AI_LOCATION") | .value // "global"')"
-          OUTREACH_MODEL="$(gcloud run services describe "${API_SERVICE}" --project="${PROJECT_ID}" --region="${REGION}" --format=json | jq -r '.spec.template.spec.containers[0].env[]? | select(.name=="WORKSPACE_OUTREACH_AI_MODEL") | .value // empty')"
-          if [ -z "${API_SA}" ] || [ -z "${API_DB_SECRET}" ] || [ -z "${OUTREACH_PROJECT}" ] || [ -z "${OUTREACH_MODEL}" ]; then
-            echo "::error::Follow-up worker requires the existing API service account and outreach AI configuration."
+          if [ -z "${API_SA}" ] || [ -z "${API_DB_SECRET}" ]; then
+            echo "::error::Follow-up worker requires the existing API service account and database secret."
             exit 1
           fi
           gcloud run jobs deploy "${FOLLOWUP_JOB}" \
@@ -157,7 +157,7 @@ jobs:
             --service-account="${API_SA}" \
             --set-cloudsql-instances="${PROJECT_ID}:${REGION}:medlivo-ai-postgres" \
             --set-secrets="WORKSPACE_DATABASE_URL=${API_DB_SECRET}" \
-            --set-env-vars="WORKSPACE_OUTREACH_AI_PROJECT=${OUTREACH_PROJECT},WORKSPACE_OUTREACH_AI_LOCATION=${OUTREACH_LOCATION},WORKSPACE_OUTREACH_AI_MODEL=${OUTREACH_MODEL}" \
+            --set-env-vars="WORKSPACE_OUTREACH_AI_PROJECT=${OUTREACH_AI_PROJECT},WORKSPACE_OUTREACH_AI_LOCATION=${OUTREACH_AI_LOCATION},WORKSPACE_OUTREACH_AI_MODEL=${OUTREACH_AI_MODEL}" \
             --command="python" \
             --args="-m,workspace_api.followup_worker" \
             --max-retries=1 \
