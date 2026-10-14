@@ -1,0 +1,75 @@
+name: Authorize Medlivo-Recruit-AI for existing GCP WIF
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/authorize-recruit-ai-gcp.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.repository == 'pks-alt/Medlivo-AI-Platform'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: projects/363168336964/locations/global/workloadIdentityPools/github-actions/providers/github
+          service_account: github-deployer@medlivo-ai-platform.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Authorize only the new Recruit AI repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          PROJECT_ID="medlivo-ai-platform"
+          POOL_ID="github-actions"
+          PROVIDER_ID="github"
+          DEPLOYER_EMAIL="github-deployer@medlivo-ai-platform.iam.gserviceaccount.com"
+          OLD_REPO="pks-alt/Medlivo-AI-Platform"
+          NEW_REPO="pks-alt/Medlivo-Recruit-AI"
+
+          gcloud iam workload-identity-pools providers update-oidc "$PROVIDER_ID"             --project="$PROJECT_ID"             --location=global             --workload-identity-pool="$POOL_ID"             --attribute-condition="assertion.repository=='$OLD_REPO' || assertion.repository=='$NEW_REPO'"             --quiet
+
+          POOL_NAME="$(gcloud iam workload-identity-pools describe "$POOL_ID"             --project="$PROJECT_ID"             --location=global             --format='value(name)')"
+
+          gcloud iam service-accounts add-iam-policy-binding "$DEPLOYER_EMAIL"             --project="$PROJECT_ID"             --role="roles/iam.workloadIdentityUser"             --member="principalSet://iam.googleapis.com/${POOL_NAME}/attribute.repository/${NEW_REPO}"             --quiet
+
+      - name: Verify exact provider condition
+        shell: bash
+        run: |
+          set -euo pipefail
+          CONDITION="$(gcloud iam workload-identity-pools providers describe github             --project=medlivo-ai-platform             --location=global             --workload-identity-pool=github-actions             --format='value(attributeCondition)')"
+          echo "Provider condition verified for both Medlivo repositories."
+          [[ "${CONDITION}" == *"pks-alt/Medlivo-AI-Platform"* ]]
+          [[ "${CONDITION}" == *"pks-alt/Medlivo-Recruit-AI"* ]]
+
+      - name: Verify new repository workload identity binding
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud iam service-accounts get-iam-policy             github-deployer@medlivo-ai-platform.iam.gserviceaccount.com             --project=medlivo-ai-platform             --format=json > /tmp/deployer-policy.json
+          python3 - <<'PY'
+          import json
+          p=json.load(open("/tmp/deployer-policy.json"))
+          target="principalSet://iam.googleapis.com/projects/363168336964/locations/global/workloadIdentityPools/github-actions/attribute.repository/pks-alt/Medlivo-Recruit-AI"
+          ok=any(
+              b.get("role")=="roles/iam.workloadIdentityUser"
+              and target in b.get("members",[])
+              for b in p.get("bindings",[])
+          )
+          if not ok:
+              raise SystemExit("New repository workload identity binding was not found")
+          print("New repository WIF binding verified.")
+          PY
