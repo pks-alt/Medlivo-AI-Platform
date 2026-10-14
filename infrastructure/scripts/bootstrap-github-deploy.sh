@@ -24,7 +24,7 @@ fi
 DEPLOYER_EMAIL="${DEPLOYER_SA}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 for ROLE in roles/run.admin roles/artifactregistry.writer roles/iam.serviceAccountUser roles/logging.viewer; do
-  gcloud projects add-iam-policy-binding "$PROJECT_ID"     --member="serviceAccount:${DEPLOYER_EMAIL}"     --role="$ROLE"     --quiet
+  gcloud projects add-iam-policy-binding "$PROJECT_ID"     --member="serviceAccount:${DEPLOYER_EMAIL}"     --role="$ROLE"     --condition=None     --quiet
 done
 
 if ! gcloud iam workload-identity-pools describe "$POOL_ID" --location=global >/dev/null 2>&1; then
