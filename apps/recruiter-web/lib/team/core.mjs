@@ -332,7 +332,7 @@ export function createGateway({config, store, verifyIdToken, api, fetcher = fetc
         const nativeMember=JSON.parse(await boundedText(nativeResponse,16384));
         if (!nativeMember.system_admin) throw new SafeError(403,'System Administrator access required.');
         if (value.mode==='recruiter') {
-          const profileResponse=await api(data.idToken,'/admin/self/recruiter-test-profile',{method:'POST'});
+          const profileResponse=await api(data.idToken,'/admin/self/recruiter-test-profile',{method:'POST',body:'{}',contentType:'application/json'});
           if (![200,201].includes(profileResponse.status)) throw new SafeError(profileResponse.status===409?409:503,'Recruiter test profile could not be enabled.');
           await boundedText(profileResponse,16384);
         }
