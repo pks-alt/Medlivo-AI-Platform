@@ -96,12 +96,18 @@ def build_app(store, verifier, gmail_pubsub_verification_token=None):
     app.add_middleware(LimitsMiddleware)
     bearer = HTTPBearer(auto_error=False)
 
-    def identity(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    def identity(
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+        workspace_mode: str | None = Header(default=None, alias="X-Medlivo-Workspace-Mode"),
+    ):
         if credentials is None or credentials.scheme.lower() != "bearer":
             logger.warning("workspace_authentication_denied")
             raise HTTPException(401, "Authentication required", headers={"WWW-Authenticate": "Bearer"})
         try:
-            return verifier.verify(credentials.credentials)
+            verified = verifier.verify(credentials.credentials)
+            if workspace_mode not in {None, "", "recruiter"}:
+                raise AuthenticationError("Authentication required")
+            return Identity(verified.provider, verified.subject, verified.email, workspace_mode or None)
         except AuthenticationError:
             logger.warning("workspace_authentication_denied")
             raise HTTPException(401, "Authentication required", headers={"WWW-Authenticate": "Bearer"}) from None
@@ -208,6 +214,10 @@ def build_app(store, verifier, gmail_pubsub_verification_token=None):
     @app.get(prefix + "/admin/teams")
     def admin_teams(who=Depends(identity)):
         return store.admin_teams(who)
+
+    @app.post(prefix + "/admin/self/recruiter-test-profile", status_code=201)
+    def admin_self_recruiter_test_profile(who=Depends(identity)):
+        return store.ensure_system_admin_recruiter_test_profile(who)
 
     @app.get(prefix + "/admin/users")
     def admin_users(who=Depends(identity)):
