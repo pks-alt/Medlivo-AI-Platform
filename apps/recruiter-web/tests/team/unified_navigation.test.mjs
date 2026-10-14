@@ -270,3 +270,22 @@ test("System Admin can review the finalized recruiter UX without impersonation",
   assert.match(today, /if\(preview\)\{setNotice\("Read-only recruiter UX preview/);
   assert.match(today, /if\(preview\|\|data\.protectedActions&&data\.funnel\)return/);
 });
+
+
+test("System Admin recruiter review covers the full finalized recruiter workspace", async () => {
+  const review = await readFile(new URL("../../app/recruiter-review/page.tsx", import.meta.url), "utf8");
+  const oldPreview = await readFile(new URL("../../app/recruiter-preview/page.tsx", import.meta.url), "utf8");
+  const admin = await readFile(new URL("../../app/admin/page.tsx", import.meta.url), "utf8");
+  for (const label of ["Today","Jobs","Candidates","Matching","Conversations","Interviews","Pay & GM","Submissions","My Week"]) {
+    assert.match(review, new RegExp(label.replace("&","\\&")));
+  }
+  assert.match(review, /PHASE 2 · PR 116–120/);
+  assert.match(review, /Gmail pilot/);
+  assert.match(review, /3 \/ 7 \/ 14 follow-up/);
+  assert.match(review, /Due preparation worker/);
+  assert.match(review, /Protected first-action window/);
+  assert.match(review, /Priority 2/);
+  assert.match(review, /System Administrator access required/);
+  assert.match(oldPreview, /router\.replace\("\/recruiter-review"\)/);
+  assert.match(admin, /href="\/recruiter-review">Recruiter UX Review/);
+});
