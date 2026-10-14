@@ -70,13 +70,14 @@ def clean(row):
 
 
 class WorkspaceStore:
-    def __init__(self, engine, submission_ai=None, submission_packet_generator=None, job_intake_ai=None, outreach_ai=None, gmail_provider=None):
+    def __init__(self, engine, submission_ai=None, submission_packet_generator=None, job_intake_ai=None, outreach_ai=None, gmail_provider=None, recruiter_test_mode_enabled=False):
         self.engine = engine
         self.submission_ai = submission_ai
         self.submission_packet_generator = submission_packet_generator
         self.job_intake_ai = job_intake_ai
         self.outreach_ai = outreach_ai
         self.gmail_provider = gmail_provider
+        self.recruiter_test_mode_enabled = bool(recruiter_test_mode_enabled)
 
     def _principal(self, conn, identity: Identity):
         def lookup():
@@ -125,6 +126,8 @@ class WorkspaceStore:
         principal["native_business_role"] = principal["business_role"]
         principal["workspace_mode"] = "native"
         if identity.workspace_mode == "recruiter":
+            if not self.recruiter_test_mode_enabled:
+                raise AccessError(403, "Recruiter test mode is not enabled")
             if not principal["system_admin"]:
                 raise AccessError(403, "System Administrator recruiter test mode required")
             profile = conn.execute(
@@ -183,6 +186,8 @@ class WorkspaceStore:
             }
 
     def ensure_system_admin_recruiter_test_profile(self, identity):
+        if not self.recruiter_test_mode_enabled:
+            raise AccessError(403, "Recruiter test mode is not enabled")
         with self.engine.begin() as conn:
             principal = self._principal(conn, identity)
             if not principal["system_admin"]:
