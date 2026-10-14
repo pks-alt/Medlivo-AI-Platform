@@ -285,3 +285,12 @@ test("System Admin recruiter review covers the full finalized recruiter workspac
   assert.match(oldPreview, /router\.replace\("\/recruiter-review"\)/);
   assert.match(admin, /href="\/recruiter-review">Recruiter UX Review/);
 });
+
+
+test("System Admin shell exposes recruiter test mode without replacing native role", async () => {
+  const shell = await readFile(new URL("../../app/components/WorkspaceShell.tsx", import.meta.url), "utf8");
+  assert.match(shell, /Enter Recruiter Test Mode/);
+  assert.match(shell, /Exit Recruiter Test Mode/);
+  assert.match(shell, /\/api\/team\/workspace-mode/);
+  assert.match(shell, /workspace_mode==="recruiter"/);
+});
