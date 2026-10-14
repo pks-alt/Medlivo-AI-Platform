@@ -18,6 +18,7 @@ class Identity:
     provider: str
     subject: str
     email: str
+    workspace_mode: str | None = None
 
 
 class GoogleIdentityVerifier:
