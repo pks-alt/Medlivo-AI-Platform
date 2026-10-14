@@ -259,16 +259,12 @@ test("Recruiter Jobs separates Priority 1 accountability from Priority 2 opportu
 });
 
 
-test("System Admin can review the finalized recruiter UX without impersonation", async () => {
+test("System Admin recruiter review replaces the retired one-page preview", async () => {
   const admin = await readFile(new URL("../../app/admin/page.tsx", import.meta.url), "utf8");
   const preview = await readFile(new URL("../../app/recruiter-preview/page.tsx", import.meta.url), "utf8");
-  const today = await readFile(new URL("../../app/components/RecruiterToday.tsx", import.meta.url), "utf8");
-  assert.match(admin, /href="\/recruiter-preview">Recruiter UX Preview/);
-  assert.match(preview, /if\(!x\.system_admin\)/);
-  assert.match(preview, /<RecruiterToday me=\{me\} data=\{previewData\} preview\/>/);
-  assert.match(today, /RECRUITER UX PREVIEW/);
-  assert.match(today, /if\(preview\)\{setNotice\("Read-only recruiter UX preview/);
-  assert.match(today, /if\(preview\|\|data\.protectedActions&&data\.funnel\)return/);
+  assert.match(admin, /href="\/recruiter-review">Recruiter UX Review/);
+  assert.match(preview, /router\.replace\("\/recruiter-review"\)/);
+  assert.doesNotMatch(preview, /RecruiterToday|previewData/);
 });
 
 
