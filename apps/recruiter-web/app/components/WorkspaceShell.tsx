@@ -10,6 +10,8 @@ type Me={
   business_role?:string;
   system_admin?:boolean;
   division?:string;
+  native_business_role?:string;
+  workspace_mode?:string;
 };
 
 async function loadMe(){
@@ -22,7 +24,29 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
   const pathname=usePathname();
   const[section,setSection]=useState("");
   const[me,setMe]=useState<Me|null>(null);
+  const[switching,setSwitching]=useState(false);
   useEffect(()=>{loadMe().then(setMe).catch(()=>setMe(null));setSection(new URLSearchParams(window.location.search).get("section")||"")},[pathname]);
+
+  async function switchWorkspaceMode(){
+    if(!me?.system_admin||switching)return;
+    setSwitching(true);
+    try{
+      const sessionResponse=await fetch("/api/team/session",{cache:"no-store",credentials:"same-origin"});
+      const session=await sessionResponse.json().catch(()=>({}));
+      if(!sessionResponse.ok||!session.csrf)throw new Error("Session unavailable");
+      const next=me.workspace_mode==="recruiter"?"native":"recruiter";
+      const response=await fetch("/api/team/workspace-mode",{
+        method:"POST",credentials:"same-origin",
+        headers:{"Content-Type":"application/json","X-CSRF-Token":session.csrf},
+        body:JSON.stringify({mode:next})
+      });
+      const body=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(body.detail||"Workspace mode could not be changed");
+      window.location.href="/";
+    }catch{
+      setSwitching(false);
+    }
+  }
 
   const recruiter=me?.business_role==="recruiter";
   const workspaceLabel=recruiter?"Recruiter Workspace":me?.business_role==="executive"?"Executive Workspace":me?.business_role==="delivery_manager"?"Delivery Manager Workspace":"Admin Workspace";
@@ -96,8 +120,11 @@ export default function WorkspaceShell({children}:{children:ReactNode}){
           <div className="appUserAvatar">{(me?.display_name||"M").slice(0,1).toUpperCase()}</div>
           <div><b>{me?.display_name||"Medlivo team"}</b><small>{String(me?.business_role||me?.role||"user").replaceAll("_"," ")}</small></div>
         </div>
+        {me?.system_admin&&<button className="workspaceModeButton" onClick={switchWorkspaceMode} disabled={switching}>
+          {switching?"Switching…":me.workspace_mode==="recruiter"?"Exit Recruiter Test Mode":"Enter Recruiter Test Mode"}
+        </button>}
         <div className="appEnv"><span className="appStatusDot"/><b>Secure staging</b></div>
-        <em>{recruiter?"Block 1 · Recruiter workflow":"Block 1 · Management workflow"}</em>
+        <em>{me?.workspace_mode==="recruiter"?"System Admin · Recruiter Test Mode":recruiter?"Block 1 · Recruiter workflow":"Block 1 · Management workflow"}</em>
       </div>
     </aside>
     <div className="appCanvas">{children}</div>
