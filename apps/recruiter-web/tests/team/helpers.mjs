@@ -12,6 +12,7 @@ export class MemoryStore {
  async consumeLogin(id,state,now){const row=this.logins.get(id);if(!row||row.state!==state||row.expires<=now)return null;this.logins.delete(id);return row;}
  async removeLogin(id){this.logins.delete(id);}
  async saveSession(id,ciphertext,expires,idle){this.sessions.set(id,{ciphertext,expires,idle});}
+ async updateSession(id,ciphertext){const row=this.sessions.get(id);if(!row)throw new SafeError(401,'Your session has ended. Please sign in again.');row.ciphertext=ciphertext;}
  async getSession(id,now,idle){const row=this.sessions.get(id);if(!row||row.expires<=now||row.idle<=now)return null;row.idle=Math.min(row.expires,now+idle);return row;}
  async removeSession(id){this.sessions.delete(id);}
 }

@@ -70,13 +70,14 @@ def clean(row):
 
 
 class WorkspaceStore:
-    def __init__(self, engine, submission_ai=None, submission_packet_generator=None, job_intake_ai=None, outreach_ai=None, gmail_provider=None):
+    def __init__(self, engine, submission_ai=None, submission_packet_generator=None, job_intake_ai=None, outreach_ai=None, gmail_provider=None, recruiter_test_mode_enabled=False):
         self.engine = engine
         self.submission_ai = submission_ai
         self.submission_packet_generator = submission_packet_generator
         self.job_intake_ai = job_intake_ai
         self.outreach_ai = outreach_ai
         self.gmail_provider = gmail_provider
+        self.recruiter_test_mode_enabled = bool(recruiter_test_mode_enabled)
 
     def _principal(self, conn, identity: Identity):
         def lookup():
@@ -121,6 +122,25 @@ class WorkspaceStore:
             }[principal["role"]]
         if principal.get("system_admin") is None:
             principal["system_admin"] = principal["role"] == "admin"
+        principal["native_role"] = principal["role"]
+        principal["native_business_role"] = principal["business_role"]
+        principal["workspace_mode"] = "native"
+        if identity.workspace_mode == "recruiter":
+            if not self.recruiter_test_mode_enabled:
+                raise AccessError(403, "Recruiter test mode is not enabled")
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Administrator recruiter test mode required")
+            profile = conn.execute(
+                select(t.profiles.c.user_id).where(
+                    t.profiles.c.tenant_id == principal["tenant_id"],
+                    t.profiles.c.user_id == principal["id"],
+                )
+            ).first()
+            if profile is None:
+                raise AccessError(409, "Recruiter test profile is not configured")
+            principal["role"] = "recruiter"
+            principal["business_role"] = "recruiter"
+            principal["workspace_mode"] = "recruiter"
         return principal
 
     def _scope(self, principal):
@@ -156,12 +176,66 @@ class WorkspaceStore:
                 "display_name": principal["display_name"],
                 "role": principal["role"],
                 "business_role": principal["business_role"],
+                "native_business_role": principal["native_business_role"],
+                "workspace_mode": principal["workspace_mode"],
                 "system_admin": bool(principal["system_admin"]),
                 "division": division,
                 "team_name": team_name,
                 "submission_ai_enabled": self.submission_ai is not None,
                 "submission_packet_download_enabled": self.submission_packet_generator is not None,
             }
+
+    def ensure_system_admin_recruiter_test_profile(self, identity):
+        if not self.recruiter_test_mode_enabled:
+            raise AccessError(403, "Recruiter test mode is not enabled")
+        with self.engine.begin() as conn:
+            principal = self._principal(conn, identity)
+            if not principal["system_admin"]:
+                raise AccessError(403, "System Administrator access required")
+            existing = conn.execute(
+                select(
+                    t.profiles.c.team_id,
+                    t.teams.c.name.label("team_name"),
+                    t.teams.c.division,
+                )
+                .join(t.teams, and_(
+                    t.teams.c.id == t.profiles.c.team_id,
+                    t.teams.c.tenant_id == t.profiles.c.tenant_id,
+                ))
+                .where(
+                    t.profiles.c.tenant_id == principal["tenant_id"],
+                    t.profiles.c.user_id == principal["id"],
+                )
+            ).mappings().first()
+            if existing is None:
+                team = conn.execute(
+                    select(t.teams.c.id, t.teams.c.name, t.teams.c.division)
+                    .where(t.teams.c.tenant_id == principal["tenant_id"])
+                    .order_by(
+                        (t.teams.c.division == "Rehabilitation").desc(),
+                        t.teams.c.name.asc(),
+                    )
+                    .limit(1)
+                ).mappings().first()
+                if team is None:
+                    raise AccessError(409, "No recruiter team is configured")
+                conn.execute(insert(t.profiles).values(
+                    user_id=principal["id"],
+                    tenant_id=principal["tenant_id"],
+                    team_id=team["id"],
+                ))
+                existing = {
+                    "team_id": team["id"],
+                    "team_name": team["name"],
+                    "division": team["division"],
+                }
+            return clean({
+                "enabled": True,
+                "team_id": existing["team_id"],
+                "team_name": existing["team_name"],
+                "division": existing["division"],
+                "native_business_role": principal["native_business_role"],
+            })
 
     def admin_teams(self, identity):
         with self.engine.begin() as conn:

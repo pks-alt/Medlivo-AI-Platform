@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
-from .auth import AuthenticationError, GoogleIdentityVerifier
+from .auth import AuthenticationError, GoogleIdentityVerifier, Identity
 from .config import Settings
 from .schemas import (
     NoteInput, TaskInput, TaskUpdate, Reassignment, AdminUserInput, AdminUserUpdate,
@@ -96,12 +96,18 @@ def build_app(store, verifier, gmail_pubsub_verification_token=None):
     app.add_middleware(LimitsMiddleware)
     bearer = HTTPBearer(auto_error=False)
 
-    def identity(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
+    def identity(
+        credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
+        workspace_mode: str | None = Header(default=None, alias="X-Medlivo-Workspace-Mode"),
+    ):
         if credentials is None or credentials.scheme.lower() != "bearer":
             logger.warning("workspace_authentication_denied")
             raise HTTPException(401, "Authentication required", headers={"WWW-Authenticate": "Bearer"})
         try:
-            return verifier.verify(credentials.credentials)
+            verified = verifier.verify(credentials.credentials)
+            if workspace_mode not in {None, "", "recruiter"}:
+                raise AuthenticationError("Authentication required")
+            return Identity(verified.provider, verified.subject, verified.email, workspace_mode or None)
         except AuthenticationError:
             logger.warning("workspace_authentication_denied")
             raise HTTPException(401, "Authentication required", headers={"WWW-Authenticate": "Bearer"}) from None
@@ -208,6 +214,10 @@ def build_app(store, verifier, gmail_pubsub_verification_token=None):
     @app.get(prefix + "/admin/teams")
     def admin_teams(who=Depends(identity)):
         return store.admin_teams(who)
+
+    @app.post(prefix + "/admin/self/recruiter-test-profile", status_code=201)
+    def admin_self_recruiter_test_profile(who=Depends(identity)):
+        return store.ensure_system_admin_recruiter_test_profile(who)
 
     @app.get(prefix + "/admin/users")
     def admin_users(who=Depends(identity)):
@@ -938,6 +948,7 @@ def create_app():
             job_intake_ai=job_intake_ai,
             outreach_ai=outreach_ai,
             gmail_provider=gmail_provider,
+            recruiter_test_mode_enabled=settings.system_admin_recruiter_test_mode_enabled,
         ),
         GoogleIdentityVerifier(settings.google_client_id, settings.google_hosted_domain),
         settings.gmail_pubsub_verification_token.get_secret_value() if settings.gmail_pilot_enabled else None,

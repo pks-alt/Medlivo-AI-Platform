@@ -219,3 +219,37 @@ test('new recruiter mutations still require CSRF and idempotency',async()=>{
  delete missingKey.headers['Idempotency-Key'];
  assert.equal((await h.request(path,missingKey)).status,400);
 });
+
+
+test('system admin recruiter mode is encrypted in the session and forwarded only by the BFF',async()=>{
+ const calls=[];
+ const api=async(token,path,options={})=>{
+  calls.push({path,options});
+  if(path==='/admin/self/recruiter-test-profile')return Response.json({enabled:true,division:'Rehabilitation'},{status:201});
+  if(path==='/me'){
+   if(options.workspaceMode==='recruiter')return Response.json({id:'one',display_name:'Admin',role:'recruiter',business_role:'recruiter',native_business_role:'executive',system_admin:true,workspace_mode:'recruiter',division:'Rehabilitation'});
+   return Response.json({id:'one',display_name:'Admin',role:'admin',business_role:'executive',native_business_role:'executive',system_admin:true,workspace_mode:'native'});
+  }
+  return Response.json({items:[]});
+ };
+ const h=harness({api});
+ const {sessionCookie,data}=await h.login();
+ const enter=await h.request('/api/team/workspace-mode',{method:'POST',headers:{Cookie:sessionCookie,Origin:ORIGIN,'Content-Type':'application/json','X-CSRF-Token':data.csrf},body:JSON.stringify({mode:'recruiter'})});
+ assert.equal(enter.status,200);
+ const session=await h.request('/api/team/session',{headers:{Cookie:sessionCookie}});
+ assert.equal(session.status,200);
+ const member=(await session.json()).member;
+ assert.equal(member.business_role,'recruiter');
+ assert.equal(member.native_business_role,'executive');
+ assert.equal(member.workspace_mode,'recruiter');
+ assert.ok(calls.some(x=>x.path==='/admin/self/recruiter-test-profile'));
+ assert.ok(calls.some(x=>x.path==='/me'&&x.options.workspaceMode==='recruiter'));
+});
+
+test('non system admin cannot activate recruiter workspace mode',async()=>{
+ const api=async(token,path,options={})=>Response.json({id:'one',display_name:'Manager',role:'manager',business_role:'delivery_manager',system_admin:false});
+ const h=harness({api});
+ const {sessionCookie,data}=await h.login();
+ const r=await h.request('/api/team/workspace-mode',{method:'POST',headers:{Cookie:sessionCookie,Origin:ORIGIN,'Content-Type':'application/json','X-CSRF-Token':data.csrf},body:JSON.stringify({mode:'recruiter'})});
+ assert.equal(r.status,403);
+});

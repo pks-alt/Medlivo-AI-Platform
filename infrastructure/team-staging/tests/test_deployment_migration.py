@@ -76,3 +76,8 @@ def test_staging_api_bootstrap_has_vertex_ai_user_only_for_recruiter_drafts():
     assert 'roles/aiplatform.user' in bootstrap
     assert '--member="serviceAccount:${STAGING_API_SA}"' in bootstrap
     assert '--condition=None' in bootstrap
+
+
+def test_staging_enables_system_admin_recruiter_test_mode_only_on_private_api():
+    workflow = (ROOT / ".github/workflows/deploy-team-staging.yml").read_text()
+    assert "WORKSPACE_SYSTEM_ADMIN_RECRUITER_TEST_MODE_ENABLED=true" in workflow

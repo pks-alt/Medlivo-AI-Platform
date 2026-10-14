@@ -260,7 +260,7 @@ export function createGateway({config, store, verifyIdToken, api, fetcher = fetc
       stage = 'session';
       const old = cookie(request, SESSION_COOKIE); if (old) await store.removeSession(hash(old));
       const raw = randomSecret(), sid = hash(raw), csrf = randomSecret();
-      await store.saveSession(sid, seal(config.encryptionKey, {idToken:tokens.id_token,csrf,sub:claims.sub,expires:expiry}, 'session:'+sid), expiry, Math.min(expiry,clock()+config.idleSeconds));
+      await store.saveSession(sid, seal(config.encryptionKey, {idToken:tokens.id_token,csrf,sub:claims.sub,expires:expiry,workspaceMode:'native'}, 'session:'+sid), expiry, Math.min(expiry,clock()+config.idleSeconds));
       return redirect('/team', [clearLogin, cookieHeader(SESSION_COOKIE, raw, expiry-clock())]);
     } catch { return redirect('/team?error=login&stage='+encodeURIComponent(stage), [clearLogin]); }
   }
@@ -288,7 +288,7 @@ export function createGateway({config, store, verifyIdToken, api, fetcher = fetc
         catch { throw new SafeError(400, 'Invalid request body.'); }
       }
     }
-    const response = await api(data.idToken, resource, {method,body,key,contentType});
+    const response = await api(data.idToken, resource, {method,body,key,contentType,workspaceMode:data.workspaceMode});
     if (response.status === 401) { await store.removeSession(data.id); throw new SafeError(401, 'Your session has ended. Please sign in again.'); }
     if (!response.ok) {
       const message = {403:'You do not have permission for this action.',404:'Work item not found.',
@@ -321,14 +321,39 @@ export function createGateway({config, store, verifyIdToken, api, fetcher = fetc
         csrfCheck(request,data); await store.removeSession(data.id);
         const response = json({signedOut:true}); response.headers.append('Set-Cookie',clearSession); return response;
       }
+      if (url.pathname === '/api/team/workspace-mode' && request.method === 'POST') {
+        csrfCheck(request,data);
+        let value;
+        try { value=JSON.parse(await boundedText(request,2048)); } catch { throw new SafeError(400,'Invalid workspace mode.'); }
+        if (!value || typeof value!=='object' || Array.isArray(value) || !['native','recruiter'].includes(value.mode))
+          throw new SafeError(400,'Invalid workspace mode.');
+        const nativeResponse=await api(data.idToken,'/me',{method:'GET'});
+        if (nativeResponse.status!==200) throw new SafeError(nativeResponse.status===403?403:503,'Workspace access is unavailable.');
+        const nativeMember=JSON.parse(await boundedText(nativeResponse,16384));
+        if (!nativeMember.system_admin) throw new SafeError(403,'System Administrator access required.');
+        if (value.mode==='recruiter') {
+          const profileResponse=await api(data.idToken,'/admin/self/recruiter-test-profile',{method:'POST',body:'{}',contentType:'application/json'});
+          if (![200,201].includes(profileResponse.status)) throw new SafeError(profileResponse.status===409?409:503,'Recruiter test profile could not be enabled.');
+          await boundedText(profileResponse,16384);
+        }
+        const {id,...persisted}=data;
+        persisted.workspaceMode=value.mode;
+        await store.updateSession(id,seal(config.encryptionKey,persisted,'session:'+id));
+        return json({workspace_mode:value.mode,native_business_role:nativeMember.business_role});
+      }
       if (url.pathname === '/api/team/session' && request.method === 'GET') {
-        const response = await api(data.idToken, '/me', {method:'GET'});
+        const response = await api(data.idToken, '/me', {method:'GET',workspaceMode:data.workspaceMode});
         if ([401,403].includes(response.status)) {
           await store.removeSession(data.id); throw new SafeError(401,'Your access ended. Please sign in again or contact your administrator.');
         }
         if (response.status !== 200) throw new SafeError(503,'The team service is unavailable. Please try again.');
         const member = JSON.parse(await boundedText(response, 16384));
-        return json({member:{id:member.id,display_name:member.display_name,role:member.role},csrf:data.csrf,expires:data.expires});
+        return json({member:{
+          id:member.id,display_name:member.display_name,role:member.role,
+          business_role:member.business_role,native_business_role:member.native_business_role,
+          system_admin:Boolean(member.system_admin),workspace_mode:member.workspace_mode,
+          division:member.division,team_name:member.team_name
+        },csrf:data.csrf,expires:data.expires});
       }
       return await proxy(request,url,data);
     } catch (error) {

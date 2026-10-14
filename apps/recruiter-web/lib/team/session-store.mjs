@@ -26,6 +26,10 @@ export class PostgresSessionStore {
   async saveSession(id,ciphertext,expires,idle) {
     await this.pool.query('INSERT INTO wb_session (id_hash,ciphertext,expires_at,idle_expires_at) VALUES ($1,$2,$3,$4)',[id,ciphertext,expires,idle]);
   }
+  async updateSession(id,ciphertext) {
+    const result=await this.pool.query('UPDATE wb_session SET ciphertext=$2 WHERE id_hash=$1 RETURNING id_hash',[id,ciphertext]);
+    if(result.rowCount!==1) throw new SafeError(401,'Your session has ended. Please sign in again.');
+  }
   async getSession(id,now,idleSeconds) {
     const result=await this.pool.query('UPDATE wb_session SET idle_expires_at=LEAST(expires_at,$2::bigint+$3::bigint) WHERE id_hash=$1 AND expires_at>$2 AND idle_expires_at>$2 RETURNING ciphertext',[id,now,idleSeconds]);
     return result.rows[0] || null;
