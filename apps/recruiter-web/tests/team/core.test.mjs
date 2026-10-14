@@ -253,3 +253,13 @@ test('non system admin cannot activate recruiter workspace mode',async()=>{
  const r=await h.request('/api/team/workspace-mode',{method:'POST',headers:{Cookie:sessionCookie,Origin:ORIGIN,'Content-Type':'application/json','X-CSRF-Token':data.csrf},body:JSON.stringify({mode:'recruiter'})});
  assert.equal(r.status,403);
 });
+
+
+test('authenticated default team route redirects to unified app while legacy management sections remain explicit',async()=>{
+ const source=await import('node:fs/promises').then(fs=>fs.readFile(new URL('../../lib/team/ui.mjs',import.meta.url),'utf8'));
+ assert.match(source,/legacyManagementSection=\['intake','standards','approvals'\]\.includes\(section\)/);
+ assert.match(source,/if\(!legacyManagementSection\)\{location\.replace\('\/'\);return;\}/);
+ assert.match(source,/section==='intake'&&managed\(\)/);
+ assert.match(source,/section==='standards'&&managed\(\)/);
+ assert.match(source,/section==='approvals'&&managed\(\)/);
+});
