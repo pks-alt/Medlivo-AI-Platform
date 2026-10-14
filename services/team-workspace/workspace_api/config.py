@@ -23,6 +23,7 @@ class Settings(BaseSettings):
     gmail_secret_project: str = ""
     gmail_pubsub_verification_token: SecretStr = Field(default_factory=lambda: SecretStr(""), repr=False)
     submission_packet_download_enabled: bool = False
+    system_admin_recruiter_test_mode_enabled: bool = False
     submission_document_buckets: str = ""
 
     @model_validator(mode="after")
