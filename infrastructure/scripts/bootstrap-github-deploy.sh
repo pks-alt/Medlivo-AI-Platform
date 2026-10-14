@@ -24,7 +24,7 @@ fi
 DEPLOYER_EMAIL="${DEPLOYER_SA}@${PROJECT_ID}.iam.gserviceaccount.com"
 
 for ROLE in roles/run.admin roles/artifactregistry.writer roles/iam.serviceAccountUser roles/logging.viewer; do
-  gcloud projects add-iam-policy-binding "$PROJECT_ID"     --member="serviceAccount:${DEPLOYER_EMAIL}"     --role="$ROLE"     --quiet
+  gcloud projects add-iam-policy-binding "$PROJECT_ID"     --member="serviceAccount:${DEPLOYER_EMAIL}"     --role="$ROLE"     --condition=None     --quiet
 done
 
 if ! gcloud iam workload-identity-pools describe "$POOL_ID" --location=global >/dev/null 2>&1; then
@@ -50,6 +50,7 @@ echo "GCP_DEPLOY_SERVICE_ACCOUNT=${DEPLOYER_EMAIL}"
 # RUNTIME SERVICE ACCOUNT PERMISSIONS
 API_SA="medlivo-ai-api@${PROJECT_ID}.iam.gserviceaccount.com"
 WEB_SA="medlivo-recruit-web@${PROJECT_ID}.iam.gserviceaccount.com"
+STAGING_API_SA="medlivo-team-api-staging@${PROJECT_ID}.iam.gserviceaccount.com"
 
 if ! gcloud iam service-accounts describe "$API_SA" >/dev/null 2>&1; then
   gcloud iam service-accounts create medlivo-ai-api \
@@ -62,7 +63,10 @@ for TARGET_SA in "$API_SA" "$WEB_SA"; do
 done
 
 # API runtime permissions.
-gcloud projects add-iam-policy-binding "$PROJECT_ID"   --member="serviceAccount:${API_SA}"   --role="roles/cloudsql.client"   --quiet
+gcloud projects add-iam-policy-binding "$PROJECT_ID"   --member="serviceAccount:${API_SA}"   --role="roles/cloudsql.client"   --condition=None   --quiet
+
+# Staging recruiter outreach uses Vertex AI only for human-reviewed draft generation.
+gcloud projects add-iam-policy-binding "$PROJECT_ID"   --member="serviceAccount:${STAGING_API_SA}"   --role="roles/aiplatform.user"   --condition=None   --quiet
 
 if gcloud secrets describe medlivo-ai-database-url >/dev/null 2>&1; then
   gcloud secrets add-iam-policy-binding medlivo-ai-database-url     --member="serviceAccount:${API_SA}"     --role="roles/secretmanager.secretAccessor"     --quiet
