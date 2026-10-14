@@ -948,6 +948,7 @@ def create_app():
             job_intake_ai=job_intake_ai,
             outreach_ai=outreach_ai,
             gmail_provider=gmail_provider,
+            recruiter_test_mode_enabled=settings.system_admin_recruiter_test_mode_enabled,
         ),
         GoogleIdentityVerifier(settings.google_client_id, settings.google_hosted_domain),
         settings.gmail_pubsub_verification_token.get_secret_value() if settings.gmail_pilot_enabled else None,
