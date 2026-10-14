@@ -124,7 +124,7 @@ jobs:
             --project="${PROJECT_ID}" \
             --region="${REGION}" \
             --image="${API_IMAGE}" \
-            --update-env-vars="MEDLIVO_RELEASE_SHA=${GITHUB_SHA},WORKSPACE_OUTREACH_AI_ENABLED=true,WORKSPACE_OUTREACH_AI_PROJECT=${OUTREACH_AI_PROJECT},WORKSPACE_OUTREACH_AI_LOCATION=${OUTREACH_AI_LOCATION},WORKSPACE_OUTREACH_AI_MODEL=${OUTREACH_AI_MODEL}" \
+            --update-env-vars="MEDLIVO_RELEASE_SHA=${GITHUB_SHA},WORKSPACE_OUTREACH_AI_ENABLED=true,WORKSPACE_OUTREACH_AI_PROJECT=${OUTREACH_AI_PROJECT},WORKSPACE_OUTREACH_AI_LOCATION=${OUTREACH_AI_LOCATION},WORKSPACE_OUTREACH_AI_MODEL=${OUTREACH_AI_MODEL},WORKSPACE_SYSTEM_ADMIN_RECRUITER_TEST_MODE_ENABLED=true" \
             --no-traffic \
             --startup-probe="httpGet.path=/ready,httpGet.port=8080,timeoutSeconds=3,periodSeconds=5,failureThreshold=6" \
             --no-log-http \
