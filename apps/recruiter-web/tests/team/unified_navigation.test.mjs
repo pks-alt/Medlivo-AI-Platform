@@ -257,3 +257,16 @@ test("Recruiter Jobs separates Priority 1 accountability from Priority 2 opportu
   assert.match(page, /Primary assignment remains with/);
   assert.match(page, /No Priority 2 opportunities currently meet the evidence-backed visibility rule/);
 });
+
+
+test("System Admin can review the finalized recruiter UX without impersonation", async () => {
+  const admin = await readFile(new URL("../../app/admin/page.tsx", import.meta.url), "utf8");
+  const preview = await readFile(new URL("../../app/recruiter-preview/page.tsx", import.meta.url), "utf8");
+  const today = await readFile(new URL("../../app/components/RecruiterToday.tsx", import.meta.url), "utf8");
+  assert.match(admin, /href="\/recruiter-preview">Recruiter UX Preview/);
+  assert.match(preview, /if\(!x\.system_admin\)/);
+  assert.match(preview, /<RecruiterToday me=\{me\} data=\{previewData\} preview\/>/);
+  assert.match(today, /RECRUITER UX PREVIEW/);
+  assert.match(today, /if\(preview\)\{setNotice\("Read-only recruiter UX preview/);
+  assert.match(today, /if\(preview\|\|data\.protectedActions&&data\.funnel\)return/);
+});

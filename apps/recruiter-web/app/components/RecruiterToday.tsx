@@ -13,12 +13,12 @@ const daysUntil=(v:any)=>{if(!v)return null;const d=new Date(String(v).slice(0,1
 const fmtTime=(v:any)=>{if(!v)return "—";const d=new Date(v);return Number.isNaN(d.getTime())?"—":d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
 const label=(v:any)=>String(v||"").replaceAll("_"," ").replace(/\b\w/g,c=>c.toUpperCase());
 
-export default function RecruiterToday({me,data}:{me:any,data:any}){
+export default function RecruiterToday({me,data,preview=false}:{me:any,data:any,preview?:boolean}){
  const[protectedData,setProtectedData]=useState<any>(data.protectedActions||{items:[]});
  const[funnel,setFunnel]=useState<any>(data.funnel||{items:[]});
  const[notice,setNotice]=useState("");
  const[busy,setBusy]=useState("");
- useEffect(()=>{if(data.protectedActions&&data.funnel)return;Promise.all([api("recruiter/protected-actions?limit=50"),api("funnel?limit=200")]).then(([p,f])=>{setProtectedData(p);setFunnel(f)}).catch(()=>{})},[data.protectedActions,data.funnel]);
+ useEffect(()=>{if(preview||data.protectedActions&&data.funnel)return;Promise.all([api("recruiter/protected-actions?limit=50"),api("funnel?limit=200")]).then(([p,f])=>{setProtectedData(p);setFunnel(f)}).catch(()=>{})},[preview,data.protectedActions,data.funnel]);
 
  const p=data.priorities||{},d=data.dash||{},q=data.queue||{};
  const attention=useMemo(()=>[...(p.items||[])].filter((x:any)=>x.type==="follow_up"||["overdue","critical","high"].includes(String(x.urgency||"").toLowerCase())).slice(0,5),[p]);
@@ -38,6 +38,7 @@ export default function RecruiterToday({me,data}:{me:any,data:any}){
  const continueItem=attention[0]||p1[0]||null;
 
  async function markWorking(jobId:string){
+  if(preview){setNotice("Read-only recruiter UX preview. No recruiter action was recorded.");return}
   setBusy(jobId);setNotice("");
   try{
    const s=await session();
@@ -48,6 +49,7 @@ export default function RecruiterToday({me,data}:{me:any,data:any}){
  }
 
  return <main className="page todayPage recruiterTodayFinal">
+  {preview&&<div className="recruiterPreviewBanner"><b>RECRUITER UX PREVIEW</b><span>Read-only view for System Admin review. No recruiter actions, outreach, ownership changes, or JobDiva writes can occur from this preview.</span></div>}
   <div className="pageHead"><div><small>Recruiter command center</small><h1>Today</h1><p>Urgent work first, then assigned work, schedule, recommendations and same-division opportunities.</p></div><span className="sourcePill">{me?.division||"REHABILITATION"} · RECRUITER</span></div>
 
   <section className="todayWelcome recruiterTodayHero"><small>YOUR DAY</small><h2>What should you work on next?</h2><p>Medlivo ranks actionability. Delivery Manager assignment remains the accountability boundary.</p></section>
