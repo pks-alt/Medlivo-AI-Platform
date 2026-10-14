@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
-from .auth import AuthenticationError, GoogleIdentityVerifier
+from .auth import AuthenticationError, GoogleIdentityVerifier, Identity
 from .config import Settings
 from .schemas import (
     NoteInput, TaskInput, TaskUpdate, Reassignment, AdminUserInput, AdminUserUpdate,
