@@ -100,7 +100,7 @@ export default function AdminPage(){
         <small>Workspaces</small>
         {data.me.business_role==="executive"&&<a href="/">Executive / Today</a>}
         <a href="/manager">Manager</a>
-        <a href="/recruiter-preview">Recruiter UX Preview</a>
+        <a href="/recruiter-review">Recruiter UX Review</a>
         <a href="/jobs">Recruiting Workspace</a>
       </div>
     </aside>
