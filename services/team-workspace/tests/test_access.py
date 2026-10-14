@@ -596,20 +596,21 @@ def test_database_failure_log_does_not_include_exception_text(client, headers, m
     assert "postgresql://secret@host" not in caplog.text
 
 
-def test_system_admin_can_enable_recruiter_test_profile_without_losing_executive_role(client, headers):
-    response = client.post(ROOT + "/admin/self/recruiter-test-profile", headers=headers("admin-a"))
+def test_system_admin_can_enable_recruiter_test_profile_without_losing_executive_role(seeded, verifier, headers):
+    enabled_client = TestClient(build_app(WorkspaceStore(seeded, recruiter_test_mode_enabled=True), verifier))
+    response = enabled_client.post(ROOT + "/admin/self/recruiter-test-profile", headers=headers("admin-a"))
     assert response.status_code == 201
     body = response.json()
     assert body["enabled"] is True
     assert body["division"] == "Rehabilitation"
-    native = client.get(ROOT + "/me", headers=headers("admin-a")).json()
+    native = enabled_client.get(ROOT + "/me", headers=headers("admin-a")).json()
     assert native["business_role"] == "executive"
     assert native["system_admin"] is True
     assert native["workspace_mode"] == "native"
 
     mode_headers = headers("admin-a")
     mode_headers["X-Medlivo-Workspace-Mode"] = "recruiter"
-    recruiter = client.get(ROOT + "/me", headers=mode_headers)
+    recruiter = enabled_client.get(ROOT + "/me", headers=mode_headers)
     assert recruiter.status_code == 200
     effective = recruiter.json()
     assert effective["business_role"] == "recruiter"
@@ -619,8 +620,9 @@ def test_system_admin_can_enable_recruiter_test_profile_without_losing_executive
     assert effective["system_admin"] is True
 
 
-def test_non_admin_cannot_enter_recruiter_test_mode(client, headers):
+def test_non_admin_cannot_enter_recruiter_test_mode(seeded, verifier, headers):
+    enabled_client = TestClient(build_app(WorkspaceStore(seeded, recruiter_test_mode_enabled=True), verifier))
     mode_headers = headers("manager-a")
     mode_headers["X-Medlivo-Workspace-Mode"] = "recruiter"
-    response = client.get(ROOT + "/me", headers=mode_headers)
+    response = enabled_client.get(ROOT + "/me", headers=mode_headers)
     assert response.status_code == 403
