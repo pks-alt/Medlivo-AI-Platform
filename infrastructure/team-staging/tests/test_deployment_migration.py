@@ -57,3 +57,22 @@ def test_staging_migration_reference_grant_is_least_privilege():
     assert 'GRANT UPDATE' not in grant_file
     assert 'GRANT DELETE' not in grant_file
     assert 'Migration REFERENCES grants verified.' in grant_file
+
+
+def test_staging_outreach_ai_worker_uses_explicit_reviewed_config():
+    workflow = (ROOT / ".github/workflows/deploy-team-staging.yml").read_text()
+    assert "OUTREACH_AI_PROJECT: medlivo-ai-platform" in workflow
+    assert "OUTREACH_AI_LOCATION: global" in workflow
+    assert "OUTREACH_AI_MODEL: gemini-3.7-flash" in workflow
+    assert "WORKSPACE_OUTREACH_AI_ENABLED=true" in workflow
+    assert "WORKSPACE_OUTREACH_AI_PROJECT=${OUTREACH_AI_PROJECT}" in workflow
+    assert "WORKSPACE_OUTREACH_AI_MODEL=${OUTREACH_AI_MODEL}" in workflow
+    assert "Follow-up worker requires the existing API service account and database secret." in workflow
+
+
+def test_staging_api_bootstrap_has_vertex_ai_user_only_for_recruiter_drafts():
+    bootstrap = (ROOT / "infrastructure/scripts/bootstrap-github-deploy.sh").read_text()
+    assert 'STAGING_API_SA="medlivo-team-api-staging@${PROJECT_ID}.iam.gserviceaccount.com"' in bootstrap
+    assert 'roles/aiplatform.user' in bootstrap
+    assert '--member="serviceAccount:${STAGING_API_SA}"' in bootstrap
+    assert '--condition=None' in bootstrap
