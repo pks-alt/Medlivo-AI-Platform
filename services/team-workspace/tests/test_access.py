@@ -598,7 +598,7 @@ def test_database_failure_log_does_not_include_exception_text(client, headers, m
 
 def test_system_admin_can_enable_recruiter_test_profile_without_losing_executive_role(seeded, verifier, headers):
     enabled_client = TestClient(build_app(WorkspaceStore(seeded, recruiter_test_mode_enabled=True), verifier))
-    response = enabled_client.post(ROOT + "/admin/self/recruiter-test-profile", headers=headers("admin-a"))
+    response = enabled_client.post(ROOT + "/admin/self/recruiter-test-profile", headers={**headers("admin-a"), "Content-Type": "application/json"}, json={})
     assert response.status_code == 201
     body = response.json()
     assert body["enabled"] is True
