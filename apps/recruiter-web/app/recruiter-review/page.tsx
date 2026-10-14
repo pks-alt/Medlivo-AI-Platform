@@ -31,7 +31,24 @@ function Panel({title,kicker,children}:{title:string,kicker?:string,children:any
 export default function RecruiterReview(){
  const[me,setMe]=useState<any>(null),[error,setError]=useState("");
  const[section,setSection]=useState("today");
- useEffect(()=>{\n  const applySection=()=>{const next=new URLSearchParams(window.location.search).get("section")||"today";setSection(sections.some(([id])=>id===next)?next:"today")};\n  applySection();\n  window.addEventListener("popstate",applySection);\n  getMe().then(x=>{if(!x.system_admin)throw new Error("System Administrator access required");setMe(x)}).catch(e=>setError(e.message));\n  return()=>window.removeEventListener("popstate",applySection);\n },[]);\n const nav=(id:string)=>{const url="/recruiter-review?section="+encodeURIComponent(id);window.history.pushState(null,"",url);setSection(id)};
+ useEffect(()=>{
+  const applySection=()=>{
+    const next=new URLSearchParams(window.location.search).get("section")||"today";
+    setSection(sections.some(([id])=>id===next)?next:"today");
+  };
+  applySection();
+  window.addEventListener("popstate",applySection);
+  getMe().then(x=>{
+    if(!x.system_admin)throw new Error("System Administrator access required");
+    setMe(x);
+  }).catch(e=>setError(e.message));
+  return()=>window.removeEventListener("popstate",applySection);
+ },[]);
+ const nav=(id:string)=>{
+  const url="/recruiter-review?section="+encodeURIComponent(id);
+  window.history.pushState(null,"",url);
+  setSection(id);
+ };
  const title=sections.find(x=>x[0]===section)?.[1]||"Today";
 
  if(error)return <main className="page"><div className="adminError"><b>Recruiter UX review unavailable</b><span>{error}</span></div></main>;
