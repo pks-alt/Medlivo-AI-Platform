@@ -49,7 +49,7 @@ const server=createServer({key:await readFile(process.env.TEAM_TEST_TLS_KEY),cer
    const code=randomUUID();codes.set(code,{actor:url.searchParams.get('actor'),nonce:url.searchParams.get('nonce'),challenge:url.searchParams.get('code_challenge')});
    const callback=new URL('/api/team/auth/callback',origin);callback.searchParams.set('state',url.searchParams.get('state'));callback.searchParams.set('code',code);
    response=new Response(null,{status:303,headers:{Location:callback.href}});
-  }else if(url.pathname==='/team')response=renderTeam(true);
+  }else if(url.pathname==='/'||url.pathname==='/team')response=renderTeam(true);
   else if(url.pathname.startsWith('/api/team')){
    const parts=[];for await(const chunk of req)parts.push(chunk);
    response=await gateway(new Request(url,{method:req.method,headers:req.headers,...(parts.length?{body:Buffer.concat(parts)}:{})}));

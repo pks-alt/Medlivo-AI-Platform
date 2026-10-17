@@ -712,13 +712,15 @@ async function boot(){
    return;
  }
  try{
-   session=await call('/session');shell();
+   session=await call('/session');
    const section=params.get('section');
+   const legacyManagementSection=['intake','standards','approvals'].includes(section);
+   if(!legacyManagementSection){location.replace('/');return;}
+   shell();
    if(section==='intake'&&managed()){await drawJobIntake();return;}
    if(section==='standards'&&managed()){await drawJobContentStandards();return;}
    if(section==='approvals'&&managed()){await drawPublications();return;}
-   await Promise.all([loadCases(),drawDailyPriorities()]);
-   if(cases.length)await loadCase(cases[0].id);
+   location.replace('/');
  }
  catch(error){if(!session)login(error.message);else msg(error.message);}
 }
